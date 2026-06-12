@@ -2,7 +2,7 @@
 
 > The Windows port runs as a single Qt process (system tray + floating pill +
 > Raw-Input keyboard listener). The listener sits outside the system input
-> chain, so a busy or even hung VoxType can never stall the keyboard.
+> chain, so a busy or even hung Quassel can never stall the keyboard.
 > whisper.cpp + the speech model are downloaded on first launch, so the
 > installer stays small. Built and tested on Windows 10/11.
 
@@ -18,20 +18,20 @@ From the repository root in PowerShell:
 
 ```powershell
 py -3.13 -m pip install pyside6 sounddevice pyinstaller
-py -3.13 -m PyInstaller --noconfirm --clean --distpath windows\dist --workpath windows\build windows\voxtype.spec
-iscc windows\voxtype.iss
+py -3.13 -m PyInstaller --noconfirm --clean --distpath windows\dist --workpath windows\build windows\quassel.spec
+iscc windows\quassel.iss
 ```
 
 Always build with `--clean` — PyInstaller otherwise caches stale analyses.
 
-- `PyInstaller` produces `windows\dist\VoxType\VoxType.exe` (the app folder).
-- `iscc` wraps it into `windows\Output\VoxType-Setup-2.1.0.exe`.
+- `PyInstaller` produces `windows\dist\Quassel\Quassel.exe` (the app folder).
+- `iscc` wraps it into `windows\Output\Quassel-Setup-2.1.0.exe`.
 
 ## First launch
 
-On first run VoxType downloads the matching whisper.cpp binaries
+On first run Quassel downloads the matching whisper.cpp binaries
 (cuBLAS build if an NVIDIA GPU is present, otherwise CPU) and a speech model
-into `%LOCALAPPDATA%\VoxType`. After that it works fully offline.
+into `%LOCALAPPDATA%\Quassel`. After that it works fully offline.
 
 ## Notes
 
@@ -39,8 +39,8 @@ into `%LOCALAPPDATA%\VoxType`. After that it works fully offline.
   ("More info" → "Run anyway"). Code signing is a future step.
 - The keyboard listener uses Raw Input (no hook, no admin rights) and only
   observes the hotkey chord; it never suppresses or delays keystrokes.
-- Settings, dictionary and history live in `%APPDATA%\VoxType` and
-  `%LOCALAPPDATA%\VoxType`.
-- Troubleshooting: `%LOCALAPPDATA%\VoxType\crash.log` (startup crashes) and
-  `%LOCALAPPDATA%\VoxType\debug.log` (per-dictation timing of recording,
+- Settings, dictionary and history live in `%APPDATA%\Quassel` and
+  `%LOCALAPPDATA%\Quassel`.
+- Troubleshooting: `%LOCALAPPDATA%\Quassel\crash.log` (startup crashes) and
+  `%LOCALAPPDATA%\Quassel\debug.log` (per-dictation timing of recording,
   inference and paste).

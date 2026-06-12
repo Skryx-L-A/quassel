@@ -1,0 +1,13 @@
+[Unit]
+Description=Quassel daemon (hotkey detection for voice typing)
+Wants=quassel-ydotoold.service quassel-pill.service
+After=quassel-ydotoold.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/quasseld
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

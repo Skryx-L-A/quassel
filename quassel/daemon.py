@@ -1,4 +1,4 @@
-"""VoxType-Daemon: Modifier-Chord-Erkennung (Standard Strg+Meta) über evdev.
+"""Quassel-Daemon: Modifier-Chord-Erkennung (Standard Strg+Meta) über evdev.
 
 Modi:
   * Halten:     Chord halten, sprechen, loslassen -> Text wird eingefügt

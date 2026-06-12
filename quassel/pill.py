@@ -1,4 +1,4 @@
-"""VoxType-Pille: minimalistisches Always-on-top-Overlay unten-mittig
+"""Quassel-Pille: minimalistisches Always-on-top-Overlay unten-mittig
 (an Wispr Flow orientiert).
 
 - Folgt dem aktiven Monitor (KWin-Skript meldet Fensteraktivierung per D-Bus)
@@ -33,36 +33,36 @@ from .state import RUNDIR, state_read  # noqa: E402
 
 BARS = 9
 RESULT_SHOW_MS = 3000
-BUS_NAME = "io.github.skryx.voxtype.Pill"
-KWIN_PLUGIN = "voxtype-pill-follow"
-DBUS_XML = """<node><interface name='io.github.skryx.voxtype.Pill'>
+BUS_NAME = "io.github.skryx.quassel.Pill"
+KWIN_PLUGIN = "quassel-pill-follow"
+DBUS_XML = """<node><interface name='io.github.skryx.quassel.Pill'>
 <method name='SetActiveOutput'><arg type='s' name='output' direction='in'/></method>
 <method name='GetActiveOutput'><arg type='s' name='output' direction='out'/></method>
 </interface></node>"""
 
 CSS_TEMPLATE = """
-.voxtype-pillwin {{ background: transparent; }}
-.voxtype-pill {{
+.quassel-pillwin {{ background: transparent; }}
+.quassel-pill {{
     background-color: rgba(16, 16, 22, {op});
     border-radius: 999px;
     padding: {pad_v}px {pad_h}px;
     border: 1px solid rgba(255, 255, 255, 0.06);
 }}
-.voxtype-pill label {{ color: #e8e8ee; font-size: {font}px; }}
-.voxtype-text {{
+.quassel-pill label {{ color: #e8e8ee; font-size: {font}px; }}
+.quassel-text {{
     background-color: rgba(16, 16, 22, {op});
     border-radius: 12px;
     padding: 6px 14px;
 }}
-.voxtype-text label {{ color: #cfcfd8; font-size: {font_small}px; }}
+.quassel-text label {{ color: #cfcfd8; font-size: {font_small}px; }}
 """
 
-KWIN_JS = f"""function voxtypeSend() {{
+KWIN_JS = f"""function quasselSend() {{
     callDBus("{BUS_NAME}", "/", "{BUS_NAME}", "SetActiveOutput",
              workspace.activeScreen.name);
 }}
-workspace.windowActivated.connect(voxtypeSend);
-voxtypeSend();
+workspace.windowActivated.connect(quasselSend);
+quasselSend();
 """
 
 
@@ -72,7 +72,7 @@ def esc(s):
 
 def daemon_active():
     return subprocess.run(
-        ["systemctl", "--user", "is-active", "--quiet", "voxtyped"],
+        ["systemctl", "--user", "is-active", "--quiet", "quasseld"],
         check=False).returncode == 0
 
 
@@ -95,7 +95,7 @@ class PulseDot(Gtk.DrawingArea):
 
 class Pill(Gtk.Application):
     def __init__(self):
-        super().__init__(application_id="io.github.skryx.voxtype.pill")
+        super().__init__(application_id="io.github.skryx.quassel.pill")
         self.cfg = config.Cfg()
         self.win = None
         self.css = None
@@ -115,7 +115,7 @@ class Pill(Gtk.Application):
         if self.win:
             return
         self.win = Gtk.Window(application=self, decorated=False, resizable=False)
-        self.win.add_css_class("voxtype-pillwin")
+        self.win.add_css_class("quassel-pillwin")
         if HAVE_LAYER:
             LayerShell.init_for_window(self.win)
             LayerShell.set_layer(self.win, LayerShell.Layer.OVERLAY)
@@ -130,7 +130,7 @@ class Pill(Gtk.Application):
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,
                         halign=Gtk.Align.CENTER)
         self.textbox = Gtk.Box()
-        self.textbox.add_css_class("voxtype-text")
+        self.textbox.add_css_class("quassel-text")
         self.textlabel = Gtk.Label(wrap=True, max_width_chars=60,
                                    justify=Gtk.Justification.CENTER)
         self.textbox.append(self.textlabel)
@@ -138,7 +138,7 @@ class Pill(Gtk.Application):
         outer.append(self.textbox)
 
         self.pillbox = Gtk.Box(spacing=10, halign=Gtk.Align.CENTER)
-        self.pillbox.add_css_class("voxtype-pill")
+        self.pillbox.add_css_class("quassel-pill")
         self.icon = Gtk.Label()
         self.pillbox.append(self.icon)
         self.dot = PulseDot()
@@ -302,18 +302,18 @@ class Pill(Gtk.Application):
     def on_left_click(self, *_a):
         if daemon_active():
             subprocess.run(["systemctl", "--user", "stop",
-                            "voxtyped", "voxtype-server", "voxtype-ydotoold"],
+                            "quasseld", "quassel-server", "quassel-ydotoold"],
                            check=False)
             self.on = False
             self.set_mode("off")
         else:
             subprocess.run(["systemctl", "--user", "start",
-                            "voxtyped", "voxtype-server"], check=False)
+                            "quasseld", "quassel-server"], check=False)
             self.on = True
             self.set_mode("ready")
 
     def on_right_click(self, *_a):
-        subprocess.Popen(["voxtype"])
+        subprocess.Popen(["quassel-type"])
 
 
 def main():

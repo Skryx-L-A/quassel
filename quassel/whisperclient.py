@@ -1,4 +1,4 @@
-"""Client für den lokalen whisper.cpp-Server (voxtype-server.service)."""
+"""Client für den lokalen whisper.cpp-Server (quassel-server.service)."""
 import os
 import subprocess
 import time
@@ -9,7 +9,7 @@ from . import config
 NOWIN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
 SERVER = "http://127.0.0.1:8765"
-SERVICE = "voxtype-server.service"
+SERVICE = "quassel-server.service"
 
 
 def _default_starter():

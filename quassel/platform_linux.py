@@ -99,6 +99,6 @@ def send_backspaces(n):
 
 def notify(text, ms=4000):
     subprocess.run(
-        ["notify-send", "-a", "VoxType", "-t", str(ms),
-         "-h", "string:x-canonical-private-synchronous:voxtype", "VoxType", text],
+        ["notify-send", "-a", "Quassel", "-t", str(ms),
+         "-h", "string:x-canonical-private-synchronous:quassel", "Quassel", text],
         check=False)

@@ -1,7 +1,7 @@
 """Tests des Streaming-Tippens (stable / aggressive / finaler Abgleich)."""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from voxtype.streaming import StreamTyper
+from quassel.streaming import StreamTyper
 
 class Sink:
     def __init__(self):

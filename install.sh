@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  VoxType – Installation (Linux)
+#  Quassel – Installation (Linux)
 #  Lokale, private Spracheingabe: Strg+Meta halten -> sprechen -> loslassen
 #  -> Text erscheint am Cursor. / Local private voice typing.
 #
@@ -17,8 +17,8 @@ die()  { printf '\033[1;31mFEHLER/ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 command -v systemctl >/dev/null || die "Kein systemd – nicht unterstützt."
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DATA="$HOME/.local/share/voxtype"
-LIB="$HOME/.local/lib/voxtype"
+DATA="$HOME/.local/share/quassel"
+LIB="$HOME/.local/lib/quassel"
 BIN="$HOME/.local/bin"
 VENV="$DATA/venv"
 MODEL=""
@@ -96,8 +96,8 @@ else
     ok "Benutzer ist bereits in Gruppe 'input'"
 fi
 echo 'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"' \
-    | sudo tee /etc/udev/rules.d/80-voxtype-uinput.rules >/dev/null
-echo uinput | sudo tee /etc/modules-load.d/voxtype-uinput.conf >/dev/null
+    | sudo tee /etc/udev/rules.d/80-quassel-uinput.rules >/dev/null
+echo uinput | sudo tee /etc/modules-load.d/quassel-uinput.conf >/dev/null
 sudo modprobe uinput || true
 sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput 2>/dev/null || true
 ok "udev-Regel für /dev/uinput installiert"
@@ -156,34 +156,34 @@ fi
 ok "PySide6 bereit"
 
 # ----------------------------------------------------------------------------
-say "6/8  VoxType installieren"
+say "6/8  Quassel installieren"
 # ----------------------------------------------------------------------------
-rm -rf "$LIB/voxtype"
-cp -r "$SRC/voxtype" "$LIB/voxtype"
-install -m 755 "$SRC/bin/voxtyped" "$SRC/bin/voxtype" "$SRC/bin/voxtype-pill" \
-               "$SRC/bin/voxtype-ctl" "$BIN/"
+rm -rf "$LIB/quassel"
+cp -r "$SRC/quassel" "$LIB/quassel"
+install -m 755 "$SRC/bin/quasseld" "$SRC/bin/quassel-type" "$SRC/bin/quassel-pill" \
+               "$SRC/bin/quassel-ctl" "$BIN/"
 mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/share/applications" \
-         "$HOME/.config/voxtype"
+         "$HOME/.config/quassel"
 install -m 644 "$SRC"/systemd/*.service "$HOME/.config/systemd/user/"
-if [[ ! -s "$HOME/.config/voxtype/server.env" ]]; then
-    cat > "$HOME/.config/voxtype/server.env" <<EOF
+if [[ ! -s "$HOME/.config/quassel/server.env" ]]; then
+    cat > "$HOME/.config/quassel/server.env" <<EOF
 SERVER_BIN=$DATA/whisper.cpp/build/bin/whisper-server
 MODEL_PATH=$DATA/models/$MODELFILE
 EOF
 fi
-sed "s|@HOME@|$HOME|g" "$SRC/desktop/voxtype.desktop.in" \
-    > "$HOME/.local/share/applications/voxtype.desktop"
+sed "s|@HOME@|$HOME|g" "$SRC/desktop/quassel.desktop.in" \
+    > "$HOME/.local/share/applications/quassel.desktop"
 mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
-install -m 644 "$SRC/assets/voxtype.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/voxtype.svg"
+install -m 644 "$SRC/assets/quassel.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/quassel.svg"
 for sz in 48 64 128 256; do
     mkdir -p "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps"
-    install -m 644 "$SRC/assets/icons/voxtype-${sz}.png"         "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps/voxtype.png"
+    install -m 644 "$SRC/assets/icons/quassel-${sz}.png"         "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps/quassel.png"
 done
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 systemctl --user daemon-reload
 command -v update-desktop-database >/dev/null && update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 2>/dev/null || true
-ok "VoxType installiert (KEIN Autostart — Start über die VoxType-App)"
+ok "Quassel installiert (KEIN Autostart — Start über die Quassel-App)"
 
 # ----------------------------------------------------------------------------
 say "7/8  Alte »Diktat«-Version entfernen (falls vorhanden)"
@@ -213,7 +213,7 @@ if [[ "$NEED_RELOGIN" -eq 1 ]]; then
 fi
 cat <<'ANLEITUNG'
     So geht's / How to:
-      1. App »VoxType« im Startmenü öffnen / open "VoxType" from your launcher
+      1. App »Quassel« im Startmenü öffnen / open "Quassel" from your launcher
       2. Einschalten / turn it ON
       3. In ein Textfeld klicken / click into any text field:
          • Strg+Meta HALTEN -> sprechen -> loslassen -> Text erscheint

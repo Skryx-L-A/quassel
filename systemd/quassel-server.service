@@ -1,9 +1,9 @@
 [Unit]
-Description=Whisper.cpp speech-to-text server (for VoxType)
+Description=Whisper.cpp speech-to-text server (for Quassel)
 
 [Service]
 Type=simple
-EnvironmentFile=-%h/.config/voxtype/server.env
+EnvironmentFile=-%h/.config/quassel/server.env
 ExecStart=/bin/sh -c 'exec "${SERVER_BIN:-whisper-server}" -m "$MODEL_PATH" --host 127.0.0.1 --port 8765 -l auto -nt'
 Restart=on-failure
 RestartSec=3

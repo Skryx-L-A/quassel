@@ -1,4 +1,4 @@
-"""Robuste Downloads für VoxType.
+"""Robuste Downloads für Quassel.
 
 Nutzt curl (auf Windows 10+ und allen Linux-Zielen vorhanden) statt
 urllib — Pythons urllib kann auf Windows still hängen (Proxy/TLS).

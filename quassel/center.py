@@ -1,9 +1,9 @@
-"""VoxType-Kontrollzentrum (Qt/PySide6) — klassisches Einstellungsfenster mit
+"""Quassel-Kontrollzentrum (Qt/PySide6) — klassisches Einstellungsfenster mit
 Seitenleisten-Sektionen (Allgemein, Spracherkennung, Wörterbuch, Verlauf,
 System), bewusst einfach und erweiterbar (neue Seite = neuer Eintrag in der
 build()-Liste + eigene page_*-Methode).
 
-Nur eine Fernbedienung: Fenster schließen beendet VoxType nicht.
+Nur eine Fernbedienung: Fenster schließen beendet Quassel nicht.
 Einstellungen wirken sofort (der Daemon liest die Config live).
 """
 import os
@@ -33,11 +33,11 @@ else:
     from .audio import list_mics, record_command
     from .platform_linux import clip_copy
 
-UNITS_START = ["voxtyped", "voxtype-server", "voxtype-pill"]
-UNITS_STOP = ["voxtyped", "voxtype-server", "voxtype-ydotoold"]
+UNITS_START = ["quasseld", "quassel-server", "quassel-pill"]
+UNITS_STOP = ["quasseld", "quassel-server", "quassel-ydotoold"]
 ICON_PATHS = [
-    os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/voxtype.svg"),
-    os.path.join(os.path.dirname(__file__), "..", "assets", "voxtype.svg"),
+    os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/quassel.svg"),
+    os.path.join(os.path.dirname(__file__), "..", "assets", "quassel.svg"),
 ]
 
 STYLE = """
@@ -91,7 +91,7 @@ def sysctl(*args):
 def daemon_active():
     if IS_WINDOWS:
         return True     # das Fenster läuft im Tray-App-Prozess selbst
-    return sysctl("is-active", "--quiet", "voxtyped").returncode == 0
+    return sysctl("is-active", "--quiet", "quasseld").returncode == 0
 
 
 def autostart_enabled():
@@ -99,11 +99,11 @@ def autostart_enabled():
         import winreg
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
-                winreg.QueryValueEx(k, "VoxType")
+                winreg.QueryValueEx(k, "Quassel")
             return True
         except OSError:
             return False
-    return sysctl("is-enabled", "--quiet", "voxtyped").returncode == 0
+    return sysctl("is-enabled", "--quiet", "quasseld").returncode == 0
 
 
 def autostart_set(on):
@@ -113,11 +113,11 @@ def autostart_set(on):
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
                         winreg.KEY_SET_VALUE) as k:
         if on:
-            winreg.SetValueEx(k, "VoxType", 0, winreg.REG_SZ,
+            winreg.SetValueEx(k, "Quassel", 0, winreg.REG_SZ,
                               '"%s"' % sys.executable)
         else:
             try:
-                winreg.DeleteValue(k, "VoxType")
+                winreg.DeleteValue(k, "Quassel")
             except OSError:
                 pass
 
@@ -129,14 +129,14 @@ def restart_server():
         server.stop()
         server.start()
     else:
-        sysctl("try-restart", "voxtype-server")
+        sysctl("try-restart", "quassel-server")
 
 
 def app_icon():
     for p in ICON_PATHS:
         if os.path.exists(p):
             return QIcon(p)
-    return QIcon.fromTheme("voxtype")
+    return QIcon.fromTheme("quassel")
 
 
 class NoWheel(QObject):
@@ -434,7 +434,7 @@ class Center(QMainWindow):
         g.addLayout(row)
         link = QPushButton(tr("repo"))
         link.clicked.connect(lambda: QDesktopServices.openUrl(
-            QUrl("https://github.com/Skryx-L-A/voxtype")))
+            QUrl("https://github.com/Skryx-L-A/quassel")))
         g.addWidget(link)
 
         lay.addStretch(1)
@@ -492,7 +492,7 @@ class Center(QMainWindow):
         if IS_WINDOWS:
             autostart_set(on)
         else:
-            sysctl("enable" if on else "disable", "voxtyped")
+            sysctl("enable" if on else "disable", "quasseld")
 
     # ------------------------------------------------------------ Verlauf
     def reload_history(self):
@@ -617,8 +617,8 @@ class Center(QMainWindow):
 
 def main():
     app = QApplication([])
-    app.setApplicationName("VoxType")
-    app.setDesktopFileName("voxtype")
+    app.setApplicationName("Quassel")
+    app.setDesktopFileName("quassel")
     app.setWindowIcon(app_icon())
     win = Center()
     win.show()

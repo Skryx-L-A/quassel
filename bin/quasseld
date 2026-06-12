@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Quassel-Daemon (Hotkey-Erkennung) — nutzt nur die Python-Standardbibliothek
+export PYTHONPATH="$HOME/.local/lib/quassel${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m quassel.daemon

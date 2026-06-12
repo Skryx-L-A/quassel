@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# VoxType-Kontrollzentrum (Qt) — bevorzugt das venv mit PySide6
-export PYTHONPATH="$HOME/.local/lib/voxtype${PYTHONPATH:+:$PYTHONPATH}"
-PY="$HOME/.local/share/voxtype/venv/bin/python3"
-[[ -x "$PY" ]] || PY=python3
-exec "$PY" -m voxtype.center

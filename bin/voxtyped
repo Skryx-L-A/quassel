@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# VoxType-Daemon (Hotkey-Erkennung) — nutzt nur die Python-Standardbibliothek
-export PYTHONPATH="$HOME/.local/lib/voxtype${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m voxtype.daemon

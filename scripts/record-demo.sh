@@ -6,7 +6,7 @@
 #
 # WICHTIG: Nach dem Start ~35 Sekunden NICHT Maus/Tastatur anfassen.
 #
-# Ablauf: virtuelles Mikrofon -> TTS-Stimme „diktiert" -> VoxType zeigt
+# Ablauf: virtuelles Mikrofon -> TTS-Stimme „diktiert" -> Quassel zeigt
 # Live-Transkript in der Pille und fügt den Text in einen maximierten
 # Editor ein. Das GIF kombiniert zwei Streifen aus demselben Bildschirmfoto:
 # oben die erste Editorzeile (der eingefügte Text), unten die Pille.
@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 for c in espeak-ng spectacle magick kwrite; do
     command -v "$c" >/dev/null || { echo "$c fehlt"; exit 1; }
 done
-systemctl --user is-active --quiet voxtyped || { echo "VoxType erst einschalten!"; exit 1; }
+systemctl --user is-active --quiet quasseld || { echo "Quassel erst einschalten!"; exit 1; }
 
 TMP=$(mktemp -d)
 OLD_SRC=$(pactl get-default-source)
@@ -35,8 +35,8 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> Pillen-Monitor erfragen…"
-PILL_OUT=$(busctl --user call io.github.skryx.voxtype.Pill / \
-    io.github.skryx.voxtype.Pill GetActiveOutput 2>/dev/null \
+PILL_OUT=$(busctl --user call io.github.skryx.quassel.Pill / \
+    io.github.skryx.quassel.Pill GetActiveOutput 2>/dev/null \
     | sed 's/^s "//; s/"$//')
 GEO=$(kscreen-doctor -j | PILL_OUT="$PILL_OUT" python3 -c "
 import json, os, sys
@@ -54,7 +54,7 @@ A_X=$((MX + 40)); A_Y=$((MY + 108)); A_W=760; A_H=120
 B_X=$((MX + MW / 2 - 380)); B_Y=$((MY + MH - 240)); B_W=760; B_H=200
 
 echo "==> Virtuelles Mikrofon einrichten…"
-MOD=$(pactl load-module module-null-sink sink_name=voxdemo sink_properties=device.description=VoxTypeDemo)
+MOD=$(pactl load-module module-null-sink sink_name=voxdemo sink_properties=device.description=QuasselDemo)
 pactl set-default-source voxdemo.monitor
 
 espeak-ng -v en-us+f3 -s 150 -w "$TMP/tts.wav" \

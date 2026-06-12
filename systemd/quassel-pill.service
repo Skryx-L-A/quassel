@@ -1,0 +1,8 @@
+[Unit]
+Description=Quassel pill overlay
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/quassel-pill
+Restart=on-failure
+RestartSec=3

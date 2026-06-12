@@ -7,7 +7,7 @@ ALLE Tastatureingaben systemweit. Thread-Priorität ändert daran nichts.
 
 Raw Input (RIDEV_INPUTSINK) ist dagegen ein passiver Abonnent: Windows
 kopiert die Events in die Message-Queue dieses Threads, die Eingabekette
-läuft unabhängig davon weiter. Selbst wenn VoxType komplett hängt, bleibt
+läuft unabhängig davon weiter. Selbst wenn Quassel komplett hängt, bleibt
 die Systemtastatur flüssig. Tasten unterdrücken konnten wir mit dem Hook
 ohnehin nie nötig — der Chord (Strg+Win) löst allein nichts aus.
 
@@ -86,7 +86,7 @@ class KeyboardHook(threading.Thread):
         user32.GetRawInputData.argtypes = [
             wt.LPARAM, wt.UINT, wt.LPVOID, ctypes.POINTER(wt.UINT), wt.UINT]
         # Unsichtbares Message-Only-Fenster als Empfänger der WM_INPUT-Events
-        hwnd = user32.CreateWindowExW(0, "STATIC", "voxtype-rawinput", 0,
+        hwnd = user32.CreateWindowExW(0, "STATIC", "quassel-rawinput", 0,
                                       0, 0, 0, 0, HWND_MESSAGE, None, None, None)
         rid = RAWINPUTDEVICE(0x01, 0x06, RIDEV_INPUTSINK, hwnd)  # Tastaturen
         user32.RegisterRawInputDevices(ctypes.byref(rid), 1,

@@ -1,7 +1,7 @@
 """Tests der Chord-Zustandsmaschine (geteilte Halten/Doppeltipp-Logik)."""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from voxtype.win.machine import ChordMachine
+from quassel.win.machine import ChordMachine
 
 A, B = {29}, {125}  # je eine Taste pro Gruppe
 

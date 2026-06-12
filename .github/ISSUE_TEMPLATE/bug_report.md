@@ -14,6 +14,6 @@ labels: bug
 - Desktop (KDE/GNOME/…) + Wayland or X11:
 - GPU:
 
-**Logs** (`journalctl --user -u voxtyped -n 30`)
+**Logs** (`journalctl --user -u quasseld -n 30`)
 ```
 ```

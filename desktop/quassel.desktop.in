@@ -1,19 +1,19 @@
 [Desktop Entry]
 Type=Application
-Name=VoxType
+Name=Quassel
 GenericName=Voice Typing
 Comment=Local voice typing — hold Ctrl+Meta, speak, release / Lokale Spracheingabe
-Keywords=VoxType;voice;dictation;speech;typing;Diktat;Spracheingabe;Mikrofon;Whisper
-Exec=@HOME@/.local/bin/voxtype
-Icon=voxtype
+Keywords=Quassel;voice;dictation;speech;typing;Diktat;Spracheingabe;Mikrofon;Whisper
+Exec=@HOME@/.local/bin/quassel-type
+Icon=quassel
 Terminal=false
-StartupWMClass=voxtype
+StartupWMClass=quassel
 Actions=start;stop;
 
 [Desktop Action start]
 Name=Turn on / Einschalten
-Exec=@HOME@/.local/bin/voxtype-ctl start
+Exec=@HOME@/.local/bin/quassel-ctl start
 
 [Desktop Action stop]
 Name=Turn off / Ausschalten
-Exec=@HOME@/.local/bin/voxtype-ctl stop
+Exec=@HOME@/.local/bin/quassel-ctl stop

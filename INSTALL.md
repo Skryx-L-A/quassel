@@ -17,8 +17,8 @@
 Either clone with git:
 
 ```bash
-git clone https://github.com/Skryx-L-A/voxtype.git
-cd voxtype
+git clone https://github.com/Skryx-L-A/quassel.git
+cd quassel
 ```
 
 …or click **Code → Download ZIP** on GitHub, unpack it, and open a terminal
@@ -59,7 +59,7 @@ active after you **log out and log in again** (or reboot) once.
 
 ### 5. Start dictating
 
-1. Search for **"VoxType"** in your application launcher and open it.
+1. Search for **"Quassel"** in your application launcher and open it.
 2. Flip the switch to **ON**. (You can close the window — dictation keeps running.)
 3. Click into any text field, then:
    - **Hold** `Ctrl+Meta` (Ctrl + Windows key) → speak → **release** → text appears
@@ -71,9 +71,9 @@ loading); after that it is fast.
 ### Troubleshooting
 
 - **Nothing happens at all** → did you log out/in after installing? Check
-  `systemctl --user status voxtyped` and `journalctl --user -u voxtyped -n 20`.
+  `systemctl --user status quasseld` and `journalctl --user -u quasseld -n 20`.
 - **Recording works but no text appears** → check
-  `systemctl --user status voxtype-server voxtype-ydotoold`.
+  `systemctl --user status quassel-server quassel-ydotoold`.
 - **Bad recognition quality** → pick a bigger model in the control center
   (it downloads automatically), and add tricky names to the personal dictionary.
 - **Force a single language** → control center → "Spoken language".
@@ -99,8 +99,8 @@ loading); after that it is fast.
 ### 2. Herunterladen
 
 ```bash
-git clone https://github.com/Skryx-L-A/voxtype.git
-cd voxtype
+git clone https://github.com/Skryx-L-A/quassel.git
+cd quassel
 ```
 
 …oder auf GitHub **Code → Download ZIP**, entpacken, Terminal im Ordner öffnen.
@@ -121,7 +121,7 @@ Nur nötig, wenn das Skript es am Ende sagt (Gruppen-Berechtigung).
 
 ### 5. Diktieren
 
-1. App **„VoxType“** im Startmenü öffnen, Schalter auf **AN**.
+1. App **„Quassel“** im Startmenü öffnen, Schalter auf **AN**.
 2. In ein Textfeld klicken:
    - `Strg+Meta` **halten** → sprechen → loslassen → Text erscheint
    - `Strg+Meta` **2× tippen** → freihändig sprechen → 1× drücken → Text erscheint

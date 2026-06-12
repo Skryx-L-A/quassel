@@ -2,7 +2,7 @@
 
 Schreibt rohes PCM (s16le, 16 kHz, mono) in dieselbe RAW-Datei wie auf
 Linux — damit funktionieren Teiltranskripte (Live-Vorschau) und das
-WAV-Verpacken aus voxtype.audio unverändert.
+WAV-Verpacken aus quassel.audio unverändert.
 """
 import os
 import time
@@ -26,7 +26,7 @@ def list_mics():
 
 
 class Recorder:
-    """API-kompatibel zu voxtype.audio.Recorder (start/stop/raw_bytes)."""
+    """API-kompatibel zu quassel.audio.Recorder (start/stop/raw_bytes)."""
 
     def __init__(self):
         self.stream = None

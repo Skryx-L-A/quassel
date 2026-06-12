@@ -1,5 +1,5 @@
 [Unit]
-Description=ydotoold (virtual keyboard for VoxType)
+Description=ydotoold (virtual keyboard for Quassel)
 
 [Service]
 Type=simple

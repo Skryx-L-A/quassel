@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Quassel per Kommandozeile schalten: quassel-ctl [toggle|start|stop]
+set -u
+cmd="${1:-toggle}"
+running() { systemctl --user is-active --quiet quasseld; }
+case "$cmd" in toggle) if running; then cmd=stop; else cmd=start; fi ;; esac
+case "$cmd" in
+    start) systemctl --user start quasseld quassel-server quassel-pill ;;
+    stop)  systemctl --user stop quasseld quassel-server quassel-ydotoold ;;
+    *) echo "usage: quassel-ctl [toggle|start|stop]" >&2; exit 2 ;;
+esac

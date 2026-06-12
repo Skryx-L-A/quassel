@@ -1,6 +1,6 @@
-<img src="assets/voxtype.svg" width="92" align="left" alt="VoxType logo">
+<img src="assets/quassel.svg" width="92" align="left" alt="Quassel logo">
 
-# VoxType — local, private voice typing
+# Quassel — local, private voice typing
 
 **Hold `Ctrl+Meta` (Ctrl+Windows key), speak, release — your words are typed
 wherever your cursor is.** A clean, minimal pill at the bottom of your screen
@@ -12,7 +12,7 @@ No cloud, no account, no subscription, no telemetry.
 **Linux** and **Windows** (Windows build is fresh — see
 [windows/build.md](windows/build.md)). Fully offline, no cloud, no account.
 
-<p align="center"><img src="assets/screenshots/demo.gif" alt="VoxType pill while dictating: pulsing red dot, live transcript, result" width="700"></p>
+<p align="center"><img src="assets/screenshots/demo.gif" alt="Quassel pill while dictating: pulsing red dot, live transcript, result" width="700"></p>
 
 ## Features
 
@@ -36,7 +36,7 @@ No cloud, no account, no subscription, no telemetry.
 ## Why can't I just bind a normal shortcut?
 
 No desktop environment can bind a **modifier-only** combo like `Ctrl+Meta`.
-VoxType ships a small daemon that watches the keyboard at the evdev level
+Quassel ships a small daemon that watches the keyboard at the evdev level
 (no root needed, via the `input` group) and drives the pipeline:
 record → transcribe locally → paste.
 
@@ -61,7 +61,7 @@ Paste this into **PowerShell or cmd** (the same line works in both) — it
 downloads the installer and opens the setup wizard right away:
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/Skryx-L-A/voxtype/releases/latest/download/VoxType-Setup.exe -OutFile ([IO.Path]::GetTempPath()+'VoxType-Setup.exe'); Start-Process ([IO.Path]::GetTempPath()+'VoxType-Setup.exe')"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-Setup.exe -OutFile ([IO.Path]::GetTempPath()+'Quassel-Setup.exe'); Start-Process ([IO.Path]::GetTempPath()+'Quassel-Setup.exe')"
 ```
 
 The wizard downloads the matching whisper.cpp build (CUDA on NVIDIA GPUs,
@@ -73,9 +73,9 @@ because it is not code-signed yet — click "More info" → "Run anyway".
 > **Status:** the Windows build passed full hands-on testing (dictation,
 > hands-free mode, settings, autostart) on Windows 11 with an NVIDIA GPU —
 > but it is still young and unsigned. If anything misbehaves, I'd love your
-> feedback — please [open an issue](https://github.com/Skryx-L-A/voxtype/issues)
+> feedback — please [open an issue](https://github.com/Skryx-L-A/quassel/issues)
 > and include any error message or exit code you see (also check
-> `%LOCALAPPDATA%\VoxType\crash.log` and `debug.log`).
+> `%LOCALAPPDATA%\Quassel\crash.log` and `debug.log`).
 
 ### Linux — Ubuntu, Debian, Mint, Fedora, Nobara, Arch, openSUSE
 
@@ -83,7 +83,7 @@ One command for all supported distros (the installer detects your package
 manager):
 
 ```bash
-git clone https://github.com/Skryx-L-A/voxtype.git && cd voxtype && ./install.sh
+git clone https://github.com/Skryx-L-A/quassel.git && cd quassel && ./install.sh
 ```
 
 It installs distro packages, builds whisper.cpp (NVIDIA/CUDA and AMD/Intel/
@@ -93,12 +93,12 @@ and back in once if the script says so. Details: [INSTALL.md](INSTALL.md).
 > **Tested:** Fedora / Nobara (daily driver). **Untested but prepared:**
 > Ubuntu/Debian/Mint, Arch and openSUSE — the package lists are verified in
 > containers, but no full install has run on real systems yet. Feedback is
-> very welcome: please [open an issue](https://github.com/Skryx-L-A/voxtype/issues)
+> very welcome: please [open an issue](https://github.com/Skryx-L-A/quassel/issues)
 > with the exact error output if something fails.
 
 ## Use
 
-1. Open **VoxType** from your app launcher and turn it **on**.
+1. Open **Quassel** from your app launcher and turn it **on**.
 2. Click into any text field:
    - **Hold** `Ctrl+Meta` → speak → **release** → text appears
    - **Double-tap** `Ctrl+Meta` → speak hands-free → **press once** → text appears
@@ -106,7 +106,7 @@ and back in once if the script says so. Details: [INSTALL.md](INSTALL.md).
 
 Tips: a single short tap cancels; any other key while holding cancels (your
 normal shortcuts keep working); say "scratch that" / „lösch das" to delete the
-last dictation; turning VoxType off frees the GPU memory — handy before gaming.
+last dictation; turning Quassel off frees the GPU memory — handy before gaming.
 
 ## Uninstall
 

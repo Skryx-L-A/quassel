@@ -1,4 +1,4 @@
-"""VoxType für Windows — alles in einem Qt-Prozess.
+"""Quassel für Windows — alles in einem Qt-Prozess.
 
 Tray-Icon (an/aus, Einstellungen, Beenden) + schwebende Pille + Hotkey-Hook
 + lokaler whisper-server.exe. Teilt config/i18n/textproc/whisperclient mit
@@ -33,7 +33,7 @@ PARTIAL_WINDOW = 15
 
 
 def dlog(msg):
-    """Timing-Protokoll für die Beta: %LOCALAPPDATA%/VoxType/debug.log."""
+    """Timing-Protokoll für die Beta: %LOCALAPPDATA%/Quassel/debug.log."""
     try:
         with open(os.path.join(config.DATADIR, "debug.log"), "a",
                   encoding="utf-8") as f:
@@ -42,10 +42,10 @@ def dlog(msg):
     except OSError:
         pass
 _MEI = getattr(sys, "_MEIPASS", None)   # PyInstaller-Bundle: Assets liegen dort
-ICON_CANDIDATES = ([os.path.join(_MEI, "assets", "voxtype.png"),
-                    os.path.join(_MEI, "assets", "voxtype.svg")] if _MEI else []) + [
-    os.path.join(os.path.dirname(__file__), "..", "..", "assets", "voxtype.svg"),
-    os.path.join(os.path.dirname(__file__), "..", "..", "assets", "voxtype.png"),
+ICON_CANDIDATES = ([os.path.join(_MEI, "assets", "quassel.png"),
+                    os.path.join(_MEI, "assets", "quassel.svg")] if _MEI else []) + [
+    os.path.join(os.path.dirname(__file__), "..", "..", "assets", "quassel.svg"),
+    os.path.join(os.path.dirname(__file__), "..", "..", "assets", "quassel.png"),
 ]
 
 
@@ -301,7 +301,7 @@ class WinApp(QObject):
         self.hook.start()
 
         self.tray = QSystemTrayIcon(app_icon())
-        self.tray.setToolTip("VoxType")
+        self.tray.setToolTip("Quassel")
         self.build_menu()
         self.tray.show()
 
@@ -316,10 +316,10 @@ class WinApp(QObject):
 
         # Einzelinstanz-Kanal: weitere Starts melden sich hier und wir
         # öffnen stattdessen das Einstellungsfenster
-        QLocalServer.removeServer("voxtype-app")
+        QLocalServer.removeServer("quassel-app")
         self.ipc = QLocalServer()
         self.ipc.newConnection.connect(self.on_second_instance)
-        self.ipc.listen("voxtype-app")
+        self.ipc.listen("quassel-app")
 
         if not server.installed():
             threading.Thread(target=self.first_run_setup, daemon=True).start()
@@ -375,7 +375,7 @@ class WinApp(QObject):
             self._settings.activateWindow()
         except Exception:  # noqa: BLE001 — sichtbar machen statt still scheitern
             import traceback
-            d = os.path.join(os.environ.get("LOCALAPPDATA", "."), "VoxType")
+            d = os.path.join(os.environ.get("LOCALAPPDATA", "."), "Quassel")
             os.makedirs(d, exist_ok=True)
             with open(os.path.join(d, "crash.log"), "a", encoding="utf-8") as f:
                 f.write("\n--- settings ---\n" + traceback.format_exc())
@@ -547,7 +547,7 @@ def run_setup():
     app = QApplication([])
     app.setWindowIcon(app_icon())
     dlg = QProgressDialog("", None, 0, 100)
-    dlg.setWindowTitle("VoxType Setup")
+    dlg.setWindowTitle("Quassel Setup")
     dlg.setLabelText(tr("downloading", model="whisper"))
     dlg.setMinimumWidth(420)
     dlg.setCancelButton(None)
@@ -588,18 +588,18 @@ def run_setup():
 
 def main():
     if os.name != "nt":
-        raise SystemExit("voxtype.win.app läuft nur unter Windows.")
+        raise SystemExit("quassel.win.app läuft nur unter Windows.")
     if "--setup" in sys.argv:
         run_setup()
         return
     probe = QLocalSocket()
-    probe.connectToServer("voxtype-app")
+    probe.connectToServer("quassel-app")
     if probe.waitForConnected(300):
         probe.disconnectFromServer()      # Erstinstanz öffnet die Einstellungen
         return
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
-    app.setApplicationName("VoxType")
+    app.setApplicationName("Quassel")
     app.setWindowIcon(app_icon())
     win = WinApp(app)          # Referenz halten! Sonst räumt der GC das
     app.exec()                 # Objekt sofort ab -> Qt-Crash (0xC0000005)

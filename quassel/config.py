@@ -1,23 +1,23 @@
-"""Konfiguration, Wörterbuch, Verlauf und Server-Umgebung von VoxType.
+"""Konfiguration, Wörterbuch, Verlauf und Server-Umgebung von Quassel.
 
 Dateien:
-  ~/.config/voxtype/config.ini      Einstellungen (hotkey/speech/pill/ui)
-  ~/.config/voxtype/server.env      SERVER_BIN + MODEL_PATH für voxtype-server
-  ~/.config/voxtype/dictionary.txt  ein Wort pro Zeile (Erkennungs-Bias)
-  ~/.local/share/voxtype/history.jsonl  letzte Diktate (lokal, abschaltbar)
+  ~/.config/quassel/config.ini      Einstellungen (hotkey/speech/pill/ui)
+  ~/.config/quassel/server.env      SERVER_BIN + MODEL_PATH für quassel-server
+  ~/.config/quassel/dictionary.txt  ein Wort pro Zeile (Erkennungs-Bias)
+  ~/.local/share/quassel/history.jsonl  letzte Diktate (lokal, abschaltbar)
 """
 import configparser
 import json
 import os
 
 if os.name == "nt":
-    CONFDIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "VoxType")
-    DATADIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "VoxType")
+    CONFDIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Quassel")
+    DATADIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Quassel")
 else:
     CONFDIR = os.path.join(os.environ.get("XDG_CONFIG_HOME",
-                                          os.path.expanduser("~/.config")), "voxtype")
+                                          os.path.expanduser("~/.config")), "quassel")
     DATADIR = os.path.join(os.environ.get("XDG_DATA_HOME",
-                                          os.path.expanduser("~/.local/share")), "voxtype")
+                                          os.path.expanduser("~/.local/share")), "quassel")
 CONFIG = os.path.join(CONFDIR, "config.ini")
 SERVERENV = os.path.join(CONFDIR, "server.env")
 DICTIONARY = os.path.join(CONFDIR, "dictionary.txt")

@@ -1,13 +1,13 @@
 # Maintainer: Skryx-L-A
 # ENTWURF / DRAFT — noch nicht im AUR veröffentlicht (Issue #9).
-# Installiert VoxType systemweit; whisper.cpp kommt als Abhängigkeit aus
+# Installiert Quassel systemweit; whisper.cpp kommt als Abhängigkeit aus
 # dem AUR, das Sprachmodell lädt das Kontrollzentrum beim ersten Start.
-pkgname=voxtype-git
+pkgname=quassel-git
 pkgver=2.1.0
 pkgrel=1
 pkgdesc="Local, private voice typing — hold Ctrl+Meta, speak, release"
 arch=('any')
-url="https://github.com/Skryx-L-A/voxtype"
+url="https://github.com/Skryx-L-A/quassel"
 license=('MIT')
 depends=('python' 'python-gobject' 'gtk4' 'gtk4-layer-shell' 'pyside6'
          'ydotool' 'wl-clipboard' 'xclip' 'pipewire' 'libnotify' 'curl'
@@ -17,21 +17,21 @@ source=("git+$url.git")
 sha256sums=('SKIP')
 
 pkgver() {
-  cd voxtype
+  cd quassel
   git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 2.1.0
 }
 
 package() {
-  cd voxtype
-  install -d "$pkgdir/usr/lib/voxtype"
-  cp -r voxtype "$pkgdir/usr/lib/voxtype/voxtype"
-  cp -r assets "$pkgdir/usr/lib/voxtype/assets"
+  cd quassel
+  install -d "$pkgdir/usr/lib/quassel"
+  cp -r quassel "$pkgdir/usr/lib/quassel/quassel"
+  cp -r assets "$pkgdir/usr/lib/quassel/assets"
 
-  for b in voxtyped voxtype voxtype-pill voxtype-ctl; do
-    sed 's|\$HOME/.local/lib/voxtype|/usr/lib/voxtype|; s|\$HOME/.local/share/voxtype/venv/bin/python3|python3|' \
+  for b in quasseld quassel quassel-pill quassel-ctl; do
+    sed 's|\$HOME/.local/lib/quassel|/usr/lib/quassel|; s|\$HOME/.local/share/quassel/venv/bin/python3|python3|' \
         "bin/$b" > "$pkgdir/usr/bin/.tmp-$b" || true
     install -Dm755 "bin/$b" "$pkgdir/usr/bin/$b"
-    sed -i 's|$HOME/.local/lib/voxtype|/usr/lib/voxtype|' "$pkgdir/usr/bin/$b"
+    sed -i 's|$HOME/.local/lib/quassel|/usr/lib/quassel|' "$pkgdir/usr/bin/$b"
   done
   rm -f "$pkgdir"/usr/bin/.tmp-*
 
@@ -39,11 +39,11 @@ package() {
   install -m644 systemd/*.service "$pkgdir/usr/lib/systemd/user/"
   sed -i 's|%h/.local/bin/|/usr/bin/|' "$pkgdir"/usr/lib/systemd/user/*.service
 
-  sed "s|@HOME@/.local/bin|/usr/bin|g" desktop/voxtype.desktop.in \
-      > "$pkgdir/.voxtype.desktop"
-  install -Dm644 "$pkgdir/.voxtype.desktop" \
-      "$pkgdir/usr/share/applications/voxtype.desktop" && rm "$pkgdir/.voxtype.desktop"
-  install -Dm644 assets/voxtype.svg \
-      "$pkgdir/usr/share/icons/hicolor/scalable/apps/voxtype.svg"
+  sed "s|@HOME@/.local/bin|/usr/bin|g" desktop/quassel.desktop.in \
+      > "$pkgdir/.quassel.desktop"
+  install -Dm644 "$pkgdir/.quassel.desktop" \
+      "$pkgdir/usr/share/applications/quassel.desktop" && rm "$pkgdir/.quassel.desktop"
+  install -Dm644 assets/quassel.svg \
+      "$pkgdir/usr/share/icons/hicolor/scalable/apps/quassel.svg"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

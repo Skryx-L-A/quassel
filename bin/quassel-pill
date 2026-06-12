@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VoxType-Pille (GTK4-Overlay)
+# Quassel-Pille (GTK4-Overlay)
 # gtk4-layer-shell muss vor libwayland geladen sein -> LD_PRELOAD (bekannte
 # Anforderung der Bibliothek für Python-Apps)
 for p in /usr/lib64/libgtk4-layer-shell.so.0 \
@@ -7,5 +7,5 @@ for p in /usr/lib64/libgtk4-layer-shell.so.0 \
          /usr/lib/libgtk4-layer-shell.so.0; do
     [[ -e "$p" ]] && export LD_PRELOAD="$p" && break
 done
-export PYTHONPATH="$HOME/.local/lib/voxtype${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m voxtype.pill
+export PYTHONPATH="$HOME/.local/lib/quassel${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m quassel.pill
