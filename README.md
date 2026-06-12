@@ -57,16 +57,18 @@ record → transcribe locally → paste.
 
 ### Windows 10 / 11
 
-Paste this into **PowerShell** — it downloads the installer and opens the
-setup wizard right away; afterwards VoxType is ready to use:
+Paste this into **PowerShell or cmd** (the same line works in both) — it
+downloads the installer and opens the setup wizard right away:
 
-```powershell
-irm https://github.com/Skryx-L-A/voxtype/releases/latest/download/VoxType-Setup.exe -OutFile "$env:TEMP\VoxType-Setup.exe"; & "$env:TEMP\VoxType-Setup.exe"
+```
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/Skryx-L-A/voxtype/releases/latest/download/VoxType-Setup.exe -OutFile ([IO.Path]::GetTempPath()+'VoxType-Setup.exe'); Start-Process ([IO.Path]::GetTempPath()+'VoxType-Setup.exe')"
 ```
 
-SmartScreen will warn because the installer is not code-signed yet — click
-"More info" → "Run anyway". On first launch VoxType downloads whisper.cpp
-and a speech model (CUDA build if you have an NVIDIA GPU).
+The wizard downloads the matching whisper.cpp build (CUDA on NVIDIA GPUs,
+OpenBLAS otherwise) and a speech model as an install step — when it
+finishes, dictation works immediately, no further downloads. If you
+download the installer with a browser instead, SmartScreen may warn
+because it is not code-signed yet — click "More info" → "Run anyway".
 
 > **Status:** the Windows build passed full hands-on testing (dictation,
 > hands-free mode, settings, autostart) on Windows 11 with an NVIDIA GPU —
