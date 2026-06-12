@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QPointF, Qt, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter
 from PySide6.QtWidgets import (
@@ -20,7 +20,7 @@ from .. import __version__, config, i18n, textproc, whisperclient
 from ..audio import RATE, SAMPLE_BYTES, wav_from_raw
 from ..config import CHORDS
 from ..i18n import tr
-from ..state import PARTWAV, WAV, state_set
+from ..state import PARTWAV, WAV
 from . import server
 from .audio_win import Recorder
 from .hook import CHORDS_VK, KeyboardHook
@@ -62,9 +62,10 @@ def app_icon():
 class PartialWorker(threading.Thread):
     """Live-Vorschau: Teiltranskripte während der Aufnahme."""
 
-    def __init__(self, rec, cfg):
+    def __init__(self, rec, cfg, on_partial):
         super().__init__(daemon=True)
         self.rec, self.cfg = rec, cfg
+        self.on_partial = on_partial
         self.stop_event = threading.Event()
 
     def run(self):
@@ -87,14 +88,118 @@ class PartialWorker(threading.Thread):
             dlog("partial: transcribe %.2fs (%d Bytes Audio)"
                  % (time.monotonic() - t, len(data)))
             if text is not None and not self.stop_event.is_set() and self.rec.active:
-                state_set("recording", " ".join(text.split()).strip())
+                self.on_partial(" ".join(text.split()).strip())
 
     def stop(self):
         self.stop_event.set()
 
 
+class _Bubble(QWidget):
+    """Textblase über der Pille (Live-Vorschau / Ergebnis), wie auf Linux.
+
+    Eigenes Top-Level-Fenster, damit die Pille darunter fest verankert
+    bleibt, wenn die Blase wächst oder schrumpft."""
+
+    def __init__(self, cfg):
+        super().__init__(None,
+                         Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint |
+                         Qt.Tool | Qt.WindowDoesNotAcceptFocus)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.cfg = cfg
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 6, 14, 6)
+        self.label = QLabel()
+        self.label.setWordWrap(True)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setMaximumWidth(440)
+        lay.addWidget(self.label)
+
+    def paintEvent(self, _ev):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        op = max(0.15, min(1.0, self.cfg.pill_opacity))
+        p.setBrush(QColor(16, 16, 22, int(op * 255)))
+        p.setPen(Qt.NoPen)
+        p.drawRoundedRect(self.rect(), 12, 12)
+
+    def set_text(self, text, italic=False):
+        """Nur Inhalt/Größe; sichtbar schalten übernimmt die Pille."""
+        if not text:
+            return False
+        short = text if len(text) <= 140 else "…" + text[-139:]
+        s = max(0.6, min(2.0, self.cfg.pill_scale))
+        style = "color: #cfcfd8; font-size: %dpx;" % int(11 * s)
+        if italic:
+            style += " font-style: italic;"
+        self.label.setStyleSheet(style)
+        self.label.setText(short)
+        self.adjustSize()
+        return True
+
+
+class _PillBody(QWidget):
+    """Die eigentliche Pille: Punkt (aus/bereit), roter Atem-Kreis
+    (Aufnahme) oder Glyphe (…, Haken, Kreuz) — exakt wie auf Linux."""
+
+    GLYPHS = {"transcribing": ("…", "#e8e8ee"),
+              "done": ("✓", "#7ddf7d"), "error": ("✕", "#ff8888")}
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self.mode = "ready"
+        self.t0 = time.monotonic()
+        self.resize_to_cfg()
+
+    def resize_to_cfg(self):
+        s = max(0.6, min(2.0, self.cfg.pill_scale))
+        self.setFixedSize(int(42 * s), int(28 * s))
+
+    def paintEvent(self, _ev):
+        import math
+        s = max(0.6, min(2.0, self.cfg.pill_scale))
+        op = max(0.15, min(1.0, self.cfg.pill_opacity))
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QColor(16, 16, 22, int(op * 255)))
+        p.setPen(QColor(255, 255, 255, 15))
+        radius = self.height() / 2 - 1
+        p.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), radius, radius)
+        # QPointF-Mittelpunkt: mit int-Koordinaten rundet jeder Radius anders
+        # und der Kreis sitzt schief bzw. wandert beim Pulsieren
+        center = QPointF(self.width() / 2, self.height() / 2)
+        p.setPen(Qt.NoPen)
+        if self.mode in ("off", "ready"):
+            r = 3.5 * s
+            p.setBrush(QColor("#5c5c66" if self.mode == "off" else "#b9a7f5"))
+            p.drawEllipse(center, r, r)
+        elif self.mode == "recording":
+            breathe = 0.5 + 0.5 * math.sin(
+                (time.monotonic() - self.t0) * 2 * math.pi / 2.4)
+            r = 7 * s * (0.82 + 0.14 * breathe)
+            p.setBrush(QColor(255, 84, 84, int((0.65 + 0.35 * breathe) * 255)))
+            p.drawEllipse(center, r, r)
+        elif self.mode in self.GLYPHS:
+            glyph, color = self.GLYPHS[self.mode]
+            font = p.font()
+            font.setPixelSize(int(13 * s))
+            p.setFont(font)
+            p.setPen(QColor(color))
+            p.drawText(self.rect(), Qt.AlignCenter, glyph)
+
+    def set_mode(self, mode):
+        if mode == "recording" and self.mode != "recording":
+            self.t0 = time.monotonic()   # Atmung neu beginnen
+        self.mode = mode
+        self.resize_to_cfg()
+        self.update()
+
+
 class Pill(QWidget):
-    """Schwebende Pille unten-mittig auf dem aktuellen Monitor."""
+    """Schwebendes Overlay unten-mittig auf dem Monitor mit dem Mauszeiger.
+    Die Pille selbst ist fest verankert; die Textblase ist ein eigenes
+    Fenster darüber und darf wachsen, ohne die Pille zu verschieben."""
 
     def __init__(self):
         super().__init__(None,
@@ -104,55 +209,65 @@ class Pill(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.cfg = config.Cfg()
         self.mode = "ready"
-        self.t0 = time.monotonic()
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(16, 8, 16, 8)
-        self.label = QLabel()
-        self.label.setAlignment(Qt.AlignCenter)
-        self.label.setStyleSheet("color: #e8e8ee; font-size: 12px;")
-        lay.addWidget(self.label)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.body = _PillBody(self.cfg)
+        lay.addWidget(self.body)
+        self.bubble = _Bubble(self.cfg)
         self.set_mode("ready")
         anim = QTimer(self)
-        anim.timeout.connect(self.update)
+        anim.timeout.connect(self._tick)
         anim.start(80)
+        # Wie auf Linux: Config sekündlich neu laden, damit Sichtbarkeit/
+        # Größe/Transparenz aus den Einstellungen sofort wirken
+        cfgtimer = QTimer(self)
+        cfgtimer.timeout.connect(self._reload_cfg)
+        cfgtimer.start(1000)
 
-    def paintEvent(self, _ev):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        op = max(0.15, min(1.0, self.cfg.pill_opacity))
-        p.setBrush(QColor(16, 16, 22, int(op * 255)))
-        p.setPen(Qt.NoPen)
-        p.drawRoundedRect(self.rect(), 16, 16)
+    def _reload_cfg(self):
+        if not self.cfg.reload():
+            return
+        self.body.resize_to_cfg()
+        self.adjustSize()
+        self.setVisible(self.cfg.pill_enabled)
+        if not self.cfg.pill_enabled:
+            self.bubble.hide()
+        self.body.update()
+        self.reposition()
+
+    def _tick(self):
         if self.mode == "recording":
-            breathe = 0.5 + 0.5 * __import__("math").sin(
-                (time.monotonic() - self.t0) * 2 * 3.14159 / 2.4)
-            r = 5 + 1.5 * breathe
-            p.setBrush(QColor(255, 84, 84, int((0.65 + 0.35 * breathe) * 255)))
-            p.drawEllipse(self.rect().center().x() - int(r), 12 - int(r) + 2,
-                          int(r * 2), int(r * 2))
+            self.body.update()
+        self.reposition()
 
     def set_mode(self, mode, text=""):
         self.mode = mode
+        self.body.set_mode(mode)
         if mode == "recording":
-            self.t0 = time.monotonic()
-            self.label.setText("   " + (text or tr("recording")))
-        elif mode == "transcribing":
-            self.label.setText(tr("transcribing"))
+            has_text = self.bubble.set_text(text, italic=True)  # Live-Vorschau
         elif mode in ("done", "error"):
-            self.label.setText(text)
+            has_text = self.bubble.set_text(text)
         else:
-            self.label.setText(tr("ready"))
+            has_text = False
         self.adjustSize()
-        self.reposition()
         self.setVisible(self.cfg.pill_enabled)
+        self.bubble.setVisible(has_text and self.cfg.pill_enabled)
+        self.reposition()
 
     def reposition(self):
         """Auf den Monitor mit dem Mauszeiger (= aktiver Bildschirm)."""
-        screen = QGuiApplication.screenAt(QGuiApplication.primaryScreen().geometry().center())
         cursor = self.cursor().pos()
         s = QGuiApplication.screenAt(cursor) or QGuiApplication.primaryScreen()
         geo = s.availableGeometry()
-        self.move(geo.center().x() - self.width() // 2, geo.bottom() - self.height() - 40)
+        pos_x = geo.center().x() - self.width() // 2
+        pos_y = geo.bottom() - self.height() - 40
+        if self.pos().x() != pos_x or self.pos().y() != pos_y:
+            self.move(pos_x, pos_y)
+        if self.bubble.isVisible():
+            bx = geo.center().x() - self.bubble.width() // 2
+            by = pos_y - 8 - self.bubble.height()
+            if self.bubble.pos().x() != bx or self.bubble.pos().y() != by:
+                self.bubble.move(bx, by)
 
 
 class WinApp(QObject):
@@ -187,6 +302,11 @@ class WinApp(QObject):
         self.poll = QTimer()
         self.poll.timeout.connect(self.pump)
         self.poll.start(20)
+
+        # Hotkey-Wechsel aus den Einstellungen live übernehmen
+        self.cfgpoll = QTimer()
+        self.cfgpoll.timeout.connect(self.reload_chord)
+        self.cfgpoll.start(1000)
 
         # Einzelinstanz-Kanal: weitere Starts melden sich hier und wir
         # öffnen stattdessen das Einstellungsfenster
@@ -243,7 +363,7 @@ class WinApp(QObject):
         try:
             from ..center import Center
             if not hasattr(self, "_settings") or self._settings is None:
-                self._settings = Center()
+                self._settings = Center(controller=self)
             self._settings.show()
             self._settings.raise_()
             self._settings.activateWindow()
@@ -267,6 +387,17 @@ class WinApp(QObject):
         self.app.quit()
 
     # --------------------------------------------------------------- Hotkey
+    def reload_chord(self):
+        """Geänderten Chord aus der Config übernehmen (nicht mitten in
+        einer laufenden Aufnahme — die Maschine würde den Zustand verlieren)."""
+        self.cfg.reload()
+        ga, gb = CHORDS_VK[self.cfg.chord]
+        if (set(ga) != self.machine.a or set(gb) != self.machine.b) \
+                and self.machine.state == "idle" and not self.rec.active:
+            self.machine = ChordMachine(
+                ga, gb, self.on_start, self.on_finish, self.on_cancel,
+                self.cfg.hold_min, self.cfg.double_window)
+
     def pump(self):
         while not self.hook.events.empty():
             vk, pressed = self.hook.events.get()
@@ -282,7 +413,9 @@ class WinApp(QObject):
             dlog("on_start: rec.start FEHLGESCHLAGEN")
             return
         dlog("on_start: rec.start %.2fs" % (time.monotonic() - t))
-        self.partial = PartialWorker(self.rec, self.cfg)
+        self.partial = PartialWorker(
+            self.rec, self.cfg,
+            lambda text: self.sig_state.emit("recording", text))
         self.partial.start()
         self.sig_state.emit("recording", "")
 

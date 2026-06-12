@@ -154,4 +154,11 @@ def stop():
             _proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             _proc.kill()
+    else:
+        # Verwaiste Server aus früheren App-Läufen beenden — sonst hält
+        # einer den Port 8765 und ein Modellwechsel greift nie.
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "whisper-server.exe"], check=False,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     _proc = None

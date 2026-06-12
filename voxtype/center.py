@@ -21,16 +21,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from . import __version__, config, i18n
-from .audio import RATE, list_mics, record_command
+from . import __version__, config, i18n, whisperclient
+from .audio import RATE
 from .config import MODEL_URL, MODELS
 from .i18n import tr
 from .net import download as net_download
 if os.name == "nt":
+    from .win.audio_win import list_mics
     from .win.paste import clip_copy
 else:
+    from .audio import list_mics, record_command
     from .platform_linux import clip_copy
-from .whisperclient import SERVER
 
 UNITS_START = ["voxtyped", "voxtype-server", "voxtype-pill"]
 UNITS_STOP = ["voxtyped", "voxtype-server", "voxtype-ydotoold"]
@@ -75,6 +76,9 @@ QLabel#desc { color: palette(placeholder-text); }
 IS_WINDOWS = os.name == "nt"
 
 
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
 def sysctl(*args):
     if IS_WINDOWS:
         class _R:  # auf Windows gibt es kein systemd; Tray-App steuert alles
@@ -85,11 +89,47 @@ def sysctl(*args):
 
 
 def daemon_active():
+    if IS_WINDOWS:
+        return True     # das Fenster läuft im Tray-App-Prozess selbst
     return sysctl("is-active", "--quiet", "voxtyped").returncode == 0
 
 
 def autostart_enabled():
+    if IS_WINDOWS:
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+                winreg.QueryValueEx(k, "VoxType")
+            return True
+        except OSError:
+            return False
     return sysctl("is-enabled", "--quiet", "voxtyped").returncode == 0
+
+
+def autostart_set(on):
+    """Windows: Run-Key in der Registry (gleicher Wert wie im Inno-Setup)."""
+    import sys
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                        winreg.KEY_SET_VALUE) as k:
+        if on:
+            winreg.SetValueEx(k, "VoxType", 0, winreg.REG_SZ,
+                              '"%s"' % sys.executable)
+        else:
+            try:
+                winreg.DeleteValue(k, "VoxType")
+            except OSError:
+                pass
+
+
+def restart_server():
+    """Nach Modellwechsel: Server mit neuem Modell neu starten."""
+    if IS_WINDOWS:
+        from .win import server
+        server.stop()
+        server.start()
+    else:
+        sysctl("try-restart", "voxtype-server")
 
 
 def app_icon():
@@ -118,8 +158,11 @@ class Bridge(QObject):
 
 
 class Center(QMainWindow):
-    def __init__(self):
+    def __init__(self, controller=None):
+        """controller: unter Windows die Tray-App (WinApp) im selben Prozess —
+        An/Aus läuft dann über sie statt über systemd."""
         super().__init__()
+        self.controller = controller
         self.cfg = config.Cfg()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
         self.bridge = Bridge()
@@ -220,6 +263,8 @@ class Center(QMainWindow):
         self.toggle_btn.setMinimumHeight(34)
         self.toggle_btn.setStyleSheet("font-weight: 600; padding: 4px 24px;")
         self.toggle_btn.clicked.connect(self.on_toggle)
+        if IS_WINDOWS and self.controller is None:
+            self.toggle_btn.hide()      # ohne Tray-App nichts zu schalten
         row.addWidget(self.toggle_btn)
         g.addLayout(row)
         self.hint = self.desc(tr("hint", chord=self.chord_label()), g)
@@ -380,14 +425,19 @@ class Center(QMainWindow):
         return tr(config.CHORD_LABEL_KEYS[self.cfg.chord]).split("(")[0].strip()
 
     def refresh_status(self):
-        on = daemon_active()
+        if self.controller is not None:
+            on = self.controller.enabled
+        else:
+            on = daemon_active()
         color = "#2e9e2e" if on else "#8a8a96"
         self.status_dot.setStyleSheet(f"background: {color}; border-radius: 6px;")
         self.status_lbl.setText(tr("on") if on else tr("off"))
         self.toggle_btn.setText(tr("turn_off") if on else tr("turn_on"))
 
     def on_toggle(self):
-        if daemon_active():
+        if self.controller is not None:
+            self.controller.toggle()    # hält Tray-Menü und Pille synchron
+        elif daemon_active():
             sysctl("stop", *UNITS_STOP)
         else:
             sysctl("start", *UNITS_START)
@@ -413,7 +463,10 @@ class Center(QMainWindow):
         self.hint.setText(tr("hint", chord=self.chord_label()))
 
     def on_autostart(self, on):
-        sysctl("enable" if on else "disable", "voxtyped")
+        if IS_WINDOWS:
+            autostart_set(on)
+        else:
+            sysctl("enable" if on else "disable", "voxtyped")
 
     # ------------------------------------------------------------ Verlauf
     def reload_history(self):
@@ -461,7 +514,7 @@ class Center(QMainWindow):
         env = config.read_serverenv()
         env["MODEL_PATH"] = path
         config.write_serverenv(env)
-        sysctl("try-restart", "voxtype-server")
+        restart_server()
         self.progress.setVisible(False)
         self.test_out.setText("✓ " + tr("model_switched", model=model))
 
@@ -477,25 +530,40 @@ class Center(QMainWindow):
         self.switch_model(path, model)
 
     # ------------------------------------------------------ Mikrofon-Test
+    def _mictest_record(self):
+        """2,5 s Audio aufnehmen -> rohe PCM-Bytes (s16le, 16 kHz, mono)."""
+        if IS_WINDOWS:
+            from .win.audio_win import Recorder
+            rec = Recorder()
+            if not rec.start(self.cfg.mic):
+                return None
+            time.sleep(2.5)
+            rec.stop()
+            return rec.raw_bytes()
+        cmd = record_command(self.cfg.mic)
+        if cmd is None:
+            return None
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL)
+        try:
+            data, _ = p.communicate(timeout=2.5)
+        except subprocess.TimeoutExpired:
+            p.send_signal(2)
+            try:
+                data, _ = p.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                data, _ = p.communicate()
+        return data
+
     def on_mictest(self):
         self.test_out.setText(tr("mic_testing"))
 
         def run():
-            cmd = record_command(self.cfg.mic)
-            if cmd is None:
-                self.bridge.message.emit("✕ pw-record/parecord fehlt")
-                return
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL)
             try:
-                data, _ = p.communicate(timeout=2.5)
-            except subprocess.TimeoutExpired:
-                p.send_signal(2)
-                try:
-                    data, _ = p.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    p.kill()
-                    data, _ = p.communicate()
+                data = self._mictest_record()
+            except Exception:  # noqa: BLE001 — Audio-Backend kaputt
+                data = None
             if not data or len(data) < 8000:
                 self.bridge.message.emit("✕ " + tr("mic_nothing"))
                 return
@@ -507,21 +575,16 @@ class Center(QMainWindow):
                 w.setsampwidth(2)
                 w.setframerate(RATE)
                 w.writeframes(data)
-            sysctl("start", "voxtype-server")
-            for _ in range(120):
-                if subprocess.run(["curl", "-fsS", "-m", "2", "-o", "/dev/null",
-                                   SERVER + "/"], check=False).returncode == 0:
-                    break
-                time.sleep(0.5)
-            r = subprocess.run(
-                ["curl", "-fsS", "-m", "60", SERVER + "/inference",
-                 "-F", f"file=@{wavpath}", "-F", "response_format=text"],
-                capture_output=True, text=True, check=False)
-            os.unlink(wavpath)
-            if r.returncode != 0:
+            if not whisperclient.ensure_server():
+                os.unlink(wavpath)
                 self.bridge.message.emit("✕ " + tr("no_server"))
                 return
-            text = " ".join(r.stdout.split()).strip() or "—"
+            text = whisperclient.transcribe(wavpath, self.cfg, timeout=60)
+            os.unlink(wavpath)
+            if text is None:
+                self.bridge.message.emit("✕ " + tr("no_server"))
+                return
+            text = " ".join(text.split()).strip() or "—"
             self.bridge.message.emit("✓ " + tr("mic_result", text=text))
         threading.Thread(target=run, daemon=True).start()
 
