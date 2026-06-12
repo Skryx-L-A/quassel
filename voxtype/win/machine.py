@@ -15,6 +15,7 @@ class ChordMachine:
         self.on_start = on_start          # Aufnahme beginnen
         self.on_finish = on_finish        # Aufnahme beenden + einfügen
         self.on_cancel = on_cancel        # Aufnahme verwerfen (reason-key)
+        self.on_handsfree = None          # optional: Freihand-Modus erkannt
         self.hold_min = hold_min
         self.double_window = double_window
         self.pressed = set()
@@ -43,6 +44,8 @@ class ChordMachine:
                     self.on_start()
                 elif self.state == "await2":
                     self.state = "toggle_armed"
+                    if self.on_handsfree:
+                        self.on_handsfree()
                 elif self.state == "toggle":
                     self.state = "idle"
                     self.pending_finish = True

@@ -113,6 +113,29 @@ def paste(text):
         threading.Thread(target=restore, daemon=True).start()
 
 
+def type_chunk(text):
+    """Streaming-Häppchen einfügen, OHNE die Zwischenablage zu restaurieren
+    (streaming_restore() macht das einmal am Diktatende)."""
+    if not text:
+        return
+    clip_copy(text)
+    time.sleep(0.08)
+    _send_keys([(VK_CONTROL, True), (VK_V, True), (VK_V, False),
+                (VK_CONTROL, False)])
+
+
+def streaming_begin():
+    return clip_read()
+
+
+def streaming_restore(old):
+    if old:
+        def restore():
+            time.sleep(1.5)
+            clip_copy(old)
+        threading.Thread(target=restore, daemon=True).start()
+
+
 def send_backspaces(n):
     n = min(n, 4000)
     steps = []

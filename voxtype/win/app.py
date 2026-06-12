@@ -19,13 +19,14 @@ from PySide6.QtWidgets import (
 from .. import __version__, config, i18n, textproc, whisperclient
 from ..audio import RATE, SAMPLE_BYTES, wav_from_raw
 from ..config import CHORDS
+from ..streaming import StreamTyper
 from ..i18n import tr
 from ..state import PARTWAV, WAV
 from . import server
 from .audio_win import Recorder
 from .hook import CHORDS_VK, KeyboardHook
 from .machine import ChordMachine
-from .paste import paste, send_backspaces
+from .paste import paste, send_backspaces, type_chunk
 
 PARTIAL_EVERY = 2.0
 PARTIAL_WINDOW = 15
@@ -88,7 +89,9 @@ class PartialWorker(threading.Thread):
             dlog("partial: transcribe %.2fs (%d Bytes Audio)"
                  % (time.monotonic() - t, len(data)))
             if text is not None and not self.stop_event.is_set() and self.rec.active:
-                self.on_partial(" ".join(text.split()).strip())
+                kind, clean = textproc.postprocess(text, self.cfg)
+                if kind == "text":
+                    self.on_partial(clean)
 
     def stop(self):
         self.stop_event.set()
@@ -282,6 +285,8 @@ class WinApp(QObject):
         self.rec = Recorder()
         self.partial = None
         self.last_paste_len = 0
+        self.streamer = None
+        self._clip_backup = None
         self.enabled = True
 
         self.pill = Pill()
@@ -291,6 +296,7 @@ class WinApp(QObject):
         self.machine = ChordMachine(
             ga, gb, self.on_start, self.on_finish, self.on_cancel,
             self.cfg.hold_min, self.cfg.double_window)
+        self.machine.on_handsfree = self.enable_streaming
         self.hook = KeyboardHook()
         self.hook.start()
 
@@ -397,6 +403,7 @@ class WinApp(QObject):
             self.machine = ChordMachine(
                 ga, gb, self.on_start, self.on_finish, self.on_cancel,
                 self.cfg.hold_min, self.cfg.double_window)
+            self.machine.on_handsfree = self.enable_streaming
 
     def pump(self):
         while not self.hook.events.empty():
@@ -413,16 +420,37 @@ class WinApp(QObject):
             dlog("on_start: rec.start FEHLGESCHLAGEN")
             return
         dlog("on_start: rec.start %.2fs" % (time.monotonic() - t))
-        self.partial = PartialWorker(
-            self.rec, self.cfg,
-            lambda text: self.sig_state.emit("recording", text))
+        self.streamer = None
+        self._clip_backup = None
+        self.partial = PartialWorker(self.rec, self.cfg, self._on_partial)
         self.partial.start()
         self.sig_state.emit("recording", "")
+
+    def _on_partial(self, text):
+        """Teiltranskript (nachbearbeitet): live tippen + Pille aktualisieren."""
+        if self.streamer is not None:
+            self.streamer.update(text)
+            rest = text[len(self.streamer.typed):].strip() if self.cfg.pill_preview else ""
+            self.sig_state.emit("recording", rest)
+        else:
+            self.sig_state.emit("recording", text if self.cfg.pill_preview else "")
+
+    def enable_streaming(self):
+        """Freihand-Modus erkannt -> Streaming starten, falls eingeschaltet."""
+        if self.streamer is not None or not self.cfg.streaming:
+            return
+        from .paste import streaming_begin
+        self._clip_backup = streaming_begin()
+        self.streamer = StreamTyper(self.cfg.streaming_mode, type_chunk, send_backspaces)
 
     def on_cancel(self, reason_key):
         if self.partial:
             self.partial.stop()
             self.partial = None
+        if self.streamer is not None:
+            from .paste import streaming_restore
+            streaming_restore(self._clip_backup)
+            self.streamer = None
         self.rec.stop()
         self.sig_state.emit("ready", "")
 
@@ -465,23 +493,38 @@ class WinApp(QObject):
         if raw is None:
             self.sig_state.emit("error", tr("no_server"))
             return
+        from .paste import streaming_restore
         kind, value = textproc.postprocess(raw, self.cfg)
         if kind is None:
+            if self.streamer is not None:
+                streaming_restore(self._clip_backup)
+                self.streamer = None
             self.sig_state.emit("error", tr("nothing"))
             return
         if kind == "command":
-            if self.last_paste_len:
-                send_backspaces(self.last_paste_len)
+            undo = len(self.streamer.typed) if self.streamer is not None else self.last_paste_len
+            if self.streamer is not None:
+                streaming_restore(self._clip_backup)
+                self.streamer = None
+            if undo:
+                send_backspaces(undo)
                 self.last_paste_len = 0
                 self.sig_state.emit("done", tr("deleted"))
             else:
                 self.sig_state.emit("error", tr("nothing"))
             return
         t = time.monotonic()
-        paste(value)
-        dlog("transcribe: paste %.2fs (%d Zeichen)"
-             % (time.monotonic() - t, len(value)))
-        self.last_paste_len = len(value)
+        if self.streamer is not None:
+            typed = self.streamer.finish(value)
+            self.last_paste_len = len(typed)
+            streaming_restore(self._clip_backup)
+            self.streamer = None
+            dlog("transcribe: streaming finish %.2fs" % (time.monotonic() - t))
+        else:
+            paste(value)
+            dlog("transcribe: paste %.2fs (%d Zeichen)"
+                 % (time.monotonic() - t, len(value)))
+            self.last_paste_len = len(value)
         if self.cfg.history_enabled:
             try:
                 config.history_append(value)
