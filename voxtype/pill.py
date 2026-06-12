@@ -29,7 +29,6 @@ except (ValueError, ImportError):
     pass
 
 from . import config  # noqa: E402
-from .audio import rms_level  # noqa: E402
 from .state import RUNDIR, state_read  # noqa: E402
 
 BARS = 9
@@ -76,39 +75,6 @@ def daemon_active():
         check=False).returncode == 0
 
 
-class Wave(Gtk.DrawingArea):
-    """Kleine Wellenform-Anzeige, gespeist vom echten Mikrofon-Pegel."""
-
-    def __init__(self):
-        super().__init__()
-        self.levels = [0.0] * BARS
-        self.level = 0.0
-        self.active = False
-        self.set_draw_func(self.draw)
-
-    def tick(self):
-        target = self.level if self.active else 0.0
-        t = time.monotonic()
-        for i in range(BARS):
-            # mittige Balken reagieren stärker, leichte Phasen-Wellen obendrauf
-            weight = 0.45 + 0.55 * math.cos((i - BARS // 2) / BARS * 2.2) ** 2
-            wobble = 0.12 * math.sin(t * 9 + i * 1.7) * (target > 0.02)
-            goal = max(0.06, min(1.0, target * weight * 1.6 + wobble))
-            self.levels[i] += (goal - self.levels[i]) * 0.45
-        self.queue_draw()
-
-    def draw(self, _area, cr, w, h):
-        bar_w = w / (BARS * 1.7)
-        gap = bar_w * 0.7
-        x = (w - BARS * bar_w - (BARS - 1) * gap) / 2
-        cr.set_source_rgba(1.0, 0.36, 0.36, 1.0)
-        for lvl in self.levels:
-            bh = max(2.0, lvl * h)
-            cr.rectangle(x, (h - bh) / 2, bar_w, bh)
-            cr.fill()
-            x += bar_w + gap
-
-
 class PulseDot(Gtk.DrawingArea):
     """Roter Aufnahme-Punkt, der langsam und ganz leicht pulsiert."""
 
@@ -132,7 +98,6 @@ class Pill(Gtk.Application):
         self.cfg = config.Cfg()
         self.win = None
         self.css = None
-        self.wave = None
         self.icon = None
         self.textbox = None
         self.pillbox = None
@@ -178,8 +143,6 @@ class Pill(Gtk.Application):
         self.dot = PulseDot()
         self.dot.set_visible(False)
         self.pillbox.append(self.dot)
-        self.wave = Wave()
-        self.pillbox.append(self.wave)
         outer.append(self.pillbox)
         self.win.set_child(outer)
         self.apply_style()
@@ -261,9 +224,6 @@ class Pill(Gtk.Application):
         css = CSS_TEMPLATE.format(op=op, pad_v=int(5 * s), pad_h=int(12 * s),
                                   font=int(12 * s), font_small=int(11 * s))
         self.css.load_from_data(css.encode())
-        if self.wave:
-            self.wave.set_content_width(int(54 * s))
-            self.wave.set_content_height(int(14 * s))
         if self.dot:
             self.dot.set_content_width(int(14 * s))
             self.dot.set_content_height(int(14 * s))
@@ -277,8 +237,6 @@ class Pill(Gtk.Application):
     # ------------------------------------------------------------- Zustand
     def set_mode(self, mode, text=""):
         self.mode = mode
-        self.wave.active = mode == "recording"
-        self.wave.set_visible(mode == "recording")
         self.dot.set_visible(mode == "recording")
         self.icon.set_visible(mode != "recording")
         if mode == "off":
@@ -325,9 +283,7 @@ class Pill(Gtk.Application):
             self.set_mode(st.get("state", "idle") if st.get("state") != "idle"
                           else "ready", st.get("text", ""))
         if self.mode == "recording":
-            self.wave.level = rms_level()
             self.dot.queue_draw()
-        self.wave.tick()
         if self.mode in ("done", "error") and now > self.result_until:
             self.set_mode("ready" if self.on else "off")
         return True
