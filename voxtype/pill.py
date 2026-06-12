@@ -49,8 +49,8 @@ CSS_TEMPLATE = """
     border: 1px solid rgba(255, 255, 255, 0.06);
 }}
 .voxtype-pill.rec {{
-    border: 1px solid rgba(255, 80, 80, 0.85);
-    box-shadow: 0 0 14px 3px rgba(255, 60, 60, 0.45);
+    border: 1px solid rgba(255, 80, 80, 0.55);
+    box-shadow: 0 0 10px 2px rgba(255, 60, 60, 0.30);
 }}
 .voxtype-pill label {{ color: #e8e8ee; font-size: {font}px; }}
 .voxtype-text {{
@@ -113,6 +113,23 @@ class Wave(Gtk.DrawingArea):
             x += bar_w + gap
 
 
+class PulseDot(Gtk.DrawingArea):
+    """Roter Aufnahme-Punkt, der langsam und ganz leicht pulsiert."""
+
+    def __init__(self):
+        super().__init__()
+        self.set_draw_func(self.draw)
+
+    def draw(self, _area, cr, w, h):
+        t = time.monotonic()
+        breathe = 0.5 + 0.5 * math.sin(t * 2 * math.pi / 2.4)   # 2,4-s-Atmung
+        r = (min(w, h) / 2 - 1.5) * (0.82 + 0.14 * breathe)
+        alpha = 0.65 + 0.35 * breathe
+        cr.set_source_rgba(1.0, 0.33, 0.33, alpha)
+        cr.arc(w / 2, h / 2, r, 0, 2 * math.pi)
+        cr.fill()
+
+
 class Pill(Gtk.Application):
     def __init__(self):
         super().__init__(application_id="io.github.skryx.voxtype.pill")
@@ -123,6 +140,7 @@ class Pill(Gtk.Application):
         self.icon = None
         self.textbox = None
         self.pillbox = None
+        self.dot = None
         self.last_ts = None
         self.result_until = 0.0
         self.mode = "off"
@@ -161,6 +179,9 @@ class Pill(Gtk.Application):
         self.pillbox.add_css_class("voxtype-pill")
         self.icon = Gtk.Label()
         self.pillbox.append(self.icon)
+        self.dot = PulseDot()
+        self.dot.set_visible(False)
+        self.pillbox.append(self.dot)
         self.wave = Wave()
         self.pillbox.append(self.wave)
         outer.append(self.pillbox)
@@ -247,6 +268,9 @@ class Pill(Gtk.Application):
         if self.wave:
             self.wave.set_content_width(int(54 * s))
             self.wave.set_content_height(int(14 * s))
+        if self.dot:
+            self.dot.set_content_width(int(14 * s))
+            self.dot.set_content_height(int(14 * s))
 
     def reload_cfg(self):
         if self.cfg.reload():
@@ -263,6 +287,8 @@ class Pill(Gtk.Application):
             self.pillbox.add_css_class("rec")
         else:
             self.pillbox.remove_css_class("rec")
+        self.dot.set_visible(mode == "recording")
+        self.icon.set_visible(mode != "recording")
         if mode == "off":
             self.icon.set_markup("<span foreground='#5c5c66' size='small'>●</span>")
             self.textbox.set_visible(False)
@@ -270,7 +296,6 @@ class Pill(Gtk.Application):
             self.icon.set_markup("<span foreground='#b9a7f5' size='small'>●</span>")
             self.textbox.set_visible(False)
         elif mode == "recording":
-            self.icon.set_markup("<span foreground='#ff5c5c'>●</span>")
             self.show_text(text, italic=True)
         elif mode == "transcribing":
             self.icon.set_markup("<span foreground='#e8e8ee'>…</span>")
@@ -309,6 +334,7 @@ class Pill(Gtk.Application):
                           else "ready", st.get("text", ""))
         if self.mode == "recording":
             self.wave.level = rms_level()
+            self.dot.queue_draw()
         self.wave.tick()
         if self.mode in ("done", "error") and now > self.result_until:
             self.set_mode("ready" if self.on else "off")
