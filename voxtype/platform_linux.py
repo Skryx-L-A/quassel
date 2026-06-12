@@ -50,12 +50,15 @@ def clip_read():
 def paste(text):
     old = clip_read()
     clip_copy(text)
-    time.sleep(0.15)
+    time.sleep(0.25)
     # Shift+Einfg: KEY_LEFTSHIFT=42, KEY_INSERT=110
     subprocess.run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
     if old:
         def restore():
-            time.sleep(2)
+            # großzügig warten: XWayland-Fenster holen den Clipboard-Inhalt
+            # teils verzögert ab — zu frühes Wiederherstellen fügt sonst den
+            # ALTEN Inhalt ein
+            time.sleep(6)
             clip_copy(old)
         threading.Thread(target=restore, daemon=True).start()
 

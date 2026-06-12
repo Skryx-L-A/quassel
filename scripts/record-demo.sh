@@ -4,20 +4,20 @@
 #
 #   ./scripts/record-demo.sh
 #
-# WICHTIG: Nach dem Start ~30 Sekunden NICHT Maus/Tastatur anfassen und
-# vorher private Fenster auf dem aktiven Monitor schließen — es werden
-# Bildschirmfotos des unteren Bildschirmrands gemacht (Pillen-Bereich).
+# WICHTIG: Nach dem Start ~35 Sekunden NICHT Maus/Tastatur anfassen.
 #
 # Ablauf: virtuelles Mikrofon -> TTS-Stimme „diktiert" -> VoxType zeigt
-# Live-Transkript in der Pille -> Frames -> assets/screenshots/demo.gif.
+# Live-Transkript in der Pille und fügt den Text in einen maximierten
+# Editor ein. Das GIF kombiniert zwei Streifen aus demselben Bildschirmfoto:
+# oben die erste Editorzeile (der eingefügte Text), unten die Pille.
 # Das Standard-Mikrofon wird danach wiederhergestellt.
 # ============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-command -v espeak-ng >/dev/null || { echo "espeak-ng fehlt (sudo dnf install espeak-ng)"; exit 1; }
-command -v spectacle >/dev/null || { echo "spectacle fehlt"; exit 1; }
-command -v magick >/dev/null || { echo "ImageMagick fehlt"; exit 1; }
+for c in espeak-ng spectacle magick kwrite; do
+    command -v "$c" >/dev/null || { echo "$c fehlt"; exit 1; }
+done
 systemctl --user is-active --quiet voxtyped || { echo "VoxType erst einschalten!"; exit 1; }
 
 TMP=$(mktemp -d)
@@ -28,62 +28,30 @@ cleanup() {
     [[ -n "$KPID" ]] && kill -9 "$KPID" 2>/dev/null || true
     pactl set-default-source "$OLD_SRC" 2>/dev/null || true
     [[ -n "$MOD" ]] && pactl unload-module "$MOD" 2>/dev/null || true
+    busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
+        unloadScript s voxdemo-max >/dev/null 2>&1 || true
     rm -rf "$TMP"
 }
 trap cleanup EXIT
 
-echo "==> Pillen-Monitor direkt von der Pille erfragen…"
-PILL_OUT=$(busctl --user call io.github.skryx.voxtype.Pill / io.github.skryx.voxtype.Pill GetActiveOutput 2>/dev/null | sed 's/^s "//; s/"$//')
-echo "    Pille meldet: ${PILL_OUT:-unbekannt}"
-GEO=$(PILL_OUT="$PILL_OUT" python3 - <<'PY'
-import json, subprocess
-from gi.repository import Gio, GLib
-
-# Aktiven Monitor von KWin erfragen (gleicher Mechanismus wie die Pille)
-result = {}
-loop = GLib.MainLoop()
-XML = ("<node><interface name='io.github.skryx.voxtype.DemoGeo'>"
-       "<method name='Set'><arg type='s' name='o' direction='in'/></method>"
-       "</interface></node>")
-
-def on_call(conn, sender, path, iface, method, params, inv):
-    result["name"] = params[0]; inv.return_value(None); loop.quit()
-
-def on_bus(conn, name):
-    conn.register_object("/", Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0], on_call)
-    open("/tmp/voxdemo-geo.js", "w").write(
-        'callDBus("io.github.skryx.voxtype.DemoGeo","/",'
-        '"io.github.skryx.voxtype.DemoGeo","Set",workspace.activeScreen.name);')
-    for args in (["unloadScript", "s", "voxdemo-geo"],
-                 ["loadScript", "ss", "/tmp/voxdemo-geo.js", "voxdemo-geo"],
-                 ["start"]):
-        subprocess.run(["busctl", "--user", "call", "org.kde.KWin", "/Scripting",
-                        "org.kde.kwin.Scripting", *args], capture_output=True)
-
-Gio.bus_own_name(Gio.BusType.SESSION, "io.github.skryx.voxtype.DemoGeo",
-                 Gio.BusNameOwnerFlags.NONE, on_bus, None, None)
-GLib.timeout_add(4000, loop.quit)
-loop.run()
-subprocess.run(["busctl", "--user", "call", "org.kde.KWin", "/Scripting",
-                "org.kde.kwin.Scripting", "unloadScript", "s", "voxdemo-geo"],
-               capture_output=True)
-
-outs = json.loads(subprocess.run(["kscreen-doctor", "-j"], capture_output=True,
-                                 text=True).stdout)["outputs"]
-outs = [o for o in outs if o.get("enabled")]
-import os
-pill = os.environ.get("PILL_OUT", "")
-o = next((x for x in outs if x["name"] == pill),
-         next((x for x in outs if x["name"] == result.get("name")), outs[0]))
-p, s = o["pos"], o["size"]
-print(p["x"], p["y"], s["width"], s["height"])
-PY
-)
+echo "==> Pillen-Monitor erfragen…"
+PILL_OUT=$(busctl --user call io.github.skryx.voxtype.Pill / \
+    io.github.skryx.voxtype.Pill GetActiveOutput 2>/dev/null \
+    | sed 's/^s "//; s/"$//')
+GEO=$(kscreen-doctor -j | PILL_OUT="$PILL_OUT" python3 -c "
+import json, os, sys
+outs = [o for o in json.load(sys.stdin)['outputs'] if o.get('enabled')]
+pill = os.environ.get('PILL_OUT', '')
+o = next((x for x in outs if x['name'] == pill), outs[0])
+p, s = o['pos'], o['size']
+print(p['x'], p['y'], s['width'], s['height'])
+")
 read -r MX MY MW MH <<<"$GEO"
-CROP_W=760; CROP_H=240
-CROP_X=$((MX + MW / 2 - CROP_W / 2))
-CROP_Y=$((MY + MH - CROP_H))
-echo "    Ausschnitt: ${CROP_W}x${CROP_H}+${CROP_X}+${CROP_Y}"
+echo "    Monitor: ${PILL_OUT:-?} (${MW}x${MH}+${MX}+${MY})"
+
+# Streifen: A = erste Editorzeile, B = Pille (+ Live-Text darüber)
+A_X=$((MX + 40)); A_Y=$((MY + 108)); A_W=760; A_H=120
+B_X=$((MX + MW / 2 - 380)); B_Y=$((MY + MH - 240)); B_W=760; B_H=200
 
 echo "==> Virtuelles Mikrofon einrichten…"
 MOD=$(pactl load-module module-null-sink sink_name=voxdemo sink_properties=device.description=VoxTypeDemo)
@@ -92,8 +60,25 @@ pactl set-default-source voxdemo.monitor
 espeak-ng -v en-us+f3 -s 150 -w "$TMP/tts.wav" \
     "Hello! I just speak, and the text instantly appears right where my cursor is."
 
-echo "==> Diktat geht in DEIN fokussiertes Fenster — gleich geht es los…"
-sleep 2
+echo "==> Editor öffnen, maximieren, fokussieren (KWin)…"
+LANG=en_US.UTF-8 LANGUAGE=en kwrite "$TMP/demo.txt" >/dev/null 2>&1 & KPID=$!
+sleep 2.5
+cat > "$TMP/max.js" <<'JS'
+var list = workspace.windowList();
+for (var i = 0; i < list.length; i++) {
+    var w = list[i];
+    if (w.resourceClass.toString().indexOf("kwrite") !== -1) {
+        w.setMaximize(true, true);
+        workspace.activeWindow = w;
+    }
+}
+JS
+busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
+    unloadScript s voxdemo-max >/dev/null 2>&1 || true
+SID=$(busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
+    loadScript ss "$TMP/max.js" voxdemo-max | awk '{print $2}')
+busctl --user call org.kde.KWin "/Scripting/Script$SID" org.kde.kwin.Script run >/dev/null
+sleep 1.5
 
 echo "==> Aufnahme läuft — bitte NICHT eingreifen…"
 mkdir -p "$TMP/frames"
@@ -103,7 +88,7 @@ mkdir -p "$TMP/frames"
   done ) & SHOTS=$!
 
 export YDOTOOL_SOCKET="${YDOTOOL_SOCKET:-/tmp/.ydotool_socket}"
-[[ -S /tmp/.ydotool_socket ]] || YDOTOOL_SOCKET="$XDG_RUNTIME_DIR/.ydotool_socket"
+[[ -S "$YDOTOOL_SOCKET" ]] || YDOTOOL_SOCKET="$XDG_RUNTIME_DIR/.ydotool_socket"
 sleep 0.5
 ydotool key 125:1 29:1          # Strg+Meta halten
 paplay -d voxdemo "$TMP/tts.wav"
@@ -112,11 +97,18 @@ ydotool key 29:0 125:0          # loslassen -> einfügen
 wait $SHOTS
 sleep 1
 
-echo "==> GIF bauen…"
-mkdir -p assets/screenshots
-magick "$TMP"/frames/f*.png -crop "${CROP_W}x${CROP_H}+${CROP_X}+${CROP_Y}" +repage \
-    -delay 45 -loop 0 -layers Optimize assets/screenshots/demo.gif
+echo "==> GIF bauen (zwei Streifen: Editorzeile + Pille)…"
+mkdir -p assets/screenshots "$TMP/comp"
+for f in "$TMP"/frames/f*.png; do
+    n=$(basename "$f")
+    magick "$f" \
+        \( +clone -crop "${A_W}x${A_H}+${A_X}+${A_Y}" +repage \) \
+        \( -clone 0 -crop "${B_W}x${B_H}+${B_X}+${B_Y}" +repage \
+           \( +clone -crop "${B_W}x45+0+$((B_H-45))" +repage -blur 0x14 \) \
+           -geometry +0+$((B_H-45)) -composite \) \
+        -delete 0 -background '#101016' -append "$TMP/comp/$n"
+done
+magick "$TMP"/comp/f*.png -delay 45 -loop 0 -layers Optimize assets/screenshots/demo.gif
 echo "    -> assets/screenshots/demo.gif ($(du -h assets/screenshots/demo.gif | cut -f1))"
 echo
-echo "Fertig! GIF prüfen (keine privaten Inhalte am unteren Bildschirmrand?),"
-echo "dann committen: git add assets/screenshots/demo.gif && git commit"
+echo "Fertig! GIF prüfen, dann committen."
