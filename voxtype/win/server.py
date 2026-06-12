@@ -7,6 +7,7 @@ nvidia-smi erkannt (cuBLAS-Build), sonst CPU-Build.
 import os
 import shutil
 import subprocess
+import sys
 import time
 import zipfile
 
@@ -128,10 +129,19 @@ def start():
     if not exe or not model:
         return
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    # PATH bereinigen: PyInstaller hängt dist\_internal an PATH; der Server
+    # würde sonst unsere VC-Runtime-DLLs laden und den dist-Ordner sperren
+    # (blockiert Rebuilds, solange der Server läuft).
+    env = os.environ.copy()
+    mei = getattr(sys, "_MEIPASS", None)
+    if mei:
+        env["PATH"] = os.pathsep.join(
+            p for p in env.get("PATH", "").split(os.pathsep)
+            if p and not p.startswith(mei))
     _proc = subprocess.Popen(
         [exe, "-m", model, "--host", "127.0.0.1", "--port", "8765",
          "-l", "auto", "-nt"],
-        cwd=os.path.dirname(exe),
+        cwd=os.path.dirname(exe), env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         creationflags=creationflags)
 
