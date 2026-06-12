@@ -3,7 +3,7 @@ Description=Whisper.cpp speech-to-text server (for VoxType)
 
 [Service]
 Type=simple
-EnvironmentFile=%h/.config/voxtype/server.env
-ExecStart=/bin/sh -c 'exec "$SERVER_BIN" -m "$MODEL_PATH" --host 127.0.0.1 --port 8765 -l auto -nt'
+EnvironmentFile=-%h/.config/voxtype/server.env
+ExecStart=/bin/sh -c 'exec "${SERVER_BIN:-whisper-server}" -m "$MODEL_PATH" --host 127.0.0.1 --port 8765 -l auto -nt'
 Restart=on-failure
 RestartSec=3

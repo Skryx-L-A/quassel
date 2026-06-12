@@ -1,0 +1,49 @@
+# Maintainer: Skryx-L-A
+# ENTWURF / DRAFT — noch nicht im AUR veröffentlicht (Issue #9).
+# Installiert VoxType systemweit; whisper.cpp kommt als Abhängigkeit aus
+# dem AUR, das Sprachmodell lädt das Kontrollzentrum beim ersten Start.
+pkgname=voxtype-git
+pkgver=2.1.0
+pkgrel=1
+pkgdesc="Local, private voice typing — hold Ctrl+Meta, speak, release"
+arch=('any')
+url="https://github.com/Skryx-L-A/voxtype"
+license=('MIT')
+depends=('python' 'python-gobject' 'gtk4' 'gtk4-layer-shell' 'pyside6'
+         'ydotool' 'wl-clipboard' 'xclip' 'pipewire' 'libnotify' 'curl'
+         'whisper.cpp')
+makedepends=('git')
+source=("git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd voxtype
+  git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 2.1.0
+}
+
+package() {
+  cd voxtype
+  install -d "$pkgdir/usr/lib/voxtype"
+  cp -r voxtype "$pkgdir/usr/lib/voxtype/voxtype"
+  cp -r assets "$pkgdir/usr/lib/voxtype/assets"
+
+  for b in voxtyped voxtype voxtype-pill voxtype-ctl; do
+    sed 's|\$HOME/.local/lib/voxtype|/usr/lib/voxtype|; s|\$HOME/.local/share/voxtype/venv/bin/python3|python3|' \
+        "bin/$b" > "$pkgdir/usr/bin/.tmp-$b" || true
+    install -Dm755 "bin/$b" "$pkgdir/usr/bin/$b"
+    sed -i 's|$HOME/.local/lib/voxtype|/usr/lib/voxtype|' "$pkgdir/usr/bin/$b"
+  done
+  rm -f "$pkgdir"/usr/bin/.tmp-*
+
+  install -d "$pkgdir/usr/lib/systemd/user"
+  install -m644 systemd/*.service "$pkgdir/usr/lib/systemd/user/"
+  sed -i 's|%h/.local/bin/|/usr/bin/|' "$pkgdir"/usr/lib/systemd/user/*.service
+
+  sed "s|@HOME@/.local/bin|/usr/bin|g" desktop/voxtype.desktop.in \
+      > "$pkgdir/.voxtype.desktop"
+  install -Dm644 "$pkgdir/.voxtype.desktop" \
+      "$pkgdir/usr/share/applications/voxtype.desktop" && rm "$pkgdir/.voxtype.desktop"
+  install -Dm644 assets/voxtype.svg \
+      "$pkgdir/usr/share/icons/hicolor/scalable/apps/voxtype.svg"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
