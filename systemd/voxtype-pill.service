@@ -1,7 +1,5 @@
 [Unit]
 Description=VoxType pill overlay
-BindsTo=voxtyped.service
-After=voxtyped.service
 
 [Service]
 Type=simple

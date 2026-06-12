@@ -29,8 +29,8 @@ from .i18n import tr
 from .platform_linux import clip_copy
 from .whisperclient import SERVER
 
-UNITS_START = ["voxtyped", "voxtype-server"]
-UNITS_STOP = ["voxtyped", "voxtype-server", "voxtype-pill", "voxtype-ydotoold"]
+UNITS_START = ["voxtyped", "voxtype-server", "voxtype-pill"]
+UNITS_STOP = ["voxtyped", "voxtype-server", "voxtype-ydotoold"]
 ICON_PATHS = [
     os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/voxtype.svg"),
     os.path.join(os.path.dirname(__file__), "..", "assets", "voxtype.svg"),
