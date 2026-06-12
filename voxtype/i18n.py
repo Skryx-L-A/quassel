@@ -63,6 +63,8 @@ STRINGS = {
                      "Abgebrochen (nur 1× getippt — doppelt tippen oder halten)"),
     "canceled_key": ("Canceled (other key pressed)", "Abgebrochen (andere Taste gedrückt)"),
     "ready": ("VoxType ready", "VoxType bereit"),
+    "settings": ("Settings", "Einstellungen"),
+    "quit": ("Quit VoxType", "VoxType beenden"),
     "nav_general": ("General", "Allgemein"),
     "nav_speech": ("Speech", "Spracherkennung"),
     "nav_dict": ("Dictionary", "Wörterbuch"),
