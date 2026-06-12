@@ -1,21 +1,24 @@
 # PyInstaller-Spezifikation für VoxType (Windows).
 # Bauen:  pip install pyinstaller pyside6 sounddevice
-#         pyinstaller windows/voxtype.spec
+#         pyinstaller windows/voxtype.spec   (aus beliebigem Verzeichnis)
 # Ergebnis: dist/VoxType/VoxType.exe (whisper.cpp + Modell lädt die App
 # beim ersten Start selbst herunter — die exe bleibt klein).
 import os
 
+# SPECPATH = Ordner dieser Datei (windows/); das Repo liegt eine Ebene höher
+repo = os.path.dirname(SPECPATH)
+
 block_cipher = None
-root = os.path.abspath(os.getcwd())
 
 a = Analysis(
-    ['voxtype_win_main.py'],
-    pathex=[root],
+    [os.path.join(SPECPATH, 'voxtype_win_main.py')],
+    pathex=[repo],
     binaries=[],
-    datas=[('../assets/voxtype.png', 'assets'),
-           ('../assets/voxtype.ico', 'assets'),
-           ('../assets/voxtype.svg', 'assets')],
-    hiddenimports=['sounddevice', '_sounddevice_data'],
+    datas=[(os.path.join(repo, 'assets', 'voxtype.png'), 'assets'),
+           (os.path.join(repo, 'assets', 'voxtype.ico'), 'assets'),
+           (os.path.join(repo, 'assets', 'voxtype.svg'), 'assets')],
+    hiddenimports=['sounddevice', 'voxtype', 'voxtype.win.app',
+                   'voxtype.center'],
     hookspath=[],
     runtime_hooks=[],
     excludes=['tkinter'],
@@ -27,6 +30,6 @@ exe = EXE(
     exclude_binaries=True,
     name='VoxType',
     console=False,
-    icon='../assets/voxtype.ico',
+    icon=os.path.join(repo, 'assets', 'voxtype.ico'),
 )
 coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, name='VoxType')

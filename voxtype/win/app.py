@@ -5,6 +5,7 @@ Tray-Icon (an/aus, Einstellungen, Beenden) + schwebende Pille + Hotkey-Hook
 der Linux-Version; nur Tastatur/Audio/Einfügen sind Windows-spezifisch.
 """
 import os
+import sys
 import threading
 import time
 
@@ -27,7 +28,9 @@ from .paste import paste, send_backspaces
 
 PARTIAL_EVERY = 2.0
 PARTIAL_WINDOW = 15
-ICON_CANDIDATES = [
+_MEI = getattr(sys, "_MEIPASS", None)   # PyInstaller-Bundle: Assets liegen dort
+ICON_CANDIDATES = ([os.path.join(_MEI, "assets", "voxtype.png"),
+                    os.path.join(_MEI, "assets", "voxtype.svg")] if _MEI else []) + [
     os.path.join(os.path.dirname(__file__), "..", "..", "assets", "voxtype.svg"),
     os.path.join(os.path.dirname(__file__), "..", "..", "assets", "voxtype.png"),
 ]
