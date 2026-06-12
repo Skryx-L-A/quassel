@@ -55,7 +55,7 @@ record → transcribe locally → paste.
 
 ## Install
 
-### Windows 10 / 11 (beta)
+### Windows 10 / 11
 
 Paste this into **PowerShell** — it downloads the installer and opens the
 setup wizard right away; afterwards VoxType is ready to use:
@@ -68,11 +68,12 @@ SmartScreen will warn because the installer is not code-signed yet — click
 "More info" → "Run anyway". On first launch VoxType downloads whisper.cpp
 and a speech model (CUDA build if you have an NVIDIA GPU).
 
-> **Beta status:** the Windows build is young and tested on a single
-> Windows 11 machine so far. If anything misbehaves, I'd love your
+> **Status:** the Windows build passed full hands-on testing (dictation,
+> hands-free mode, settings, autostart) on Windows 11 with an NVIDIA GPU —
+> but it is still young and unsigned. If anything misbehaves, I'd love your
 > feedback — please [open an issue](https://github.com/Skryx-L-A/voxtype/issues)
 > and include any error message or exit code you see (also check
-> `%LOCALAPPDATA%\VoxType\crash.log`).
+> `%LOCALAPPDATA%\VoxType\crash.log` and `debug.log`).
 
 ### Linux — Ubuntu, Debian, Mint, Fedora, Nobara, Arch, openSUSE
 
