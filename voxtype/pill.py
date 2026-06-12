@@ -48,10 +48,6 @@ CSS_TEMPLATE = """
     padding: {pad_v}px {pad_h}px;
     border: 1px solid rgba(255, 255, 255, 0.06);
 }}
-.voxtype-pill.rec {{
-    border: 1px solid rgba(255, 80, 80, 0.55);
-    box-shadow: 0 0 10px 2px rgba(255, 60, 60, 0.30);
-}}
 .voxtype-pill label {{ color: #e8e8ee; font-size: {font}px; }}
 .voxtype-text {{
     background-color: rgba(16, 16, 22, {op});
@@ -283,10 +279,6 @@ class Pill(Gtk.Application):
         self.mode = mode
         self.wave.active = mode == "recording"
         self.wave.set_visible(mode == "recording")
-        if mode == "recording":
-            self.pillbox.add_css_class("rec")
-        else:
-            self.pillbox.remove_css_class("rec")
         self.dot.set_visible(mode == "recording")
         self.icon.set_visible(mode != "recording")
         if mode == "off":
