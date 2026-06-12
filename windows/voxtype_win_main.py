@@ -1,12 +1,31 @@
-"""Einstiegspunkt für die Windows-exe (von PyInstaller gebündelt)."""
+"""Einstiegspunkt für die Windows-exe (von PyInstaller gebündelt).
+
+Abstürze landen in %LOCALAPPDATA%\\VoxType\\crash.log — die Fenster-exe hat
+keine Konsole, ohne Log wäre jeder Fehler nur ein anonymer Dialog.
+"""
 import os
 import sys
+import traceback
 
-# Im gebündelten Zustand liegt das voxtype-Paket neben dieser Datei
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from voxtype.win.app import main
+
+def _crash_log(exc):
+    try:
+        d = os.path.join(os.environ.get("LOCALAPPDATA", "."), "VoxType")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "crash.log"), "a", encoding="utf-8") as f:
+            f.write("\n--- crash ---\n")
+            f.write("".join(traceback.format_exception(exc)))
+    except OSError:
+        pass
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        from voxtype.win.app import main
+        main()
+    except BaseException as e:  # noqa: BLE001
+        _crash_log(e)
+        raise
