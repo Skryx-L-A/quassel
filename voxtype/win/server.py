@@ -19,6 +19,7 @@ BIN_DIR = os.path.join(config.DATADIR, "whisper-bin")
 MODEL_DIR = os.path.join(config.DATADIR, "models")
 WHISPER_RELEASE = "https://github.com/ggml-org/whisper.cpp/releases/latest/download/{}"
 ZIP_CPU = "whisper-bin-x64.zip"
+ZIP_BLAS = "whisper-blas-bin-x64.zip"      # OpenBLAS: bester Build ohne NVIDIA
 ZIP_CUDA = "whisper-cublas-12.4.0-bin-x64.zip"
 
 _proc = None
@@ -63,11 +64,13 @@ def _fetch_zip(zip_name, progress):
 def download_binaries(progress=lambda frac, what: None):
     """Lädt whisper.cpp-Binaries (einmalig). progress(0..1, beschreibung).
 
-    NVIDIA-GPU -> cuBLAS-Build (CUDA-Runtime-DLLs sind im Zip enthalten);
-    schlägt der Serverstart später trotzdem fehl, holt ensure_working()
-    automatisch den CPU-Build nach."""
+    NVIDIA-GPU -> cuBLAS-Build (CUDA-Runtime-DLLs im Zip enthalten);
+    AMD/Intel -> OpenBLAS-Build (upstream bietet für Windows kein
+    Vulkan-Paket, BLAS ist dort der schnellste Nicht-NVIDIA-Build);
+    schlägt der Serverstart später fehl, holt ensure_working()
+    automatisch den einfachen CPU-Build nach."""
     os.makedirs(BIN_DIR, exist_ok=True)
-    zip_name = ZIP_CUDA if has_nvidia() else ZIP_CPU
+    zip_name = ZIP_CUDA if has_nvidia() else ZIP_BLAS
     if not _fetch_zip(zip_name, progress):
         return False
     return server_exe() is not None

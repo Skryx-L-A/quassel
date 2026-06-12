@@ -42,5 +42,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
   Tasks: autostart; Flags: uninsdeletevalue
 
 [Run]
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--setup"; \
+  StatusMsg: "Downloading speech engine and model (GPU auto-detect)..."; \
+  Flags: waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch VoxType"; \
   Flags: nowait postinstall skipifsilent
