@@ -63,6 +63,16 @@ STRINGS = {
                      "Abgebrochen (nur 1× getippt — doppelt tippen oder halten)"),
     "canceled_key": ("Canceled (other key pressed)", "Abgebrochen (andere Taste gedrückt)"),
     "ready": ("VoxType ready", "VoxType bereit"),
+    "nav_general": ("General", "Allgemein"),
+    "nav_speech": ("Speech", "Spracherkennung"),
+    "nav_dict": ("Dictionary", "Wörterbuch"),
+    "nav_history": ("History", "Verlauf"),
+    "nav_system": ("System", "System"),
+    "sec_status": ("Status", "Status"),
+    "about": ("About", "Über"),
+    "about_text": ("VoxType {version} — local, private voice typing.\nOpen source (MIT).",
+                   "VoxType {version} — lokale, private Spracheingabe.\nOpen Source (MIT)."),
+    "repo": ("Project page", "Projektseite"),
 }
 
 _lang = None

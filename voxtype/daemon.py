@@ -79,7 +79,7 @@ class Daemon:
         self.cfg.reload()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
         if not self.rec.start(self.cfg.mic):
-            notify("❌ pw-record/parecord fehlt")
+            notify("Fehler: pw-record/parecord fehlt")
             return False
         self.partial = PartialLoop(self.rec, self.cfg)
         self.partial.start()
@@ -103,7 +103,7 @@ class Daemon:
         data = self.rec.raw_bytes()
         if len(data) < 8000:  # < ~0,25 s Audio
             state_set("idle")
-            notify("❌ " + tr("too_short"))
+            notify(tr("too_short"))
             return
         state_set("transcribing")
         if not whisperclient.ensure_server():

@@ -33,14 +33,15 @@ BARS = 9
 RESULT_SHOW_MS = 3000
 
 CSS_TEMPLATE = """
+.voxtype-pillwin {{ background: transparent; }}
 .voxtype-pill {{
-    background-color: rgba(18, 18, 24, {op});
+    background-color: rgba(16, 16, 22, {op});
     border-radius: 999px;
     padding: {pad_v}px {pad_h}px;
 }}
 .voxtype-pill label {{ color: #e8e8ee; font-size: {font}px; }}
 .voxtype-text {{
-    background-color: rgba(18, 18, 24, {op});
+    background-color: rgba(16, 16, 22, {op});
     border-radius: 12px;
     padding: 6px 14px;
 }}
@@ -102,6 +103,7 @@ class Pill(Gtk.Application):
         if self.win:
             return
         self.win = Gtk.Window(application=self, decorated=False, resizable=False)
+        self.win.add_css_class("voxtype-pillwin")
         if HAVE_LAYER:
             LayerShell.init_for_window(self.win)
             LayerShell.set_layer(self.win, LayerShell.Layer.OVERLAY)
@@ -148,12 +150,12 @@ class Pill(Gtk.Application):
     def apply_style(self):
         s = max(0.6, min(2.0, self.cfg.pill_scale))
         op = max(0.15, min(1.0, self.cfg.pill_opacity))
-        css = CSS_TEMPLATE.format(op=op, pad_v=int(7 * s), pad_h=int(16 * s),
-                                  font=int(14 * s), font_small=int(12 * s))
+        css = CSS_TEMPLATE.format(op=op, pad_v=int(5 * s), pad_h=int(12 * s),
+                                  font=int(12 * s), font_small=int(11 * s))
         self.css.load_from_data(css.encode())
         if self.wave:
-            self.wave.set_content_width(int(64 * s))
-            self.wave.set_content_height(int(18 * s))
+            self.wave.set_content_width(int(54 * s))
+            self.wave.set_content_height(int(14 * s))
 
     def reload_cfg(self):
         if self.cfg.reload():
@@ -167,7 +169,7 @@ class Pill(Gtk.Application):
         self.wave.active = mode == "recording"
         self.wave.set_visible(mode == "recording")
         if mode == "ready":
-            self.icon.set_markup("<span foreground='#9a9aa6'>🎙</span>")
+            self.icon.set_markup("<span foreground='#8a8a96' size='small'>●</span>")
             self.textbox.set_visible(False)
         elif mode == "recording":
             self.icon.set_markup("<span foreground='#ff5c5c'>●</span>")

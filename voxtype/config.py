@@ -63,7 +63,7 @@ class Cfg:
         self.mic = g("speech", "mic", fallback="default")
         self.pill_enabled = p.getboolean("pill", "enabled", fallback=True)
         self.pill_scale = p.getfloat("pill", "scale", fallback=1.0)
-        self.pill_opacity = p.getfloat("pill", "opacity", fallback=0.92)
+        self.pill_opacity = p.getfloat("pill", "opacity", fallback=0.85)
         self.history_enabled = p.getboolean("history", "enabled", fallback=True)
         self.ui_language = g("ui", "language", fallback="auto")
         return True
