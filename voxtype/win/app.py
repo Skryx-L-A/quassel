@@ -305,8 +305,9 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("VoxType")
     app.setWindowIcon(app_icon())
-    WinApp(app)
-    app.exec()
+    win = WinApp(app)          # Referenz halten! Sonst räumt der GC das
+    app.exec()                 # Objekt sofort ab -> Qt-Crash (0xC0000005)
+    del win
 
 
 if __name__ == "__main__":
