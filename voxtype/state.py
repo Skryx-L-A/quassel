@@ -3,8 +3,12 @@ import json
 import os
 import time
 
-XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-RUNDIR = os.path.join(XDG_RUNTIME, "voxtype")
+if os.name == "nt":
+    RUNDIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+                          "VoxType", "run")
+else:
+    XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    RUNDIR = os.path.join(XDG_RUNTIME, "voxtype")
 RAW = os.path.join(RUNDIR, "rec.raw")
 WAV = os.path.join(RUNDIR, "rec.wav")
 PARTWAV = os.path.join(RUNDIR, "partial.wav")

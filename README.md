@@ -1,4 +1,6 @@
-# VoxType 🎙 — local, private voice typing for Linux
+<img src="assets/voxtype.svg" width="92" align="left" alt="VoxType logo">
+
+# VoxType — local, private voice typing
 
 **Hold `Ctrl+Meta` (Ctrl+Windows key), speak, release — your words are typed
 wherever your cursor is.** A clean, minimal pill at the bottom of your screen
@@ -7,8 +9,8 @@ best commercial dictation apps, but **100 % offline and open source**: speech
 recognition runs locally via [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
 No cloud, no account, no subscription, no telemetry.
 
-> Windows version: planned as the next release — VoxType is built
-> cross-platform (Qt) from the ground up.
+**Linux** and **Windows** (Windows build is fresh — see
+[windows/build.md](windows/build.md)). Fully offline, no cloud, no account.
 
 ## Features
 
@@ -35,6 +37,13 @@ No desktop environment can bind a **modifier-only** combo like `Ctrl+Meta`.
 VoxType ships a small daemon that watches the keyboard at the evdev level
 (no root needed, via the `input` group) and drives the pipeline:
 record → transcribe locally → paste.
+
+## Platforms
+
+- **Linux** — systemd, Wayland or X11, PipeWire/PulseAudio. Install via `./install.sh`.
+- **Windows 10/11** — single-exe app (tray + pill + global hotkey); first launch
+  downloads whisper.cpp + model. Build the installer with
+  [windows/build.md](windows/build.md).
 
 ## Requirements
 

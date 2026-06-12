@@ -8,6 +8,14 @@ SERVER = "http://127.0.0.1:8765"
 SERVICE = "voxtype-server.service"
 
 
+def _default_starter():
+    subprocess.run(["systemctl", "--user", "start", SERVICE], check=False)
+
+
+# Plattform-Hook: Windows ersetzt das durch den eigenen Server-Prozessstart
+STARTER = _default_starter
+
+
 def server_up(timeout=2):
     return subprocess.run(
         ["curl", "-fsS", "-m", str(timeout), "-o", "/dev/null", SERVER + "/"],
@@ -17,7 +25,7 @@ def server_up(timeout=2):
 def ensure_server():
     if server_up():
         return True
-    subprocess.run(["systemctl", "--user", "start", SERVICE], check=False)
+    STARTER()
     for _ in range(240):
         if server_up():
             return True

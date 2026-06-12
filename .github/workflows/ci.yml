@@ -25,3 +25,5 @@ jobs:
           assert k == "command", (k, v)
           print("ok")
           PY
+      - name: Chord state machine tests (shared Linux/Windows logic)
+        run: python3 tests/test_machine.py

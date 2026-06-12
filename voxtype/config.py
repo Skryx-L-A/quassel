@@ -10,10 +10,14 @@ import configparser
 import json
 import os
 
-CONFDIR = os.path.join(os.environ.get("XDG_CONFIG_HOME",
-                                      os.path.expanduser("~/.config")), "voxtype")
-DATADIR = os.path.join(os.environ.get("XDG_DATA_HOME",
-                                      os.path.expanduser("~/.local/share")), "voxtype")
+if os.name == "nt":
+    CONFDIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "VoxType")
+    DATADIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "VoxType")
+else:
+    CONFDIR = os.path.join(os.environ.get("XDG_CONFIG_HOME",
+                                          os.path.expanduser("~/.config")), "voxtype")
+    DATADIR = os.path.join(os.environ.get("XDG_DATA_HOME",
+                                          os.path.expanduser("~/.local/share")), "voxtype")
 CONFIG = os.path.join(CONFDIR, "config.ini")
 SERVERENV = os.path.join(CONFDIR, "server.env")
 DICTIONARY = os.path.join(CONFDIR, "dictionary.txt")

@@ -69,7 +69,14 @@ QLabel#desc { color: palette(placeholder-text); }
 """
 
 
+IS_WINDOWS = os.name == "nt"
+
+
 def sysctl(*args):
+    if IS_WINDOWS:
+        class _R:  # auf Windows gibt es kein systemd; Tray-App steuert alles
+            returncode = 1
+        return _R()
     return subprocess.run(["systemctl", "--user", *args], check=False,
                           capture_output=True)
 
