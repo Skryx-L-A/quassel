@@ -11,11 +11,13 @@ import threading
 import time
 import urllib.request
 
+NOWIN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
 
 def _content_length(url):
     try:
         r = subprocess.run(["curl", "-sIL", "-m", "20", url],
-                           capture_output=True, text=True, check=False)
+                           capture_output=True, text=True, check=False, **NOWIN)
         for line in r.stdout.lower().splitlines():
             if line.startswith("content-length:"):
                 return int(line.split(":", 1)[1].strip())
@@ -32,7 +34,7 @@ def download(url, target, progress=None):
         total = _content_length(url) if progress else 0
         proc = subprocess.Popen(
             ["curl", "-L", "-sS", "--fail", "-o", tmp, url],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **NOWIN)
         if progress and total:
             def poll():
                 while proc.poll() is None:

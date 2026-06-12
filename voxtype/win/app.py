@@ -10,6 +10,7 @@ import threading
 import time
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter
 from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
@@ -171,8 +172,21 @@ class WinApp(QObject):
         self.poll.timeout.connect(self.pump)
         self.poll.start(20)
 
+        # Einzelinstanz-Kanal: weitere Starts melden sich hier und wir
+        # öffnen stattdessen das Einstellungsfenster
+        QLocalServer.removeServer("voxtype-app")
+        self.ipc = QLocalServer()
+        self.ipc.newConnection.connect(self.on_second_instance)
+        self.ipc.listen("voxtype-app")
+
         if not server.installed():
             threading.Thread(target=self.first_run_setup, daemon=True).start()
+
+    def on_second_instance(self):
+        sock = self.ipc.nextPendingConnection()
+        if sock:
+            sock.disconnectFromServer()
+        self.open_settings()
 
     # ----------------------------------------------------------- Ersteinrichtung
     def first_run_setup(self):
@@ -196,22 +210,33 @@ class WinApp(QObject):
         self.act_toggle = QAction(tr("turn_off"), menu)
         self.act_toggle.triggered.connect(self.toggle)
         menu.addAction(self.act_toggle)
-        act_settings = QAction(tr("nav_general"), menu)
+        act_settings = QAction(tr("settings"), menu)
         act_settings.triggered.connect(self.open_settings)
         menu.addAction(act_settings)
         menu.addSeparator()
-        act_quit = QAction(tr("turn_off") + " / Quit", menu)
+        act_quit = QAction(tr("quit"), menu)
         act_quit.triggered.connect(self.quit)
         menu.addAction(act_quit)
         self.tray.setContextMenu(menu)
+        self.tray.activated.connect(
+            lambda reason: self.open_settings()
+            if reason == QSystemTrayIcon.ActivationReason.DoubleClick else None)
 
     def open_settings(self):
         # Das Qt-Kontrollzentrum (center.py) ist plattformneutral nutzbar.
-        from ..center import Center
-        if not hasattr(self, "_settings") or self._settings is None:
-            self._settings = Center()
-        self._settings.show()
-        self._settings.raise_()
+        try:
+            from ..center import Center
+            if not hasattr(self, "_settings") or self._settings is None:
+                self._settings = Center()
+            self._settings.show()
+            self._settings.raise_()
+            self._settings.activateWindow()
+        except Exception:  # noqa: BLE001 — sichtbar machen statt still scheitern
+            import traceback
+            d = os.path.join(os.environ.get("LOCALAPPDATA", "."), "VoxType")
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, "crash.log"), "a", encoding="utf-8") as f:
+                f.write("\n--- settings ---\n" + traceback.format_exc())
 
     def toggle(self):
         self.enabled = not self.enabled
@@ -301,6 +326,11 @@ class WinApp(QObject):
 def main():
     if os.name != "nt":
         raise SystemExit("voxtype.win.app läuft nur unter Windows.")
+    probe = QLocalSocket()
+    probe.connectToServer("voxtype-app")
+    if probe.waitForConnected(300):
+        probe.disconnectFromServer()      # Erstinstanz öffnet die Einstellungen
+        return
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("VoxType")

@@ -10,7 +10,8 @@ import time
 
 KEY_BACKSPACE = 14
 
-XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR",
+    f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else "")
 IS_WAYLAND = bool(os.environ.get("WAYLAND_DISPLAY")) or \
     os.environ.get("XDG_SESSION_TYPE", "") == "wayland"
 if IS_WAYLAND:

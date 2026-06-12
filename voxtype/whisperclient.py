@@ -1,8 +1,12 @@
 """Client für den lokalen whisper.cpp-Server (voxtype-server.service)."""
+import os
 import subprocess
 import time
 
 from . import config
+
+# Windows öffnet sonst für jeden curl-Aufruf kurz ein Konsolenfenster
+NOWIN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
 SERVER = "http://127.0.0.1:8765"
 SERVICE = "voxtype-server.service"
@@ -18,8 +22,8 @@ STARTER = _default_starter
 
 def server_up(timeout=2):
     return subprocess.run(
-        ["curl", "-fsS", "-m", str(timeout), "-o", "/dev/null", SERVER + "/"],
-        check=False).returncode == 0
+        ["curl", "-fsS", "-m", str(timeout), "-o", os.devnull, SERVER + "/"],
+        check=False, **NOWIN).returncode == 0
 
 
 def ensure_server():
@@ -43,5 +47,6 @@ def transcribe(wavpath, cfg, timeout=120):
     words = config.dictionary_words()
     if words:
         args += ["-F", "prompt=" + ", ".join(words[:80])]
-    r = subprocess.run(args, capture_output=True, text=True, check=False)
+    r = subprocess.run(args, capture_output=True, text=True, check=False,
+                       encoding="utf-8", errors="replace", **NOWIN)
     return r.stdout if r.returncode == 0 else None

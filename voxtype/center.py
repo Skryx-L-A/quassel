@@ -26,7 +26,10 @@ from .audio import RATE, list_mics, record_command
 from .config import MODEL_URL, MODELS
 from .i18n import tr
 from .net import download as net_download
-from .platform_linux import clip_copy
+if os.name == "nt":
+    from .win.paste import clip_copy
+else:
+    from .platform_linux import clip_copy
 from .whisperclient import SERVER
 
 UNITS_START = ["voxtyped", "voxtype-server", "voxtype-pill"]
