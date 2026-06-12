@@ -1,21 +1,24 @@
 """VoxType-Pille: minimalistisches Always-on-top-Overlay unten-mittig
 (an Wispr Flow orientiert).
 
-Zustände: dezentes Mikro-Symbol (bereit) · rote Wellenform mit echtem
-Mikrofon-Pegel + Live-Transkript (Aufnahme) · „…" (Transkription) ·
-kurz das Ergebnis. Klick öffnet das Kontrollzentrum.
+- Folgt dem aktiven Monitor (KWin-Skript meldet Fensteraktivierung per D-Bus)
+- Linksklick: Diktat ein-/ausschalten · Rechtsklick: Kontrollzentrum öffnen
+- Zustände: grauer Punkt (aus) · heller Punkt (bereit) · rotes Glühen +
+  Wellenform mit echtem Mikrofon-Pegel + Live-Transkript (Aufnahme) ·
+  „…" (Transkription) · kurz das Ergebnis
+- Größe/Transparenz/Sichtbarkeit aus config.ini ([pill]), live übernommen
 
-Größe, Transparenz und Sichtbarkeit kommen aus config.ini ([pill]) und
-werden live übernommen. Wayland-Overlay über gtk4-layer-shell (KWin/GNOME/
-wlroots), Fallback: normales rahmenloses Fenster.
+Wayland-Overlay über gtk4-layer-shell (KWin/GNOME/wlroots), Fallback:
+normales rahmenloses Fenster.
 """
 import math
+import os
 import subprocess
 import time
 
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk  # noqa: E402
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 HAVE_LAYER = False
 try:
@@ -27,10 +30,15 @@ except (ValueError, ImportError):
 
 from . import config  # noqa: E402
 from .audio import rms_level  # noqa: E402
-from .state import state_read  # noqa: E402
+from .state import RUNDIR, state_read  # noqa: E402
 
 BARS = 9
 RESULT_SHOW_MS = 3000
+BUS_NAME = "io.github.skryx.voxtype.Pill"
+KWIN_PLUGIN = "voxtype-pill-follow"
+DBUS_XML = """<node><interface name='io.github.skryx.voxtype.Pill'>
+<method name='SetActiveOutput'><arg type='s' name='output' direction='in'/></method>
+</interface></node>"""
 
 CSS_TEMPLATE = """
 .voxtype-pillwin {{ background: transparent; }}
@@ -38,6 +46,11 @@ CSS_TEMPLATE = """
     background-color: rgba(16, 16, 22, {op});
     border-radius: 999px;
     padding: {pad_v}px {pad_h}px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}}
+.voxtype-pill.rec {{
+    border: 1px solid rgba(255, 80, 80, 0.85);
+    box-shadow: 0 0 14px 3px rgba(255, 60, 60, 0.45);
 }}
 .voxtype-pill label {{ color: #e8e8ee; font-size: {font}px; }}
 .voxtype-text {{
@@ -48,9 +61,23 @@ CSS_TEMPLATE = """
 .voxtype-text label {{ color: #cfcfd8; font-size: {font_small}px; }}
 """
 
+KWIN_JS = f"""function voxtypeSend() {{
+    callDBus("{BUS_NAME}", "/", "{BUS_NAME}", "SetActiveOutput",
+             workspace.activeScreen.name);
+}}
+workspace.windowActivated.connect(voxtypeSend);
+voxtypeSend();
+"""
+
 
 def esc(s):
     return GLib.markup_escape_text(s or "")
+
+
+def daemon_active():
+    return subprocess.run(
+        ["systemctl", "--user", "is-active", "--quiet", "voxtyped"],
+        check=False).returncode == 0
 
 
 class Wave(Gtk.DrawingArea):
@@ -95,10 +122,15 @@ class Pill(Gtk.Application):
         self.wave = None
         self.icon = None
         self.textbox = None
+        self.pillbox = None
         self.last_ts = None
         self.result_until = 0.0
-        self.mode = "ready"
+        self.mode = "off"
+        self.on = False
+        self.current_output = None
+        self.last_unit_poll = 0.0
 
+    # -------------------------------------------------------------- Aufbau
     def do_activate(self):
         if self.win:
             return
@@ -114,7 +146,6 @@ class Pill(Gtk.Application):
         Gtk.StyleContext.add_provider_for_display(
             self.win.get_display(), self.css,
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        self.apply_style()
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,
                         halign=Gtk.Align.CENTER)
@@ -126,25 +157,85 @@ class Pill(Gtk.Application):
         self.textbox.set_visible(False)
         outer.append(self.textbox)
 
-        pill = Gtk.Box(spacing=10, halign=Gtk.Align.CENTER)
-        pill.add_css_class("voxtype-pill")
+        self.pillbox = Gtk.Box(spacing=10, halign=Gtk.Align.CENTER)
+        self.pillbox.add_css_class("voxtype-pill")
         self.icon = Gtk.Label()
-        pill.append(self.icon)
+        self.pillbox.append(self.icon)
         self.wave = Wave()
-        pill.append(self.wave)
-        outer.append(pill)
+        self.pillbox.append(self.wave)
+        outer.append(self.pillbox)
         self.win.set_child(outer)
-        self.apply_style()  # jetzt mit existierender Wellenform skalieren
+        self.apply_style()
 
-        click = Gtk.GestureClick()
-        click.connect("released", self.on_click)
-        self.win.add_controller(click)
+        # Linksklick: Diktat an/aus · Rechtsklick: Kontrollzentrum
+        left = Gtk.GestureClick(button=1)
+        left.connect("released", self.on_left_click)
+        self.win.add_controller(left)
+        right = Gtk.GestureClick(button=3)
+        right.connect("released", self.on_right_click)
+        self.win.add_controller(right)
 
         self.hold()
-        self.set_mode("ready")
+        self.on = daemon_active()
+        self.set_mode("ready" if self.on else "off")
         GLib.timeout_add(80, self.tick)
         GLib.timeout_add(1000, self.reload_cfg)
+        self.setup_monitor_follow()
         self.win.present()
+
+    def do_shutdown(self):
+        subprocess.run(["busctl", "--user", "call", "org.kde.KWin", "/Scripting",
+                        "org.kde.kwin.Scripting", "unloadScript", "s",
+                        KWIN_PLUGIN], check=False, capture_output=True)
+        Gtk.Application.do_shutdown(self)
+
+    # --------------------------------------------------- Monitor-Verfolgung
+    def setup_monitor_follow(self):
+        """KWin meldet bei jeder Fensteraktivierung den aktiven Monitor an
+        uns (callDBus aus einem KWin-Skript) — die Pille zieht dorthin um."""
+        if not HAVE_LAYER:
+            return
+        try:
+            Gio.bus_own_name(Gio.BusType.SESSION, BUS_NAME,
+                             Gio.BusNameOwnerFlags.NONE, self.on_bus, None, None)
+        except GLib.Error:
+            pass
+
+    def on_bus(self, conn, _name):
+        conn.register_object(
+            "/", Gio.DBusNodeInfo.new_for_xml(DBUS_XML).interfaces[0],
+            self.on_dbus_call)
+        path = os.path.join(RUNDIR, "kwin-follow.js")
+        os.makedirs(RUNDIR, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(KWIN_JS)
+        for args in (["unloadScript", "s", KWIN_PLUGIN],
+                     ["loadScript", "ss", path, KWIN_PLUGIN],
+                     ["start"]):
+            subprocess.run(["busctl", "--user", "call", "org.kde.KWin",
+                            "/Scripting", "org.kde.kwin.Scripting", *args],
+                           check=False, capture_output=True)
+
+    def on_dbus_call(self, _conn, _sender, _path, _iface, method, params, inv):
+        if method == "SetActiveOutput":
+            GLib.idle_add(self.move_to_output, params[0])
+            inv.return_value(None)
+
+    def move_to_output(self, name):
+        if name == self.current_output or not self.win:
+            return False
+        monitors = self.win.get_display().get_monitors()
+        for i in range(monitors.get_n_items()):
+            mon = monitors.get_item(i)
+            if mon.get_connector() == name:
+                self.current_output = name
+                visible = self.win.get_visible()
+                self.win.set_visible(False)
+                LayerShell.set_monitor(self.win, mon)
+                if visible and self.cfg.pill_enabled:
+                    self.win.present()
+                break
+        return False
 
     # ------------------------------------------------------------ Aussehen
     def apply_style(self):
@@ -163,13 +254,20 @@ class Pill(Gtk.Application):
         self.win.set_visible(self.cfg.pill_enabled)
         return True
 
-    # ------------------------------------------------------------ Zustand
+    # ------------------------------------------------------------- Zustand
     def set_mode(self, mode, text=""):
         self.mode = mode
         self.wave.active = mode == "recording"
         self.wave.set_visible(mode == "recording")
-        if mode == "ready":
-            self.icon.set_markup("<span foreground='#8a8a96' size='small'>●</span>")
+        if mode == "recording":
+            self.pillbox.add_css_class("rec")
+        else:
+            self.pillbox.remove_css_class("rec")
+        if mode == "off":
+            self.icon.set_markup("<span foreground='#5c5c66' size='small'>●</span>")
+            self.textbox.set_visible(False)
+        elif mode == "ready":
+            self.icon.set_markup("<span foreground='#b9a7f5' size='small'>●</span>")
             self.textbox.set_visible(False)
         elif mode == "recording":
             self.icon.set_markup("<span foreground='#ff5c5c'>●</span>")
@@ -195,19 +293,42 @@ class Pill(Gtk.Application):
         self.textbox.set_visible(True)
 
     def tick(self):
+        now = time.monotonic()
+        # Daemon-Status alle 2 s prüfen (an/aus-Anzeige + Klick-Toggle)
+        if now - self.last_unit_poll > 2.0:
+            self.last_unit_poll = now
+            on = daemon_active()
+            if on != self.on:
+                self.on = on
+                if self.mode in ("off", "ready"):
+                    self.set_mode("ready" if on else "off")
         st = state_read()
-        if st.get("ts") != self.last_ts:
+        if self.on and st.get("ts") != self.last_ts:
             self.last_ts = st.get("ts")
             self.set_mode(st.get("state", "idle") if st.get("state") != "idle"
                           else "ready", st.get("text", ""))
         if self.mode == "recording":
             self.wave.level = rms_level()
         self.wave.tick()
-        if self.mode in ("done", "error") and time.monotonic() > self.result_until:
-            self.set_mode("ready")
+        if self.mode in ("done", "error") and now > self.result_until:
+            self.set_mode("ready" if self.on else "off")
         return True
 
-    def on_click(self, *_a):
+    # --------------------------------------------------------------- Klicks
+    def on_left_click(self, *_a):
+        if daemon_active():
+            subprocess.run(["systemctl", "--user", "stop",
+                            "voxtyped", "voxtype-server", "voxtype-ydotoold"],
+                           check=False)
+            self.on = False
+            self.set_mode("off")
+        else:
+            subprocess.run(["systemctl", "--user", "start",
+                            "voxtyped", "voxtype-server"], check=False)
+            self.on = True
+            self.set_mode("ready")
+
+    def on_right_click(self, *_a):
         subprocess.Popen(["voxtype"])
 
 
