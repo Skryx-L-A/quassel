@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=VoxType
+GenericName=Voice Typing
+Comment=Local voice typing — hold Ctrl+Meta, speak, release / Lokale Spracheingabe
+Keywords=VoxType;voice;dictation;speech;typing;Diktat;Spracheingabe;Mikrofon;Whisper
+Exec=@HOME@/.local/bin/voxtype
+Icon=audio-input-microphone
+Terminal=false
+StartupWMClass=voxtype
+Actions=start;stop;
+
+[Desktop Action start]
+Name=Turn on / Einschalten
+Exec=@HOME@/.local/bin/voxtype-ctl start
+
+[Desktop Action stop]
+Name=Turn off / Ausschalten
+Exec=@HOME@/.local/bin/voxtype-ctl stop

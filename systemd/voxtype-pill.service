@@ -1,0 +1,10 @@
+[Unit]
+Description=VoxType pill overlay
+BindsTo=voxtyped.service
+After=voxtyped.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/voxtype-pill
+Restart=on-failure
+RestartSec=3
