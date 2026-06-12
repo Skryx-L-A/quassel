@@ -3,10 +3,12 @@
 Aufgenommen wird rohes PCM (s16le, 16 kHz, mono) über stdout — daraus lassen
 sich während der Aufnahme Teilstücke für die Live-Vorschau schneiden.
 """
+import json
 import os
 import shutil
 import struct
 import subprocess
+import threading
 import time
 import wave
 
@@ -81,11 +83,39 @@ def rms_level(window_s=0.15):
     return min(rms / 8000.0, 1.0)
 
 
+def _bluez_profiles():
+    """{karte: aktives_profil} aller Bluetooth-Karten (für Profil-Restore)."""
+    try:
+        r = subprocess.run(["pactl", "--format=json", "list", "cards"],
+                           capture_output=True, text=True, timeout=5, check=False)
+        cards = json.loads(r.stdout)
+        return {c["name"]: c.get("active_profile", "")
+                for c in cards if c.get("name", "").startswith("bluez_card")}
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return {}
+
+
+def _restore_bluez_profiles(before):
+    """Bluetooth-Headsets schalten bei Mikrofonnutzung von A2DP (Musik) auf
+    HFP (Headset) um und bleiben danach manchmal hängen -> kein Ton mehr,
+    bis man neu verbindet. Deshalb: Profil nach der Aufnahme aktiv
+    zurückschalten, falls es sich geändert hat."""
+    def work():
+        time.sleep(1.5)   # PipeWire erst selbst zurückschalten lassen
+        after = _bluez_profiles()
+        for card, profile in before.items():
+            if profile and after.get(card) and after[card] != profile:
+                subprocess.run(["pactl", "set-card-profile", card, profile],
+                               check=False)
+    threading.Thread(target=work, daemon=True).start()
+
+
 class Recorder:
     def __init__(self):
         self.proc = None
         self.outfile = None
         self.started = 0.0
+        self._bt_before = {}
 
     @property
     def active(self):
@@ -96,6 +126,7 @@ class Recorder:
         cmd = record_command(mic)
         if cmd is None:
             return False
+        self._bt_before = _bluez_profiles()
         self.outfile = open(RAW, "wb")
         self.proc = subprocess.Popen(
             cmd, stdout=self.outfile, stderr=subprocess.DEVNULL)
@@ -122,3 +153,6 @@ class Recorder:
         if self.outfile:
             self.outfile.close()
             self.outfile = None
+        if self._bt_before:
+            _restore_bluez_profiles(self._bt_before)
+            self._bt_before = {}

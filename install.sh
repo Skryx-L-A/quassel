@@ -175,6 +175,10 @@ sed "s|@HOME@|$HOME|g" "$SRC/desktop/voxtype.desktop.in" \
     > "$HOME/.local/share/applications/voxtype.desktop"
 mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
 install -m 644 "$SRC/assets/voxtype.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/voxtype.svg"
+for sz in 48 64 128 256; do
+    mkdir -p "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps"
+    install -m 644 "$SRC/assets/icons/voxtype-${sz}.png"         "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps/voxtype.png"
+done
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 systemctl --user daemon-reload
 command -v update-desktop-database >/dev/null && update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
