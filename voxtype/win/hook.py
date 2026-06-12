@@ -51,19 +51,28 @@ class KeyboardHook(threading.Thread):
         self._tid = None
 
     def _callback(self, n_code, w_param, l_param):
-        if n_code == 0:
-            kb = ctypes.cast(l_param, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
-            if not kb.flags & LLKHF_INJECTED:
-                if w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
-                    self.events.put((kb.vkCode, True))
-                elif w_param in (WM_KEYUP, WM_SYSKEYUP):
-                    self.events.put((kb.vkCode, False))
+        # ABSOLUT minimal halten: Windows staut SYSTEMWEIT alle Tastatur-
+        # eingaben, solange dieser Callback nicht zurückkehrt. Niemals
+        # blockieren, niemals eine Exception entkommen lassen.
+        try:
+            if n_code == 0:
+                kb = ctypes.cast(l_param, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+                if not kb.flags & LLKHF_INJECTED:
+                    if w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                        self.events.put_nowait((kb.vkCode, True))
+                    elif w_param in (WM_KEYUP, WM_SYSKEYUP):
+                        self.events.put_nowait((kb.vkCode, False))
+        except Exception:  # noqa: BLE001
+            pass
         return ctypes.windll.user32.CallNextHookEx(None, n_code, w_param, l_param)
 
     def run(self):
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
         self._tid = kernel32.GetCurrentThreadId()
+        # Höchste Priorität: der Hook-Thread MUSS Tastaturereignisse sofort
+        # beantworten, auch wenn die App gerade transkribiert (GIL-Druck)
+        kernel32.SetThreadPriority(kernel32.GetCurrentThread(), 15)  # TIME_CRITICAL
         self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, None, 0)
         msg = wt.MSG()
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
