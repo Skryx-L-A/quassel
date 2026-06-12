@@ -159,6 +159,11 @@ class Daemon:
             now = time.monotonic()
             if now - last_scan > RESCAN_EVERY:
                 scan_devices(fds)
+                # Config live nachladen (mtime-Check, billig): Hotkey-/
+                # Timing-Änderungen aus den Einstellungen greifen sofort
+                if self.cfg.reload():
+                    i18n.set_language(None if self.cfg.ui_language == "auto"
+                                      else self.cfg.ui_language)
                 last_scan = now
 
             timeout = 0.05 if (pending or st == "await2") else 1.0

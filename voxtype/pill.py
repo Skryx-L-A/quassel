@@ -230,6 +230,10 @@ class Pill(Gtk.Application):
         if self.dot:
             self.dot.set_content_width(int(14 * s))
             self.dot.set_content_height(int(14 * s))
+        if self.icon:
+            # gleiche Höhe wie der PulseDot -> Pille hüpft beim
+            # Zustandswechsel nicht mehr um ein paar Pixel
+            self.icon.set_size_request(int(14 * s), int(14 * s))
 
     def reload_cfg(self):
         if self.cfg.reload():
