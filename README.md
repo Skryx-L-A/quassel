@@ -55,15 +55,43 @@ record → transcribe locally → paste.
 
 ## Install
 
-```bash
-git clone https://github.com/Skryx-L-A/voxtype.git
-cd voxtype
-./install.sh
+### Windows 10 / 11 (beta)
+
+Paste this into **PowerShell** — it downloads the installer and opens the
+setup wizard right away; afterwards VoxType is ready to use:
+
+```powershell
+irm https://github.com/Skryx-L-A/voxtype/releases/latest/download/VoxType-Setup.exe -OutFile "$env:TEMP\VoxType-Setup.exe"; & "$env:TEMP\VoxType-Setup.exe"
 ```
 
-One script does everything: distro packages, permissions, whisper.cpp build
-(GPU auto-detected), speech model download, app + launcher. Log out and back
-in once if the script says so. Details and troubleshooting: [INSTALL.md](INSTALL.md).
+SmartScreen will warn because the installer is not code-signed yet — click
+"More info" → "Run anyway". On first launch VoxType downloads whisper.cpp
+and a speech model (CUDA build if you have an NVIDIA GPU).
+
+> **Beta status:** the Windows build is young and tested on a single
+> Windows 11 machine so far. If anything misbehaves, I'd love your
+> feedback — please [open an issue](https://github.com/Skryx-L-A/voxtype/issues)
+> and include any error message or exit code you see (also check
+> `%LOCALAPPDATA%\VoxType\crash.log`).
+
+### Linux — Ubuntu, Debian, Mint, Fedora, Nobara, Arch, openSUSE
+
+One command for all supported distros (the installer detects your package
+manager):
+
+```bash
+git clone https://github.com/Skryx-L-A/voxtype.git && cd voxtype && ./install.sh
+```
+
+It installs distro packages, builds whisper.cpp (NVIDIA/CUDA and AMD/Intel/
+Vulkan auto-detected), downloads a speech model and sets up the app. Log out
+and back in once if the script says so. Details: [INSTALL.md](INSTALL.md).
+
+> **Tested:** Fedora / Nobara (daily driver). **Untested but prepared:**
+> Ubuntu/Debian/Mint, Arch and openSUSE — the package lists are verified in
+> containers, but no full install has run on real systems yet. Feedback is
+> very welcome: please [open an issue](https://github.com/Skryx-L-A/voxtype/issues)
+> with the exact error output if something fails.
 
 ## Use
 
