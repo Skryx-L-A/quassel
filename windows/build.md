@@ -1,12 +1,14 @@
 # Building the Windows installer
 
 > The Windows port runs as a single Qt process (system tray + floating pill +
-> low-level keyboard hook) and downloads whisper.cpp + the speech model on
-> first launch, so the installer stays small. Built and tested on Windows 10/11.
+> Raw-Input keyboard listener). The listener sits outside the system input
+> chain, so a busy or even hung VoxType can never stall the keyboard.
+> whisper.cpp + the speech model are downloaded on first launch, so the
+> installer stays small. Built and tested on Windows 10/11.
 
 ## Prerequisites (on a Windows machine)
 
-- Python 3.10+ (64-bit)
+- Python 3.13 (64-bit) — **not 3.14**, the windowed exe crashes with it
 - `pip install pyside6 sounddevice pyinstaller`
 - [Inno Setup 6](https://jrsoftware.org/isinfo.php) (for the `.exe` installer)
 
@@ -15,12 +17,14 @@
 From the repository root in PowerShell:
 
 ```powershell
-pip install pyside6 sounddevice pyinstaller
-pyinstaller windows\voxtype.spec
+py -3.13 -m pip install pyside6 sounddevice pyinstaller
+py -3.13 -m PyInstaller --noconfirm --clean --distpath windows\dist --workpath windows\build windows\voxtype.spec
 iscc windows\voxtype.iss
 ```
 
-- `pyinstaller` produces `dist\VoxType\VoxType.exe` (the app folder).
+Always build with `--clean` — PyInstaller otherwise caches stale analyses.
+
+- `PyInstaller` produces `windows\dist\VoxType\VoxType.exe` (the app folder).
 - `iscc` wraps it into `windows\Output\VoxType-Setup-2.1.0.exe`.
 
 ## First launch
@@ -33,7 +37,10 @@ into `%LOCALAPPDATA%\VoxType`. After that it works fully offline.
 
 - The app is unsigned, so SmartScreen will warn on first run
   ("More info" → "Run anyway"). Code signing is a future step.
-- The keyboard hook needs no admin rights. If another app blocks global
-  hooks, run VoxType after it.
+- The keyboard listener uses Raw Input (no hook, no admin rights) and only
+  observes the hotkey chord; it never suppresses or delays keystrokes.
 - Settings, dictionary and history live in `%APPDATA%\VoxType` and
   `%LOCALAPPDATA%\VoxType`.
+- Troubleshooting: `%LOCALAPPDATA%\VoxType\crash.log` (startup crashes) and
+  `%LOCALAPPDATA%\VoxType\debug.log` (per-dictation timing of recording,
+  inference and paste).
