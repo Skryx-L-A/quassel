@@ -52,6 +52,8 @@ if command -v dnf >/dev/null; then
         python3-pip vulkan-loader-devel vulkan-headers glslc
 elif command -v apt-get >/dev/null; then
     sudo apt-get update -qq || true
+    # Hinweis: gtk4-layer-shell gibt es erst ab Ubuntu 24.10/Debian 13 —
+    # auf älteren Versionen fällt die Pille auf ein normales Fenster zurück
     install_pkgs apt git cmake g++ make curl ydotool wl-clipboard xclip \
         python3-gi gir1.2-gtk-4.0 libgtk4-layer-shell0 gir1.2-gtk4layershell-1.0 \
         libnotify-bin pipewire-bin pulseaudio-utils python3-pip python3-venv \
@@ -61,9 +63,13 @@ elif command -v pacman >/dev/null; then
         python-gobject gtk4 gtk4-layer-shell libnotify pipewire python-pip \
         vulkan-headers vulkan-icd-loader shaderc
 elif command -v zypper >/dev/null; then
+    # openSUSE versioniert Python-Pakete (python313-...) — Kandidaten durchprobieren
     install_pkgs zypper git cmake gcc-c++ make curl ydotool wl-clipboard xclip \
-        python3-gobject libnotify-tools pipewire-tools python3-pip \
-        gtk4-layer-shell vulkan-devel shaderc
+        libnotify-tools pipewire-tools \
+        typelib-1_0-Gtk-4_0 libgtk4-layer-shell0 typelib-1_0-Gtk4LayerShell-1_0 \
+        python313-gobject python312-gobject python311-gobject \
+        python313-pip python312-pip python311-pip \
+        vulkan-devel shaderc
 else
     warn "Unbekannter Paketmanager. Bitte manuell installieren:"
     warn "git cmake g++ make curl ydotool wl-clipboard xclip python-gobject gtk4 gtk4-layer-shell libnotify pipewire python3-pip"
