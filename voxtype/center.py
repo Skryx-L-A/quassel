@@ -284,6 +284,10 @@ class Center(QMainWindow):
         self.pill_opacity.setValue(int(self.cfg.pill_opacity * 100))
         self.pill_opacity.valueChanged.connect(self.save_settings)
         self.labeled_row(tr("pill_opacity"), self.pill_opacity, g)
+        self.pill_preview = QCheckBox(tr("pill_preview"))
+        self.pill_preview.setChecked(self.cfg.pill_preview)
+        self.pill_preview.toggled.connect(self.save_settings)
+        g.addWidget(self.pill_preview)
 
         g = self.group(tr("sec_hotkey"), lay)
         self.chord = self.guard(QComboBox())
@@ -319,6 +323,22 @@ class Center(QMainWindow):
         self.cmds.setChecked(self.cfg.commands)
         self.cmds.toggled.connect(self.save_settings)
         g.addWidget(self.cmds)
+
+        # --- Streaming-Tippen (Live-Tippen ins Zielfenster, nur Freihand) ---
+        g = self.group(tr("sec_streaming"), lay)
+        self.stream_on = QCheckBox(tr("streaming_enable"))
+        self.stream_on.setChecked(self.cfg.streaming)
+        self.stream_on.toggled.connect(self.save_settings)
+        self.stream_on.toggled.connect(self._sync_streaming_enabled)
+        g.addWidget(self.stream_on)
+        self.desc(tr("streaming_hint"), g)
+        self.stream_mode = self.guard(QComboBox())
+        for val, key in (("stable", "streaming_stable"), ("aggressive", "streaming_aggressive")):
+            self.stream_mode.addItem(tr(key), val)
+        self.stream_mode.setCurrentIndex(0 if self.cfg.streaming_mode == "stable" else 1)
+        self.stream_mode.currentIndexChanged.connect(self.save_settings)
+        self.labeled_row(tr("streaming_mode"), self.stream_mode, g)
+        self._sync_streaming_enabled(self.cfg.streaming)
 
         g = self.group(tr("model"), lay)
         self.model = self.guard(QComboBox())
@@ -451,16 +471,22 @@ class Center(QMainWindow):
             ("pill", "enabled"): str(self.pill_show.isChecked()).lower(),
             ("pill", "scale"): self.pill_size.value() / 100,
             ("pill", "opacity"): self.pill_opacity.value() / 100,
+            ("pill", "show_preview"): str(self.pill_preview.isChecked()).lower(),
             ("hotkey", "chord"): self.chord.currentData(),
             ("speech", "language"): self.lang.currentData(),
             ("speech", "punctuation"): str(self.punct.isChecked()).lower(),
             ("speech", "commands"): str(self.cmds.isChecked()).lower(),
             ("speech", "mic"): self.mic.currentData(),
+            ("streaming", "enabled"): str(self.stream_on.isChecked()).lower(),
+            ("streaming", "mode"): self.stream_mode.currentData(),
             ("history", "enabled"): str(self.hist_enable.isChecked()).lower(),
             ("ui", "language"): self.uilang.currentData(),
         })
         self.cfg.reload(force=True)
         self.hint.setText(tr("hint", chord=self.chord_label()))
+
+    def _sync_streaming_enabled(self, on):
+        self.stream_mode.setEnabled(on)
 
     def on_autostart(self, on):
         if IS_WINDOWS:

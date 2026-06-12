@@ -64,6 +64,29 @@ def paste(text):
         threading.Thread(target=restore, daemon=True).start()
 
 
+def type_chunk(text):
+    """Streaming-Häppchen einfügen, OHNE die Zwischenablage zu restaurieren
+    (das macht streaming_restore() einmal am Diktatende)."""
+    if not text:
+        return
+    clip_copy(text)
+    time.sleep(0.12)
+    subprocess.run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
+
+
+def streaming_begin():
+    """Zwischenablage vor dem Streaming sichern."""
+    return clip_read()
+
+
+def streaming_restore(old):
+    if old:
+        def restore():
+            time.sleep(2)
+            clip_copy(old)
+        threading.Thread(target=restore, daemon=True).start()
+
+
 def send_backspaces(n):
     n = min(n, 4000)
     keys = []

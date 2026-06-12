@@ -68,8 +68,14 @@ class Cfg:
         self.pill_enabled = p.getboolean("pill", "enabled", fallback=True)
         self.pill_scale = p.getfloat("pill", "scale", fallback=1.0)
         self.pill_opacity = p.getfloat("pill", "opacity", fallback=0.85)
+        self.pill_preview = p.getboolean("pill", "show_preview", fallback=True)
         self.history_enabled = p.getboolean("history", "enabled", fallback=True)
         self.ui_language = g("ui", "language", fallback="auto")
+        # Streaming-Tippen (nur Freihand-Modus; Standard aus = heutiges Verhalten)
+        self.streaming = p.getboolean("streaming", "enabled", fallback=False)
+        self.streaming_mode = g("streaming", "mode", fallback="stable")
+        if self.streaming_mode not in ("stable", "aggressive"):
+            self.streaming_mode = "stable"
         return True
 
 

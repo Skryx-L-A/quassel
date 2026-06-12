@@ -16,10 +16,12 @@ import threading
 import time
 
 from . import config, i18n, textproc, whisperclient
+from .streaming import StreamTyper
 from .audio import RATE, SAMPLE_BYTES, Recorder, wav_from_raw
 from .config import CHORDS
 from .i18n import tr
-from .platform_linux import notify, paste, send_backspaces
+from .platform_linux import (notify, paste, send_backspaces, type_chunk,
+                             streaming_begin, streaming_restore)
 from .state import PARTWAV, WAV, state_set
 
 EVENT_FORMAT = "llHHi"
@@ -38,11 +40,16 @@ def log(msg):
 
 
 class PartialLoop(threading.Thread):
-    """Erzeugt während der Aufnahme Teiltranskripte für die Live-Vorschau."""
+    """Erzeugt während der Aufnahme Teiltranskripte für Live-Vorschau und
+    (im Freihand-Modus mit aktivem Streaming) für das Live-Tippen.
 
-    def __init__(self, rec, cfg):
+    streamer: optionaler StreamTyper. show_preview: ob die Pillen-Blase den
+    Vorschautext zeigt (im Streaming nur den noch nicht getippten Rest)."""
+
+    def __init__(self, rec, cfg, owner):
         super().__init__(daemon=True)
         self.rec, self.cfg = rec, cfg
+        self.owner = owner          # Daemon — streamer wird ggf. mitten im Lauf gesetzt
         self.stop_event = threading.Event()
 
     def run(self):
@@ -58,9 +65,21 @@ class PartialLoop(threading.Thread):
                 wav_from_raw(data, PARTWAV)
             except OSError:
                 continue
-            text = whisperclient.transcribe(PARTWAV, self.cfg, timeout=20)
-            if text is not None and not self.stop_event.is_set() and self.rec.active:
-                state_set("recording", " ".join(text.split()).strip())
+            raw = whisperclient.transcribe(PARTWAV, self.cfg, timeout=20)
+            if raw is None or self.stop_event.is_set() or not self.rec.active:
+                continue
+            kind, text = textproc.postprocess(raw, self.cfg)
+            if kind != "text":
+                continue
+            streamer = self.owner.streamer
+            show = self.cfg.pill_preview
+            if streamer is not None:
+                streamer.update(text)
+                # Blase zeigt nur den noch nicht getippten Rest (oder nichts)
+                state_set("recording",
+                          text[len(streamer.typed):].strip() if show else "")
+            else:
+                state_set("recording", text if show else "")
 
     def stop(self):
         self.stop_event.set()
@@ -73,6 +92,8 @@ class Daemon:
         self.rec = Recorder()
         self.partial = None
         self.last_paste_len = 0
+        self.streamer = None        # aktiv nur im Freihand-Modus mit Streaming
+        self._clip_backup = None
 
     # ------------------------------------------------------------- Aufnahme
     def start_recording(self):
@@ -81,15 +102,33 @@ class Daemon:
         if not self.rec.start(self.cfg.mic):
             notify("Fehler: pw-record/parecord fehlt")
             return False
-        self.partial = PartialLoop(self.rec, self.cfg)
+        self.streamer = None
+        self.partial = PartialLoop(self.rec, self.cfg, self)
         self.partial.start()
         state_set("recording")
         return True
+
+    def enable_streaming(self):
+        """Beim Wechsel in den Freihand-Modus: Streaming starten, falls
+        eingeschaltet. (Im Halten-Modus technisch unmöglich -> nie hier.)"""
+        if self.streamer is not None or not self.cfg.streaming:
+            return
+        self._clip_backup = streaming_begin()
+
+        def typ(chunk):
+            type_chunk(chunk)
+
+        def dele(n):
+            send_backspaces(n)
+        self.streamer = StreamTyper(self.cfg.streaming_mode, typ, dele)
 
     def cancel_recording(self, reason_key):
         if self.partial:
             self.partial.stop()
             self.partial = None
+        if self.streamer is not None:
+            streaming_restore(self._clip_backup)
+            self.streamer = None
         self.rec.stop()
         state_set("idle")
         notify("✖ " + tr(reason_key))
@@ -116,18 +155,34 @@ class Daemon:
             return
         kind, value = textproc.postprocess(raw_text, self.cfg)
         if kind is None:
+            if self.streamer is not None:
+                streaming_restore(self._clip_backup)
+                self.streamer = None
             state_set("error", tr("nothing"))
             return
         if kind == "command":
-            if self.last_paste_len > 0:
-                send_backspaces(self.last_paste_len)
+            # Im Streaming wurde live getippt -> getippte Länge zurücknehmen
+            undo = len(self.streamer.typed) if self.streamer is not None else self.last_paste_len
+            if self.streamer is not None:
+                streaming_restore(self._clip_backup)
+                self.streamer = None
+            if undo > 0:
+                send_backspaces(undo)
                 self.last_paste_len = 0
                 state_set("done", tr("deleted"))
             else:
                 state_set("error", tr("nothing"))
             return
-        paste(value)
-        self.last_paste_len = len(value)
+        if self.streamer is not None:
+            # Streaming: Zielfenster exakt auf den Endtext bringen (inkl. der
+            # zurückgehaltenen Zeilenumbrüche), dann Zwischenablage zurück
+            typed = self.streamer.finish(value)
+            self.last_paste_len = len(typed)
+            streaming_restore(self._clip_backup)
+            self.streamer = None
+        else:
+            paste(value)
+            self.last_paste_len = len(value)
         state_set("done", value)
         if self.cfg.history_enabled:
             try:
@@ -215,6 +270,7 @@ class Daemon:
                                     t_chord = now
                             elif st == "await2":
                                 st = "toggle_armed"     # Doppeltipp erkannt
+                                self.enable_streaming()  # Freihand -> ggf. Streaming
                             elif st == "toggle":
                                 st = "drain"
                                 pending, pending_since = True, now

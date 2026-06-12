@@ -266,6 +266,9 @@ class Pill(Gtk.Application):
             self.result_until = time.monotonic() + RESULT_SHOW_MS / 1000
 
     def show_text(self, text, italic=False):
+        if not self.cfg.pill_preview:
+            self.textbox.set_visible(False)
+            return
         if not text:
             self.textbox.set_visible(False)
             return
