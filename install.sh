@@ -167,6 +167,9 @@ EOF
 fi
 sed "s|@HOME@|$HOME|g" "$SRC/desktop/voxtype.desktop.in" \
     > "$HOME/.local/share/applications/voxtype.desktop"
+mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
+install -m 644 "$SRC/assets/voxtype.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/voxtype.svg"
+command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 systemctl --user daemon-reload
 command -v update-desktop-database >/dev/null && update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 2>/dev/null || true
