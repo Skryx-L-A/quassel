@@ -7,10 +7,12 @@ nvidia-smi erkannt (cuBLAS-Build), sonst CPU-Build.
 import os
 import shutil
 import subprocess
-import urllib.request
+import time
 import zipfile
 
 from .. import config
+from ..net import download
+from ..whisperclient import server_up
 
 BIN_DIR = os.path.join(config.DATADIR, "whisper-bin")
 MODEL_DIR = os.path.join(config.DATADIR, "models")
@@ -46,20 +48,58 @@ def current_model():
     return path if path and os.path.exists(path) else None
 
 
-def download_binaries(progress=lambda frac, what: None):
-    """Lädt whisper.cpp-Binaries (einmalig). progress(0..1, beschreibung)."""
-    os.makedirs(BIN_DIR, exist_ok=True)
-    zip_name = ZIP_CUDA if has_nvidia() else ZIP_CPU
+def _fetch_zip(zip_name, progress):
     target = os.path.join(BIN_DIR, zip_name)
-
-    def hook(blocks, bs, total):
-        if total > 0:
-            progress(min(blocks * bs / total, 1.0), zip_name)
-    urllib.request.urlretrieve(WHISPER_RELEASE.format(zip_name), target, hook)
+    if not download(WHISPER_RELEASE.format(zip_name), target,
+                    lambda f: progress(f, zip_name)):
+        return False
     with zipfile.ZipFile(target) as z:
         z.extractall(BIN_DIR)
     os.remove(target)
+    return True
+
+
+def download_binaries(progress=lambda frac, what: None):
+    """Lädt whisper.cpp-Binaries (einmalig). progress(0..1, beschreibung).
+
+    NVIDIA-GPU -> cuBLAS-Build (CUDA-Runtime-DLLs sind im Zip enthalten);
+    schlägt der Serverstart später trotzdem fehl, holt ensure_working()
+    automatisch den CPU-Build nach."""
+    os.makedirs(BIN_DIR, exist_ok=True)
+    zip_name = ZIP_CUDA if has_nvidia() else ZIP_CPU
+    if not _fetch_zip(zip_name, progress):
+        return False
     return server_exe() is not None
+
+
+def ensure_working(progress=lambda frac, what: None):
+    """Startprobe: Server hochfahren und Gesundheit prüfen. Scheitert der
+    GPU-Build (z.B. fehlende Treiber/DLLs), wird der CPU-Build nachgeladen
+    und erneut probiert. True, wenn der Server antwortet."""
+    start()
+    for _ in range(60):
+        if server_up():
+            return True
+        if _proc is not None and _proc.poll() is not None:
+            break               # Server-Prozess ist gestorben
+        time.sleep(1)
+    if server_up():
+        return True
+    stop()
+    # Fallback: CPU-Build in frisches Verzeichnis
+    shutil.rmtree(BIN_DIR, ignore_errors=True)
+    os.makedirs(BIN_DIR, exist_ok=True)
+    if not _fetch_zip(ZIP_CPU, progress):
+        return False
+    env = config.read_serverenv()
+    env["SERVER_BIN"] = server_exe() or ""
+    config.write_serverenv(env)
+    start()
+    for _ in range(60):
+        if server_up():
+            return True
+        time.sleep(1)
+    return False
 
 
 def download_model(model, progress=lambda frac, what: None):
@@ -67,10 +107,9 @@ def download_model(model, progress=lambda frac, what: None):
     modelfile = f"ggml-{model}.bin"
     target = os.path.join(MODEL_DIR, modelfile)
     if not (os.path.exists(target) and os.path.getsize(target) > 1024):
-        def hook(blocks, bs, total):
-            if total > 0:
-                progress(min(blocks * bs / total, 1.0), modelfile)
-        urllib.request.urlretrieve(config.MODEL_URL.format(model), target, hook)
+        if not download(config.MODEL_URL.format(model), target,
+                        lambda f: progress(f, modelfile)):
+            return None
     env = config.read_serverenv()
     env["MODEL_PATH"] = target
     env["SERVER_BIN"] = server_exe() or ""

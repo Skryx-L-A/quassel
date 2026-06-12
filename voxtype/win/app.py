@@ -180,7 +180,10 @@ class WinApp(QObject):
             if server.current_model() is None:
                 model = "small" if not server.has_nvidia() else "large-v3-turbo"
                 server.download_model(model)
-            self.sig_state.emit("done", tr("ready"))
+            if server.ensure_working():
+                self.sig_state.emit("done", tr("ready"))
+            else:
+                self.sig_state.emit("error", tr("no_server"))
         except Exception as e:  # noqa: BLE001
             self.sig_state.emit("error", str(e)[:80])
 

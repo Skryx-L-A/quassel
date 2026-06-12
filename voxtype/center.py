@@ -10,7 +10,6 @@ import os
 import subprocess
 import threading
 import time
-import urllib.request
 import wave
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
@@ -26,6 +25,7 @@ from . import __version__, config, i18n
 from .audio import RATE, list_mics, record_command
 from .config import MODEL_URL, MODELS
 from .i18n import tr
+from .net import download as net_download
 from .platform_linux import clip_copy
 from .whisperclient import SERVER
 
@@ -446,15 +446,12 @@ class Center(QMainWindow):
         self.test_out.setText(tr("downloading", model=model))
 
         def download():
-            try:
-                os.makedirs(modeldir, exist_ok=True)
-                def hook(blocks, bs, total):
-                    if total > 0:
-                        self.bridge.progress.emit(min(blocks * bs / total, 1.0))
-                urllib.request.urlretrieve(MODEL_URL.format(model), target, hook)
+            ok = net_download(MODEL_URL.format(model), target,
+                              self.bridge.progress.emit)
+            if ok:
                 self.bridge.model_done.emit(target + "|" + model)
-            except Exception as e:  # noqa: BLE001
-                self.bridge.message.emit("✕ " + tr("download_failed", err=str(e)[:80]))
+            else:
+                self.bridge.message.emit("✕ " + tr("download_failed", err="network"))
         threading.Thread(target=download, daemon=True).start()
 
     def switch_model(self, path, model):
