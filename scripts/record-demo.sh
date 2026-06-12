@@ -32,22 +32,55 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "==> Aktiven Monitor ermitteln…"
-GEO=$(kscreen-doctor -j | python3 - <<'PY'
-import json, subprocess, sys
-data = json.load(sys.stdin)
-# Aktiven Output über die VoxType-Pille erfragen wäre zirkulär — nimm den
-# Monitor mit dem Cursor: KWin legt die Pille dorthin, wo das aktive Fenster
-# ist; nach 3 s Inaktivität ist das der Monitor des zuletzt aktiven Fensters.
-# Fallback: erster aktiver Output.
-outs = [o for o in data["outputs"] if o.get("enabled")]
-o = outs[0]
+echo "==> Pillen-Monitor direkt von der Pille erfragen…"
+PILL_OUT=$(busctl --user call io.github.skryx.voxtype.Pill / io.github.skryx.voxtype.Pill GetActiveOutput 2>/dev/null | sed 's/^s "//; s/"$//')
+echo "    Pille meldet: ${PILL_OUT:-unbekannt}"
+GEO=$(PILL_OUT="$PILL_OUT" python3 - <<'PY'
+import json, subprocess
+from gi.repository import Gio, GLib
+
+# Aktiven Monitor von KWin erfragen (gleicher Mechanismus wie die Pille)
+result = {}
+loop = GLib.MainLoop()
+XML = ("<node><interface name='io.github.skryx.voxtype.DemoGeo'>"
+       "<method name='Set'><arg type='s' name='o' direction='in'/></method>"
+       "</interface></node>")
+
+def on_call(conn, sender, path, iface, method, params, inv):
+    result["name"] = params[0]; inv.return_value(None); loop.quit()
+
+def on_bus(conn, name):
+    conn.register_object("/", Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0], on_call)
+    open("/tmp/voxdemo-geo.js", "w").write(
+        'callDBus("io.github.skryx.voxtype.DemoGeo","/",'
+        '"io.github.skryx.voxtype.DemoGeo","Set",workspace.activeScreen.name);')
+    for args in (["unloadScript", "s", "voxdemo-geo"],
+                 ["loadScript", "ss", "/tmp/voxdemo-geo.js", "voxdemo-geo"],
+                 ["start"]):
+        subprocess.run(["busctl", "--user", "call", "org.kde.KWin", "/Scripting",
+                        "org.kde.kwin.Scripting", *args], capture_output=True)
+
+Gio.bus_own_name(Gio.BusType.SESSION, "io.github.skryx.voxtype.DemoGeo",
+                 Gio.BusNameOwnerFlags.NONE, on_bus, None, None)
+GLib.timeout_add(4000, loop.quit)
+loop.run()
+subprocess.run(["busctl", "--user", "call", "org.kde.KWin", "/Scripting",
+                "org.kde.kwin.Scripting", "unloadScript", "s", "voxdemo-geo"],
+               capture_output=True)
+
+outs = json.loads(subprocess.run(["kscreen-doctor", "-j"], capture_output=True,
+                                 text=True).stdout)["outputs"]
+outs = [o for o in outs if o.get("enabled")]
+import os
+pill = os.environ.get("PILL_OUT", "")
+o = next((x for x in outs if x["name"] == pill),
+         next((x for x in outs if x["name"] == result.get("name")), outs[0]))
 p, s = o["pos"], o["size"]
 print(p["x"], p["y"], s["width"], s["height"])
 PY
 )
 read -r MX MY MW MH <<<"$GEO"
-CROP_W=1000; CROP_H=300
+CROP_W=760; CROP_H=240
 CROP_X=$((MX + MW / 2 - CROP_W / 2))
 CROP_Y=$((MY + MH - CROP_H))
 echo "    Ausschnitt: ${CROP_W}x${CROP_H}+${CROP_X}+${CROP_Y}"
@@ -56,12 +89,11 @@ echo "==> Virtuelles Mikrofon einrichten…"
 MOD=$(pactl load-module module-null-sink sink_name=voxdemo sink_properties=device.description=VoxTypeDemo)
 pactl set-default-source voxdemo.monitor
 
-espeak-ng -v de+f3 -s 145 -w "$TMP/tts.wav" \
-    "Hallo, das ist Vox Type. Ich spreche einfach, und der Text erscheint sofort dort wo mein Cursor ist."
+espeak-ng -v en-us+f3 -s 150 -w "$TMP/tts.wav" \
+    "Hello! I just speak, and the text instantly appears right where my cursor is."
 
-echo "==> Editor öffnen (Ziel fürs Diktat)…"
-kwrite --new "$TMP/demo.txt" >/dev/null 2>&1 & KPID=$!
-sleep 3
+echo "==> Diktat geht in DEIN fokussiertes Fenster — gleich geht es los…"
+sleep 2
 
 echo "==> Aufnahme läuft — bitte NICHT eingreifen…"
 mkdir -p "$TMP/frames"
@@ -83,7 +115,7 @@ sleep 1
 echo "==> GIF bauen…"
 mkdir -p assets/screenshots
 magick "$TMP"/frames/f*.png -crop "${CROP_W}x${CROP_H}+${CROP_X}+${CROP_Y}" +repage \
-    -resize 700x -delay 45 -loop 0 -layers Optimize assets/screenshots/demo.gif
+    -delay 45 -loop 0 -layers Optimize assets/screenshots/demo.gif
 echo "    -> assets/screenshots/demo.gif ($(du -h assets/screenshots/demo.gif | cut -f1))"
 echo
 echo "Fertig! GIF prüfen (keine privaten Inhalte am unteren Bildschirmrand?),"

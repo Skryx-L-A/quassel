@@ -12,6 +12,8 @@ No cloud, no account, no subscription, no telemetry.
 **Linux** and **Windows** (Windows build is fresh — see
 [windows/build.md](windows/build.md)). Fully offline, no cloud, no account.
 
+<p align="center"><img src="assets/screenshots/demo.gif" alt="VoxType pill while dictating: pulsing red dot, live transcript, result" width="700"></p>
+
 ## Features
 
 - **Push-to-talk:** hold `Ctrl+Meta`, talk, release → text is pasted at the cursor

@@ -37,6 +37,7 @@ BUS_NAME = "io.github.skryx.voxtype.Pill"
 KWIN_PLUGIN = "voxtype-pill-follow"
 DBUS_XML = """<node><interface name='io.github.skryx.voxtype.Pill'>
 <method name='SetActiveOutput'><arg type='s' name='output' direction='in'/></method>
+<method name='GetActiveOutput'><arg type='s' name='output' direction='out'/></method>
 </interface></node>"""
 
 CSS_TEMPLATE = """
@@ -200,6 +201,8 @@ class Pill(Gtk.Application):
         if method == "SetActiveOutput":
             GLib.idle_add(self.move_to_output, params[0])
             inv.return_value(None)
+        elif method == "GetActiveOutput":
+            inv.return_value(GLib.Variant("(s)", (self.current_output or "",)))
 
     def move_to_output(self, name):
         if name == self.current_output or not self.win:
