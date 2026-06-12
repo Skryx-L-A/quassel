@@ -1,0 +1,14 @@
+[Unit]
+Description=Whisper.cpp Speech-to-Text Server (für Diktat)
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/diktat/whisper.cpp/build/bin/whisper-server \
+  -m %h/.local/share/diktat/models/@MODEL@ \
+  --host 127.0.0.1 --port 8765 \
+  -l auto -nt
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

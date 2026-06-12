@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+"""Diktat-Daemon: Strg+Meta (Windows-Taste) als reine Modifier-Hotkey-Kombi.
+
+Modi:
+  * Halten:     Strg+Meta gedrückt halten, sprechen, loslassen -> Text wird eingefügt
+  * Doppeltipp: Strg+Meta zweimal kurz tippen -> Aufnahme läuft freihändig weiter;
+                einmal Strg+Meta drücken -> Text wird eingefügt
+
+Desktop-Umgebungen können keine Modifier-only-Shortcuts, daher liest dieser
+Daemon die Tastatur direkt über evdev (/dev/input, Gruppe 'input').
+Eingefügt wird über Zwischenablage + Shift+Einfg (layout-sicher, z.B. für
+QWERTZ inkl. Umlauten, funktioniert auch in Terminals).
+"""
+import os
+import re
+import select
+import shutil
+import struct
+import subprocess
+import sys
+import time
+
+EVENT_FORMAT = "llHHi"
+EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
+EV_KEY = 1
+KEY_PRESS, KEY_RELEASE = 1, 0
+CTRL = {29, 97}        # KEY_LEFTCTRL, KEY_RIGHTCTRL
+META = {125, 126}      # KEY_LEFTMETA, KEY_RIGHTMETA
+MODS = CTRL | META
+
+HOLD_MIN = 0.5         # s: längerer Chord = Halten-Modus (Loslassen fügt ein)
+DOUBLE_WINDOW = 0.45   # s: max. Abstand zwischen den zwei Tipps
+MAX_RECORD = 300       # s: Sicherheitslimit im Freihand-Modus
+RESCAN_EVERY = 5       # s: /dev/input auf neue Tastaturen prüfen
+
+XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+RUNDIR = os.path.join(XDG_RUNTIME, "dictate")
+WAV = os.path.join(RUNDIR, "rec.wav")
+SERVER = "http://127.0.0.1:8765"
+IS_WAYLAND = bool(os.environ.get("WAYLAND_DISPLAY")) or \
+    os.environ.get("XDG_SESSION_TYPE", "") == "wayland"
+if IS_WAYLAND:
+    os.environ.setdefault("WAYLAND_DISPLAY", "wayland-0")
+
+
+def find_ydotool_socket():
+    if os.environ.get("YDOTOOL_SOCKET"):
+        return os.environ["YDOTOOL_SOCKET"]
+    for cand in (os.path.join(XDG_RUNTIME, ".ydotool_socket"),
+                 "/tmp/.ydotool_socket"):
+        if os.path.exists(cand):
+            return cand
+    return os.path.join(XDG_RUNTIME, ".ydotool_socket")
+
+
+os.environ["YDOTOOL_SOCKET"] = find_ydotool_socket()
+
+
+def log(msg):
+    print(msg, file=sys.stderr, flush=True)
+
+
+def notify(text, ms=4000):
+    log(f"notify: {text}")
+    subprocess.run(
+        ["notify-send", "-a", "Diktat", "-t", str(ms),
+         "-h", "string:x-canonical-private-synchronous:dictate", "Diktat", text],
+        check=False)
+
+
+def record_command():
+    if shutil.which("pw-record"):
+        return ["pw-record", "--rate=16000", "--channels=1", "--format=s16", WAV]
+    if shutil.which("parecord"):
+        return ["parecord", "--rate=16000", "--channels=1", "--format=s16le",
+                "--file-format=wav", WAV]
+    return None
+
+
+def clip_copy(text):
+    if IS_WAYLAND:
+        subprocess.run(["wl-copy"], input=text, text=True, check=False)
+        subprocess.run(["wl-copy", "--primary"], input=text, text=True, check=False)
+    else:
+        for sel in ("clipboard", "primary"):
+            subprocess.run(["xclip", "-selection", sel], input=text, text=True,
+                           check=False)
+
+
+def clip_read():
+    cmd = (["wl-paste", "--no-newline", "-t", "text"] if IS_WAYLAND
+           else ["xclip", "-selection", "clipboard", "-o"])
+    r = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    return r.stdout if r.returncode == 0 else ""
+
+
+class Recorder:
+    def __init__(self):
+        self.proc = None
+        self.started = 0.0
+
+    @property
+    def active(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def start(self):
+        os.makedirs(RUNDIR, exist_ok=True)
+        try:
+            os.remove(WAV)
+        except FileNotFoundError:
+            pass
+        cmd = record_command()
+        if cmd is None:
+            notify("❌ Kein Aufnahme-Tool (pw-record/parecord) gefunden")
+            return
+        self.proc = subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.started = time.monotonic()
+
+    def stop(self):
+        if self.proc is None:
+            return
+        self.proc.send_signal(2)  # SIGINT
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+        self.proc = None
+
+
+def ensure_server():
+    ok = subprocess.run(["curl", "-fsS", "-m", "2", "-o", "/dev/null", SERVER + "/"],
+                        check=False).returncode == 0
+    if ok:
+        return True
+    subprocess.run(["systemctl", "--user", "start", "whisper-server.service"], check=False)
+    for _ in range(240):
+        if subprocess.run(["curl", "-fsS", "-m", "2", "-o", "/dev/null", SERVER + "/"],
+                          check=False).returncode == 0:
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def transcribe_and_paste():
+    if not os.path.exists(WAV) or os.path.getsize(WAV) < 8000:  # < ~0,25 s Audio
+        notify("❌ Aufnahme zu kurz")
+        return
+    notify("⏳ Transkribiere…", 60000)
+    if not ensure_server():
+        notify("❌ Whisper-Server nicht erreichbar")
+        return
+    r = subprocess.run(
+        ["curl", "-fsS", "-m", "120", SERVER + "/inference",
+         "-F", f"file=@{WAV}", "-F", "response_format=text", "-F", "temperature=0.0"],
+        capture_output=True, text=True, check=False)
+    if r.returncode != 0:
+        notify("❌ Transkription fehlgeschlagen")
+        return
+    text = " ".join(r.stdout.split()).strip()
+    if not text or re.fullmatch(r"[\[\(].*[\]\)]", text):
+        notify("❌ Nichts verstanden")
+        return
+    old = clip_read()
+    clip_copy(text)
+    time.sleep(0.15)
+    # Shift+Einfg: KEY_LEFTSHIFT=42, KEY_INSERT=110
+    subprocess.run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
+    notify("✅ " + text)
+    if old:
+        def restore():
+            time.sleep(2)
+            clip_copy(old)
+        import threading
+        threading.Thread(target=restore, daemon=True).start()
+
+
+def scan_devices(fds):
+    """Alle lesbaren /dev/input/event* öffnen (neue Geräte nachladen)."""
+    present = set()
+    try:
+        entries = os.listdir("/dev/input")
+    except OSError:
+        return
+    for path in entries:
+        if not path.startswith("event"):
+            continue
+        full = "/dev/input/" + path
+        present.add(full)
+        if full in fds.values():
+            continue
+        try:
+            fd = os.open(full, os.O_RDONLY | os.O_NONBLOCK)
+            fds[fd] = full
+        except OSError:
+            pass
+    for fd, path in list(fds.items()):
+        if path not in present:
+            os.close(fd)
+            del fds[fd]
+
+
+def main():
+    rec = Recorder()
+    pressed = set()                # gedrückte Modifier-Keycodes
+    state = "idle"                 # idle|hold|await2|toggle_armed|toggle|drain
+    # Einfügen erst, wenn ALLE Modifier losgelassen sind — sonst käme beim
+    # Ziel Strg+Meta+Shift+Einfg an statt Shift+Einfg und der Paste schlägt fehl.
+    pending = False
+    pending_since = 0.0
+    t_chord = t_tap = 0.0
+    fds = {}
+    last_scan = 0.0
+
+    scan_devices(fds)
+    if not fds:
+        log("FEHLER: Keine /dev/input-Geräte lesbar. Ist der Benutzer in der "
+            "Gruppe 'input'? (Nach 'usermod -aG input' neu anmelden!)")
+        sys.exit(1)
+    notify("Diktat bereit: Strg+Meta halten oder doppelt tippen", 3000)
+
+    while True:
+        now = time.monotonic()
+        if now - last_scan > RESCAN_EVERY:
+            scan_devices(fds)
+            last_scan = now
+
+        timeout = 0.05 if (pending or state == "await2") else 1.0
+        try:
+            rlist, _, _ = select.select(list(fds), [], [], timeout)
+        except OSError:
+            scan_devices(fds)
+            continue
+
+        now = time.monotonic()
+
+        # Timeout-Logik: einzelner kurzer Tipp ohne zweiten -> verwerfen
+        if state == "await2" and now - t_tap > DOUBLE_WINDOW:
+            rec.stop()
+            notify("✖ Abgebrochen (nur 1× getippt — doppelt tippen oder halten)")
+            state = "idle"
+        # Sicherheitslimit im Freihand-Modus
+        if state in ("toggle", "toggle_armed") and rec.active and now - rec.started > MAX_RECORD:
+            rec.stop()
+            pending, pending_since = True, now
+            state = "idle"
+
+        for fd in rlist:
+            try:
+                data = os.read(fd, EVENT_SIZE * 64)
+            except OSError:
+                fds.pop(fd, None)
+                os.close(fd)
+                continue
+            for off in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
+                _, _, etype, code, value = struct.unpack_from(EVENT_FORMAT, data, off)
+                if etype != EV_KEY or value == 2:
+                    continue
+                now = time.monotonic()
+
+                if code in MODS:
+                    before = bool(pressed & CTRL) and bool(pressed & META)
+                    if value == KEY_PRESS:
+                        pressed.add(code)
+                    else:
+                        pressed.discard(code)
+                    chord = bool(pressed & CTRL) and bool(pressed & META)
+
+                    if chord and not before:           # Chord gerade komplett gedrückt
+                        if state == "idle":
+                            rec.start()
+                            state = "hold"
+                            t_chord = now
+                            notify("🎤 Aufnahme… (halten = loslassen fügt ein)", 600000)
+                        elif state == "await2":
+                            state = "toggle_armed"     # Doppeltipp erkannt, Aufnahme läuft weiter
+                            notify("🎤 Freihand-Aufnahme – Strg+Meta drücken zum Einfügen", 600000)
+                        elif state == "toggle":
+                            rec.stop()
+                            state = "drain"
+                            pending, pending_since = True, now
+                    elif before and not chord:         # Chord gerade gelöst
+                        if state == "hold":
+                            if now - t_chord >= HOLD_MIN:
+                                rec.stop()
+                                state = "idle"
+                                pending, pending_since = True, now
+                            else:
+                                state = "await2"       # evtl. erster Tipp eines Doppeltipps
+                                t_tap = now
+                        elif state == "toggle_armed":
+                            state = "toggle"
+                        elif state == "drain":
+                            state = "idle"
+                else:
+                    # andere Taste/Maustaste während gehaltenem Chord:
+                    # das war ein normales Tastenkürzel (z.B. Strg+Meta+Pfeil) -> abbrechen
+                    if value == KEY_PRESS and state in ("hold", "toggle_armed"):
+                        rec.stop()
+                        notify("✖ Abgebrochen (andere Taste gedrückt)")
+                        state = "drain" if (pressed & CTRL and pressed & META) else "idle"
+
+        # Ausstehendes Einfügen ausführen, sobald alle Modifier losgelassen
+        # wurden (Fallback nach 2 s, falls ein Release-Event verloren ging)
+        if pending and (not pressed or time.monotonic() - pending_since > 2.0):
+            pending = False
+            pressed.clear()
+            transcribe_and_paste()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)

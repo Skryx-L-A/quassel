@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Diktat ein-/ausschalten (Hotkey-Daemon + Whisper-Server).
+# Aufruf: dictate-ctl [toggle|start|stop]
+set -u
+cmd="${1:-toggle}"
+
+notify() {
+    notify-send -a Diktat -i audio-input-microphone -t 4000 \
+        -h string:x-canonical-private-synchronous:dictate-ctl "Diktat" "$1" 2>/dev/null || true
+}
+
+running() { systemctl --user is-active --quiet dictate-daemon; }
+
+case "$cmd" in
+    toggle) if running; then cmd=stop; else cmd=start; fi ;;
+esac
+
+case "$cmd" in
+    start)
+        systemctl --user start dictate-daemon whisper-server
+        notify "✅ Diktat AN — Strg+Meta halten oder doppelt tippen"
+        ;;
+    stop)
+        systemctl --user stop dictate-daemon whisper-server
+        notify "⏹ Diktat AUS (GPU-Speicher freigegeben)"
+        ;;
+    *)
+        echo "usage: dictate-ctl [toggle|start|stop]" >&2
+        exit 2
+        ;;
+esac

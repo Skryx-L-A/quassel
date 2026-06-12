@@ -1,0 +1,13 @@
+[Unit]
+Description=Diktat-Daemon (Strg+Meta halten/doppeltippen für Spracheingabe)
+Wants=diktat-ydotoold.service
+After=diktat-ydotoold.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/bin/dictate-daemon
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

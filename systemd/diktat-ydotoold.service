@@ -1,0 +1,11 @@
+[Unit]
+Description=ydotoold (virtuelle Tastatur für Diktat)
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env ydotoold --socket-path=%t/.ydotool_socket
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
