@@ -497,9 +497,58 @@ class WinApp(QObject):
                 "ready" if self.enabled else "off"))
 
 
+def run_setup():
+    """Vom Installer aufgerufen (--setup): lädt Whisper-Engine (GPU-passend)
+    und Sprachmodell mit Fortschrittsfenster — nach dem Wizard ist alles da."""
+    from PySide6.QtWidgets import QProgressDialog
+    app = QApplication([])
+    app.setWindowIcon(app_icon())
+    dlg = QProgressDialog("", None, 0, 100)
+    dlg.setWindowTitle("VoxType Setup")
+    dlg.setLabelText(tr("downloading", model="whisper"))
+    dlg.setMinimumWidth(420)
+    dlg.setCancelButton(None)
+    dlg.show()
+    state = {"frac": 0.0, "what": ""}
+    worker = {}
+
+    def progress(frac, what=""):
+        state["frac"], state["what"] = frac, what
+
+    def work():
+        try:
+            if server.server_exe() is None:
+                server.download_binaries(progress)
+            if server.current_model() is None:
+                model = "large-v3-turbo" if server.has_nvidia() else "small"
+                server.download_model(model, progress)
+            server.ensure_working(progress)
+            server.stop()              # App startet ihn bei Bedarf selbst
+        except Exception:  # noqa: BLE001 — App holt Fehlendes beim 1. Start nach
+            pass
+        worker["done"] = True
+
+    threading.Thread(target=work, daemon=True).start()
+
+    def tick():
+        dlg.setValue(int(state["frac"] * 100))
+        if state["what"]:
+            dlg.setLabelText(tr("downloading", model=state["what"]))
+        if worker.get("done"):
+            app.quit()
+
+    timer = QTimer()
+    timer.timeout.connect(tick)
+    timer.start(120)
+    app.exec()
+
+
 def main():
     if os.name != "nt":
         raise SystemExit("voxtype.win.app läuft nur unter Windows.")
+    if "--setup" in sys.argv:
+        run_setup()
+        return
     probe = QLocalSocket()
     probe.connectToServer("voxtype-app")
     if probe.waitForConnected(300):
