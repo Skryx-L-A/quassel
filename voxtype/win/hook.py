@@ -1,23 +1,37 @@
-"""Low-Level-Tastatur-Hook für Windows (ctypes, WH_KEYBOARD_LL).
+"""Tastatur-Mitleser für Windows über Raw Input (WM_INPUT).
 
-Erkennt den Modifier-Chord (Standard Strg+Win) mit derselben Semantik wie
-der Linux-evdev-Daemon: Halten = Push-to-Talk, Doppeltipp = Freihand,
-andere Taste während des Chords = Abbruch. Die Events landen in einer
-Queue; die Zustandsmaschine (machine.py-Logik in app.py) läuft im
-Qt-Hauptthread.
+Vorher WH_KEYBOARD_LL: dessen Callback läuft synchron in der systemweiten
+Eingabekette. Der Callback ist Python-Code und braucht den GIL — hält ein
+anderer Thread den GIL zu lange (Transkription, Hänger), staut Windows
+ALLE Tastatureingaben systemweit. Thread-Priorität ändert daran nichts.
 
-Eigene injizierte Events (SendInput beim Einfügen) werden über das
-LLKHF_INJECTED-Flag ignoriert.
+Raw Input (RIDEV_INPUTSINK) ist dagegen ein passiver Abonnent: Windows
+kopiert die Events in die Message-Queue dieses Threads, die Eingabekette
+läuft unabhängig davon weiter. Selbst wenn VoxType komplett hängt, bleibt
+die Systemtastatur flüssig. Tasten unterdrücken konnten wir mit dem Hook
+ohnehin nie nötig — der Chord (Strg+Win) löst allein nichts aus.
+
+Erkennt den Modifier-Chord mit derselben Semantik wie der Linux-evdev-
+Daemon: Halten = Push-to-Talk, Doppeltipp = Freihand, andere Taste während
+des Chords = Abbruch. Die Events landen in einer Queue; die Zustands-
+maschine (machine.py) läuft im Qt-Hauptthread.
+
+Eigene injizierte Events (SendInput beim Einfügen) kommen ohne Geräte-
+Handle an (hDevice == NULL) und werden ignoriert.
 """
 import ctypes
 import ctypes.wintypes as wt
 import queue
 import threading
 
-WH_KEYBOARD_LL = 13
-WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
-WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0104, 0x0105
-LLKHF_INJECTED = 0x10
+WM_INPUT = 0x00FF
+WM_QUIT = 0x0012
+HWND_MESSAGE = -3
+RIDEV_INPUTSINK = 0x00000100
+RID_INPUT = 0x10000003
+RIM_TYPEKEYBOARD = 1
+RI_KEY_BREAK = 0x01
+RI_KEY_E0 = 0x02
 
 # Virtual-Key-Codes der Modifier (links/rechts getrennt, wie evdev)
 VK_CTRL = {0xA2, 0xA3}
@@ -30,14 +44,24 @@ CHORDS_VK = {
 }
 
 
-class KBDLLHOOKSTRUCT(ctypes.Structure):
-    _fields_ = [("vkCode", wt.DWORD), ("scanCode", wt.DWORD),
-                ("flags", wt.DWORD), ("time", wt.DWORD),
-                ("dwExtraInfo", ctypes.POINTER(wt.ULONG))]
+class RAWINPUTDEVICE(ctypes.Structure):
+    _fields_ = [("usUsagePage", wt.USHORT), ("usUsage", wt.USHORT),
+                ("dwFlags", wt.DWORD), ("hwndTarget", wt.HWND)]
 
 
-HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_longlong, ctypes.c_int,
-                              wt.WPARAM, wt.LPARAM)
+class RAWINPUTHEADER(ctypes.Structure):
+    _fields_ = [("dwType", wt.DWORD), ("dwSize", wt.DWORD),
+                ("hDevice", wt.HANDLE), ("wParam", wt.WPARAM)]
+
+
+class RAWKEYBOARD(ctypes.Structure):
+    _fields_ = [("MakeCode", wt.USHORT), ("Flags", wt.USHORT),
+                ("Reserved", wt.USHORT), ("VKey", wt.USHORT),
+                ("Message", wt.UINT), ("ExtraInformation", wt.ULONG)]
+
+
+class RAWINPUT(ctypes.Structure):
+    _fields_ = [("header", RAWINPUTHEADER), ("keyboard", RAWKEYBOARD)]
 
 
 class KeyboardHook(threading.Thread):
@@ -46,41 +70,61 @@ class KeyboardHook(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
         self.events = queue.Queue()
-        self._proc = HOOKPROC(self._callback)   # Referenz halten (GC!)
-        self._hook = None
         self._tid = None
-
-    def _callback(self, n_code, w_param, l_param):
-        # ABSOLUT minimal halten: Windows staut SYSTEMWEIT alle Tastatur-
-        # eingaben, solange dieser Callback nicht zurückkehrt. Niemals
-        # blockieren, niemals eine Exception entkommen lassen.
-        try:
-            if n_code == 0:
-                kb = ctypes.cast(l_param, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
-                if not kb.flags & LLKHF_INJECTED:
-                    if w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
-                        self.events.put_nowait((kb.vkCode, True))
-                    elif w_param in (WM_KEYUP, WM_SYSKEYUP):
-                        self.events.put_nowait((kb.vkCode, False))
-        except Exception:  # noqa: BLE001
-            pass
-        return ctypes.windll.user32.CallNextHookEx(None, n_code, w_param, l_param)
 
     def run(self):
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
         self._tid = kernel32.GetCurrentThreadId()
-        # Höchste Priorität: der Hook-Thread MUSS Tastaturereignisse sofort
-        # beantworten, auch wenn die App gerade transkribiert (GIL-Druck)
-        kernel32.SetThreadPriority(kernel32.GetCurrentThread(), 15)  # TIME_CRITICAL
-        self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, None, 0)
+        # 64-bit-sichere Signaturen (ctypes kürzt sonst Handles auf c_int)
+        user32.CreateWindowExW.restype = wt.HWND
+        user32.CreateWindowExW.argtypes = [
+            wt.DWORD, wt.LPCWSTR, wt.LPCWSTR, wt.DWORD,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wt.HWND, wt.HMENU, wt.HINSTANCE, wt.LPVOID]
+        user32.GetRawInputData.restype = wt.UINT
+        user32.GetRawInputData.argtypes = [
+            wt.LPARAM, wt.UINT, wt.LPVOID, ctypes.POINTER(wt.UINT), wt.UINT]
+        # Unsichtbares Message-Only-Fenster als Empfänger der WM_INPUT-Events
+        hwnd = user32.CreateWindowExW(0, "STATIC", "voxtype-rawinput", 0,
+                                      0, 0, 0, 0, HWND_MESSAGE, None, None, None)
+        rid = RAWINPUTDEVICE(0x01, 0x06, RIDEV_INPUTSINK, hwnd)  # Tastaturen
+        user32.RegisterRawInputDevices(ctypes.byref(rid), 1,
+                                       ctypes.sizeof(RAWINPUTDEVICE))
         msg = wt.MSG()
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            if msg.message == WM_INPUT:
+                self._on_input(msg.lParam)
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))
-        if self._hook:
-            user32.UnhookWindowsHookEx(self._hook)
+        if hwnd:
+            user32.DestroyWindow(hwnd)
+
+    def _on_input(self, lparam):
+        raw = RAWINPUT()
+        size = wt.UINT(ctypes.sizeof(RAWINPUT))
+        got = ctypes.windll.user32.GetRawInputData(
+            lparam, RID_INPUT, ctypes.byref(raw), ctypes.byref(size),
+            ctypes.sizeof(RAWINPUTHEADER))
+        if got == 0 or got == 0xFFFFFFFF:
+            return
+        if raw.header.dwType != RIM_TYPEKEYBOARD:
+            return
+        if not raw.header.hDevice:
+            return                          # injiziert (SendInput) -> ignorieren
+        kb = raw.keyboard
+        vk = kb.VKey
+        if vk == 0xFF:
+            return                          # Füll-Events (z.B. Fake-Shift)
+        # Raw Input meldet Strg/Alt generisch; links/rechts steckt im E0-Flag
+        if vk == 0x11:                      # VK_CONTROL
+            vk = 0xA3 if kb.Flags & RI_KEY_E0 else 0xA2
+        elif vk == 0x12:                    # VK_MENU
+            vk = 0xA5 if kb.Flags & RI_KEY_E0 else 0xA4
+        elif vk == 0x10:                    # VK_SHIFT
+            vk = 0xA1 if kb.MakeCode == 0x36 else 0xA0
+        self.events.put_nowait((vk, not (kb.Flags & RI_KEY_BREAK)))
 
     def stop(self):
         if self._tid:
-            ctypes.windll.user32.PostThreadMessageW(self._tid, 0x0012, 0, 0)  # WM_QUIT
+            ctypes.windll.user32.PostThreadMessageW(self._tid, WM_QUIT, 0, 0)

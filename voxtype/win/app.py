@@ -29,6 +29,17 @@ from .paste import paste, send_backspaces
 
 PARTIAL_EVERY = 2.0
 PARTIAL_WINDOW = 15
+
+
+def dlog(msg):
+    """Timing-Protokoll für die Beta: %LOCALAPPDATA%/VoxType/debug.log."""
+    try:
+        with open(os.path.join(config.DATADIR, "debug.log"), "a",
+                  encoding="utf-8") as f:
+            f.write("%s %9.3f %s\n" % (time.strftime("%H:%M:%S"),
+                                       time.monotonic(), msg))
+    except OSError:
+        pass
 _MEI = getattr(sys, "_MEIPASS", None)   # PyInstaller-Bundle: Assets liegen dort
 ICON_CANDIDATES = ([os.path.join(_MEI, "assets", "voxtype.png"),
                     os.path.join(_MEI, "assets", "voxtype.svg")] if _MEI else []) + [
@@ -57,7 +68,9 @@ class PartialWorker(threading.Thread):
         self.stop_event = threading.Event()
 
     def run(self):
+        t = time.monotonic()
         whisperclient.ensure_server()
+        dlog("partial: ensure_server %.2fs" % (time.monotonic() - t))
         while not self.stop_event.wait(PARTIAL_EVERY):
             if not self.rec.active:
                 return
@@ -69,7 +82,10 @@ class PartialWorker(threading.Thread):
                 wav_from_raw(data, PARTWAV)
             except OSError:
                 continue
+            t = time.monotonic()
             text = whisperclient.transcribe(PARTWAV, self.cfg, timeout=20)
+            dlog("partial: transcribe %.2fs (%d Bytes Audio)"
+                 % (time.monotonic() - t, len(data)))
             if text is not None and not self.stop_event.is_set() and self.rec.active:
                 state_set("recording", " ".join(text.split()).strip())
 
@@ -259,9 +275,13 @@ class WinApp(QObject):
         self.machine.poll()
 
     def on_start(self):
+        dlog("on_start")
         self.cfg.reload()
+        t = time.monotonic()
         if not self.rec.start(self.cfg.mic):
+            dlog("on_start: rec.start FEHLGESCHLAGEN")
             return
+        dlog("on_start: rec.start %.2fs" % (time.monotonic() - t))
         self.partial = PartialWorker(self.rec, self.cfg)
         self.partial.start()
         self.sig_state.emit("recording", "")
@@ -274,10 +294,13 @@ class WinApp(QObject):
         self.sig_state.emit("ready", "")
 
     def on_finish(self):
+        dlog("on_finish")
         if self.partial:
             self.partial.stop()
             self.partial = None
+        t = time.monotonic()
         self.rec.stop()
+        dlog("on_finish: rec.stop %.2fs" % (time.monotonic() - t))
         data = self.rec.raw_bytes()
         if len(data) < 8000:
             self.sig_state.emit("ready", "")
@@ -286,11 +309,26 @@ class WinApp(QObject):
         threading.Thread(target=self._transcribe, args=(data,), daemon=True).start()
 
     def _transcribe(self, data):
+        # Fehler hier liefen früher ins Leere: der Daemon-Thread starb leise
+        # und die Pille blieb für immer auf "Transkribiere..."
+        try:
+            self._transcribe_inner(data)
+        except Exception as e:  # noqa: BLE001
+            import traceback
+            dlog("transcribe: EXCEPTION " + traceback.format_exc())
+            self.sig_state.emit("error", str(e)[:80])
+
+    def _transcribe_inner(self, data):
+        t = time.monotonic()
         if not whisperclient.ensure_server():
             self.sig_state.emit("error", tr("no_server"))
             return
+        dlog("transcribe: ensure_server %.2fs" % (time.monotonic() - t))
         wav_from_raw(data, WAV)
+        t = time.monotonic()
         raw = whisperclient.transcribe(WAV, self.cfg)
+        dlog("transcribe: inference %.2fs (%d Bytes Audio)"
+             % (time.monotonic() - t, len(data)))
         if raw is None:
             self.sig_state.emit("error", tr("no_server"))
             return
@@ -306,7 +344,10 @@ class WinApp(QObject):
             else:
                 self.sig_state.emit("error", tr("nothing"))
             return
+        t = time.monotonic()
         paste(value)
+        dlog("transcribe: paste %.2fs (%d Zeichen)"
+             % (time.monotonic() - t, len(value)))
         self.last_paste_len = len(value)
         if self.cfg.history_enabled:
             try:

@@ -12,6 +12,23 @@ import time
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 
+# 64-bit-sichere Signaturen: ohne restype kürzt ctypes Handles/Zeiger auf
+# c_int — GlobalLock auf dem verstümmelten Handle liefert dann NULL/Müll
+# und das Einfügen stirbt mit einer Access-Violation.
+kernel32.GlobalAlloc.restype = wt.HGLOBAL
+kernel32.GlobalAlloc.argtypes = [wt.UINT, ctypes.c_size_t]
+kernel32.GlobalLock.restype = wt.LPVOID
+kernel32.GlobalLock.argtypes = [wt.HGLOBAL]
+kernel32.GlobalUnlock.restype = wt.BOOL
+kernel32.GlobalUnlock.argtypes = [wt.HGLOBAL]
+kernel32.GlobalFree.restype = wt.HGLOBAL
+kernel32.GlobalFree.argtypes = [wt.HGLOBAL]
+user32.OpenClipboard.argtypes = [wt.HWND]
+user32.GetClipboardData.restype = wt.HANDLE
+user32.GetClipboardData.argtypes = [wt.UINT]
+user32.SetClipboardData.restype = wt.HANDLE
+user32.SetClipboardData.argtypes = [wt.UINT, wt.HANDLE]
+
 CF_UNICODETEXT = 13
 GMEM_MOVEABLE = 0x0002
 KEYEVENTF_KEYUP = 0x0002
@@ -61,15 +78,26 @@ def clip_read():
 def clip_copy(text):
     data = text.encode("utf-16-le") + b"\x00\x00"
     handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+    if not handle:
+        return False
     ptr = kernel32.GlobalLock(handle)
+    if not ptr:
+        kernel32.GlobalFree(handle)
+        return False
     ctypes.memmove(ptr, data, len(data))
     kernel32.GlobalUnlock(handle)
-    if user32.OpenClipboard(None):
-        try:
-            user32.EmptyClipboard()
-            user32.SetClipboardData(CF_UNICODETEXT, handle)
-        finally:
-            user32.CloseClipboard()
+    if not user32.OpenClipboard(None):
+        kernel32.GlobalFree(handle)
+        return False
+    try:
+        user32.EmptyClipboard()
+        # Ab SetClipboardData gehört das Handle dem System
+        if not user32.SetClipboardData(CF_UNICODETEXT, handle):
+            kernel32.GlobalFree(handle)
+            return False
+    finally:
+        user32.CloseClipboard()
+    return True
 
 
 def paste(text):
