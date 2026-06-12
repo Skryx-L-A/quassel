@@ -1,0 +1,27 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: |
+          bash -n install.sh uninstall.sh bin/voxtype-ctl bin/voxtyped bin/voxtype bin/voxtype-pill
+      - name: ShellCheck
+        run: |
+          sudo apt-get install -y shellcheck >/dev/null
+          shellcheck -S warning install.sh uninstall.sh bin/voxtype-ctl || true
+      - name: Python compile
+        run: python3 -m py_compile voxtype/*.py
+      - name: Text processing tests
+        run: |
+          PYTHONPATH=. python3 - <<'PY'
+          from voxtype.textproc import postprocess
+          class C: punctuation=True; commands=True
+          k,v = postprocess("hallo komma welt punkt", C())
+          assert v == "Hallo, welt.", v
+          k,v = postprocess("scratch that", C())
+          assert k == "command", (k, v)
+          print("ok")
+          PY
