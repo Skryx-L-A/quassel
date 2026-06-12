@@ -87,39 +87,7 @@ frees the GPU/RAM the model uses — handy before gaming.
 ./uninstall.sh --purge  # also remove whisper.cpp build + downloaded models
 ```
 
----
-
-# Deutsch 🇩🇪
-
-**`Strg+Meta` (Strg+Windows-Taste) halten, sprechen, loslassen — der Text
-erscheint dort, wo der Cursor ist.** Funktioniert in jedem Programm, auch im
-Terminal. Komplett offline: Die Spracherkennung (Whisper) läuft lokal auf
-deinem PC, nichts geht in die Cloud.
-
-## Installation
-
-```bash
-git clone https://github.com/Skryx-L-A/diktat-linux.git
-cd diktat-linux
-./install.sh
-```
-
-Ein einziges Skript installiert alles (Pakete, Berechtigungen, whisper.cpp,
-Sprachmodell, Daemon, Startmenü-App). Falls das Skript es sagt: einmal ab-
-und wieder anmelden.
-
-## Benutzung
-
-1. App **„Diktat"** im Startmenü öffnen und einschalten.
-2. In ein Textfeld klicken, dann:
-   - `Strg+Meta` **halten** → sprechen → loslassen → Text erscheint
-   - `Strg+Meta` **2× tippen** → freihändig sprechen → 1× drücken → Text erscheint
-
-Sprache (Deutsch/Englisch/…) wird automatisch erkannt. Das Diktat-Fenster ist
-nur eine Fernbedienung — Schließen beendet das Diktat nicht. Ausschalten gibt
-den GPU-Speicher des Modells frei (praktisch vorm Zocken).
-
-## Lizenz / License
+## License
 
 MIT — see [LICENSE](LICENSE). Uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
 (MIT) and OpenAI's Whisper models (downloaded at install time).
