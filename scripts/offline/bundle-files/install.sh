@@ -48,14 +48,39 @@ ok "Engine: $ENGINE   Standard-Modell: $MODEL"
 # ---------------------------------------------------------------------------
 say "2/6  Engine-Wrapper + server.env schreiben"
 # ---------------------------------------------------------------------------
+# Engine-Wrapper: EIGENE Libs (libwhisper/libggml*) immer aus dem Paket; die
+# CUDA-Runtime aber NUR als Fallback — ein auf dem System vorhandenes CUDA der
+# passenden .so.12-Serie wird bevorzugt und bleibt unangetastet. Der NVIDIA-
+# Treiber (libcuda.so.1) kommt ohnehin immer vom System (nicht gebündelt).
 for v in cpu cuda; do
     [[ -x "$BUNDLE/engine/$v/whisper-server" ]] || continue
-    cat > "$BUNDLE/engine/$v/run-server.sh" <<EOF
+    if [[ "$v" == "cuda" ]]; then
+        cat > "$BUNDLE/engine/$v/run-server.sh" <<'EOF'
 #!/usr/bin/env bash
-here="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-export LD_LIBRARY_PATH="\$here:\${LD_LIBRARY_PATH:-}"
-exec "\$here/whisper-server" "\$@"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LD_LIBRARY_PATH="$here:${LD_LIBRARY_PATH:-}"
+# System-CUDA (passende .so.12-Serie) bevorzugen: gebündelte Runtime nur als
+# Fallback einhängen, wenn das System keine hat (mehrere Pfade prüfen).
+have_sys_cuda() {
+    { /sbin/ldconfig -p 2>/dev/null; /usr/sbin/ldconfig -p 2>/dev/null
+      ldconfig -p 2>/dev/null; } | grep -q 'libcudart\.so\.12' && return 0
+    for d in /usr/lib64 /usr/lib /usr/local/cuda/lib64 /lib64 \
+             /usr/lib/x86_64-linux-gnu; do
+        ls "$d"/libcudart.so.12* >/dev/null 2>&1 && return 0
+    done
+    return 1
+}
+have_sys_cuda || export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$here/cudart-fallback"
+exec "$here/whisper-server" "$@"
 EOF
+    else
+        cat > "$BUNDLE/engine/$v/run-server.sh" <<'EOF'
+#!/usr/bin/env bash
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LD_LIBRARY_PATH="$here:${LD_LIBRARY_PATH:-}"
+exec "$here/whisper-server" "$@"
+EOF
+    fi
     chmod +x "$BUNDLE/engine/$v/run-server.sh"
 done
 mkdir -p "$CONF"
