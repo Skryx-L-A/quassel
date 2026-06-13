@@ -1,8 +1,15 @@
-"""whisper-server.exe-Verwaltung für Windows.
+"""whisper-server.exe-Verwaltung und Erstausstattung für Windows.
 
-Erstausstattung (Binaries + Modell) lädt die App beim ersten Start selbst
-herunter — der Installer bleibt dadurch winzig. NVIDIA wird über
-nvidia-smi erkannt (cuBLAS-Build), sonst CPU-Build.
+Erstausstattung (provision): stellt ALLE Sprachmodelle und ALLE Engines
+bereit, schaltet die zur GPU passende Engine aktiv und wählt per Hardware
+ein Standardmodell. Quelle ist ein Offline-Bundle (neben der exe oder via
+QUASSEL_BUNDLE), falls vorhanden — sonst Download. So muss nach dem
+einmaligen Beziehen nie wieder etwas heruntergeladen werden.
+
+Lokale Ablage unter %LOCALAPPDATA%\\Quassel:
+  models\\ggml-*.bin        alle Modelle
+  engines\\{cpu,blas,cublas}\\*.zip   permanenter Engine-Vorrat
+  whisper-bin\\             die aktuell aktive (entpackte) Engine
 """
 import os
 import shutil
@@ -11,16 +18,22 @@ import sys
 import time
 import zipfile
 
-from .. import config
+from .. import config, hwdetect
 from ..net import download
 from ..whisperclient import server_up
 
 BIN_DIR = os.path.join(config.DATADIR, "whisper-bin")
 MODEL_DIR = os.path.join(config.DATADIR, "models")
+ENGINES_DIR = os.path.join(config.DATADIR, "engines")
 WHISPER_RELEASE = "https://github.com/ggml-org/whisper.cpp/releases/latest/download/{}"
-ZIP_CPU = "whisper-bin-x64.zip"
-ZIP_BLAS = "whisper-blas-bin-x64.zip"      # OpenBLAS: bester Build ohne NVIDIA
-ZIP_CUDA = "whisper-cublas-12.4.0-bin-x64.zip"
+# Engine-Art -> Zip-Name. cublas: NVIDIA (CUDA-DLLs im Zip); blas: OpenBLAS
+# (schnellster Nicht-NVIDIA-Build, den upstream für Windows anbietet);
+# cpu: schlanker Notnagel-Build.
+ENGINE_ZIPS = {
+    "cpu": "whisper-bin-x64.zip",
+    "blas": "whisper-blas-bin-x64.zip",
+    "cublas": "whisper-cublas-12.4.0-bin-x64.zip",
+}
 
 _proc = None
 
@@ -40,6 +53,11 @@ def has_nvidia():
     return shutil.which("nvidia-smi") is not None
 
 
+def preferred_engine_kind():
+    """Zur Hardware passende Engine: NVIDIA -> cublas, sonst OpenBLAS."""
+    return "cublas" if has_nvidia() else "blas"
+
+
 def installed():
     return server_exe() is not None and current_model() is not None
 
@@ -50,36 +68,146 @@ def current_model():
     return path if path and os.path.exists(path) else None
 
 
-def _fetch_zip(zip_name, progress):
-    target = os.path.join(BIN_DIR, zip_name)
-    if not download(WHISPER_RELEASE.format(zip_name), target,
-                    lambda f: progress(f, zip_name)):
+def bundle_dir():
+    """Pfad zum Offline-Payload (models/ + engines/), falls vorhanden.
+
+    Reihenfolge: QUASSEL_BUNDLE, dann ein 'payload'-Ordner neben der exe oder
+    eine Ebene darüber (so liegt das Offline-Paket: <root>/Quassel/Quassel.exe
+    + <root>/payload). None, wenn kein vollständiges Bundle gefunden wird."""
+    cands = []
+    env = os.environ.get("QUASSEL_BUNDLE")
+    if env:
+        cands.append(env)
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+    cands += [os.path.join(base, "payload"),
+              os.path.join(os.path.dirname(base), "payload")]
+    for c in cands:
+        if c and os.path.isdir(os.path.join(c, "models")) \
+                and os.path.isdir(os.path.join(c, "engines")):
+            return os.path.abspath(c)
+    return None
+
+
+# ----------------------------------------------------------------- Bereitstellen
+def _have_model(path):
+    return os.path.exists(path) and os.path.getsize(path) > 1024
+
+
+def _copy_file(src, target, progress, label):
+    """Große Datei mit Fortschritt kopieren (Bundle -> lokale Ablage)."""
+    if not (src and os.path.exists(src)):
         return False
-    with zipfile.ZipFile(target) as z:
-        z.extractall(BIN_DIR)
-    os.remove(target)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    total = os.path.getsize(src) or 1
+    tmp = target + ".part"
+    done = 0
+    try:
+        with open(src, "rb") as r, open(tmp, "wb") as w:
+            while True:
+                chunk = r.read(4 * 1024 * 1024)
+                if not chunk:
+                    break
+                w.write(chunk)
+                done += len(chunk)
+                progress(min(done / total, 1.0), label)
+        os.replace(tmp, target)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return False
+    progress(1.0, label)
     return True
 
 
-def download_binaries(progress=lambda frac, what: None):
-    """Lädt whisper.cpp-Binaries (einmalig). progress(0..1, beschreibung).
+def _provide_model(model, bundle, progress):
+    target = os.path.join(MODEL_DIR, f"ggml-{model}.bin")
+    if _have_model(target):
+        return target
+    label = f"ggml-{model}.bin"
+    if bundle and _copy_file(os.path.join(bundle, "models", label),
+                             target, progress, label):
+        return target
+    if download(config.MODEL_URL.format(model), target,
+                lambda f: progress(f, label)):
+        return target
+    return None
 
-    NVIDIA-GPU -> cuBLAS-Build (CUDA-Runtime-DLLs im Zip enthalten);
-    AMD/Intel -> OpenBLAS-Build (upstream bietet für Windows kein
-    Vulkan-Paket, BLAS ist dort der schnellste Nicht-NVIDIA-Build);
-    schlägt der Serverstart später fehl, holt ensure_working()
-    automatisch den einfachen CPU-Build nach."""
-    os.makedirs(BIN_DIR, exist_ok=True)
-    zip_name = ZIP_CUDA if has_nvidia() else ZIP_BLAS
-    if not _fetch_zip(zip_name, progress):
+
+def _provide_engine_zip(kind, bundle, progress):
+    zipname = ENGINE_ZIPS[kind]
+    dest = os.path.join(ENGINES_DIR, kind, zipname)
+    if os.path.exists(dest) and os.path.getsize(dest) > 0:
+        return dest
+    if bundle and _copy_file(os.path.join(bundle, "engines", kind, zipname),
+                             dest, progress, zipname):
+        return dest
+    if download(WHISPER_RELEASE.format(zipname), dest,
+                lambda f: progress(f, zipname)):
+        return dest
+    return None
+
+
+def _activate_engine(kind, progress):
+    """Die gewählte Engine in whisper-bin entpacken (ersetzt eine alte)."""
+    zip_path = os.path.join(ENGINES_DIR, kind, ENGINE_ZIPS[kind])
+    if not os.path.exists(zip_path):
         return False
+    progress(0.0, ENGINE_ZIPS[kind])
+    shutil.rmtree(BIN_DIR, ignore_errors=True)
+    os.makedirs(BIN_DIR, exist_ok=True)
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            z.extractall(BIN_DIR)
+    except (OSError, zipfile.BadZipFile):
+        return False
+    progress(1.0, ENGINE_ZIPS[kind])
     return server_exe() is not None
+
+
+def provision(progress=lambda frac, what: None):
+    """Vollständige Erstausstattung: alle Modelle + alle Engines bereitstellen,
+    passende Engine aktiv schalten, Standardmodell per Hardware wählen.
+
+    Nutzt ein Offline-Bundle, falls vorhanden, sonst Download. Idempotent —
+    bereits vorhandene Dateien werden übersprungen."""
+    bundle = bundle_dir()
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    os.makedirs(ENGINES_DIR, exist_ok=True)
+
+    for model in config.MODELS:
+        _provide_model(model, bundle, progress)
+    for kind in ENGINE_ZIPS:
+        _provide_engine_zip(kind, bundle, progress)
+
+    kind = preferred_engine_kind()
+    if not _activate_engine(kind, progress) and kind != "cpu":
+        _activate_engine("cpu", progress)
+
+    default = hwdetect.default_model_for_hardware()
+    model_path = os.path.join(MODEL_DIR, f"ggml-{default}.bin")
+    if not _have_model(model_path):           # Notfall: irgendein da liegendes
+        for m in config.MODELS:
+            p = os.path.join(MODEL_DIR, f"ggml-{m}.bin")
+            if _have_model(p):
+                model_path = p
+                break
+    env = config.read_serverenv()
+    env["MODEL_PATH"] = model_path
+    env["SERVER_BIN"] = server_exe() or ""
+    config.write_serverenv(env)
+    return installed()
 
 
 def ensure_working(progress=lambda frac, what: None):
     """Startprobe: Server hochfahren und Gesundheit prüfen. Scheitert der
-    GPU-Build (z.B. fehlende Treiber/DLLs), wird der CPU-Build nachgeladen
-    und erneut probiert. True, wenn der Server antwortet."""
+    GPU-Build (z.B. fehlende Treiber/DLLs), wird auf den CPU-Build
+    zurückgefallen (erst lokaler Vorrat, dann Download) und erneut probiert."""
     start()
     for _ in range(60):
         if server_up():
@@ -90,10 +218,9 @@ def ensure_working(progress=lambda frac, what: None):
     if server_up():
         return True
     stop()
-    # Fallback: CPU-Build in frisches Verzeichnis
-    shutil.rmtree(BIN_DIR, ignore_errors=True)
-    os.makedirs(BIN_DIR, exist_ok=True)
-    if not _fetch_zip(ZIP_CPU, progress):
+    if not _provide_engine_zip("cpu", bundle_dir(), progress):
+        return False
+    if not _activate_engine("cpu", progress):
         return False
     env = config.read_serverenv()
     env["SERVER_BIN"] = server_exe() or ""
@@ -104,21 +231,6 @@ def ensure_working(progress=lambda frac, what: None):
             return True
         time.sleep(1)
     return False
-
-
-def download_model(model, progress=lambda frac, what: None):
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    modelfile = f"ggml-{model}.bin"
-    target = os.path.join(MODEL_DIR, modelfile)
-    if not (os.path.exists(target) and os.path.getsize(target) > 1024):
-        if not download(config.MODEL_URL.format(model), target,
-                        lambda f: progress(f, modelfile)):
-            return None
-    env = config.read_serverenv()
-    env["MODEL_PATH"] = target
-    env["SERVER_BIN"] = server_exe() or ""
-    config.write_serverenv(env)
-    return target
 
 
 def start():

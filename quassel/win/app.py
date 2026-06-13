@@ -32,11 +32,22 @@ PARTIAL_EVERY = 2.0
 PARTIAL_WINDOW = 15
 
 
+DEBUG_LOG_MAX = 1_000_000   # ab ~1 MB eine Generation wegrotieren
+
+
 def dlog(msg):
-    """Timing-Protokoll für die Beta: %LOCALAPPDATA%/Quassel/debug.log."""
+    """Timing-Protokoll für die Beta: %LOCALAPPDATA%/Quassel/debug.log.
+
+    Wird die Datei zu groß, wandert sie nach debug.log.1 (eine Generation),
+    damit das Log über Wochen nicht unbegrenzt wächst."""
     try:
-        with open(os.path.join(config.DATADIR, "debug.log"), "a",
-                  encoding="utf-8") as f:
+        path = os.path.join(config.DATADIR, "debug.log")
+        try:
+            if os.path.getsize(path) > DEBUG_LOG_MAX:
+                os.replace(path, path + ".1")
+        except OSError:
+            pass
+        with open(path, "a", encoding="utf-8") as f:
             f.write("%s %9.3f %s\n" % (time.strftime("%H:%M:%S"),
                                        time.monotonic(), msg))
     except OSError:
@@ -332,14 +343,19 @@ class WinApp(QObject):
 
     # ----------------------------------------------------------- Ersteinrichtung
     def first_run_setup(self):
-        self.sig_state.emit("transcribing", tr("downloading", model="…"))
+        """Erstausstattung beim ersten Start: Modelle + Engine bereitstellen
+        (aus dem Offline-Bundle, falls vorhanden, sonst Download). Die Pille
+        zeigt, welche Datei gerade vorbereitet wird."""
+        self.sig_state.emit("transcribing", tr("preparing", item="…"))
+        last = {"what": ""}
+
+        def progress(_frac, what=""):
+            if what and what != last["what"]:
+                last["what"] = what
+                self.sig_state.emit("transcribing", tr("preparing", item=what))
         try:
-            if server.server_exe() is None:
-                server.download_binaries()
-            if server.current_model() is None:
-                model = "small" if not server.has_nvidia() else "large-v3-turbo"
-                server.download_model(model)
-            if server.ensure_working():
+            server.provision(progress)
+            if server.ensure_working(progress):
                 self.sig_state.emit("done", tr("ready"))
             else:
                 self.sig_state.emit("error", tr("no_server"))
@@ -352,17 +368,28 @@ class WinApp(QObject):
         self.act_toggle = QAction(tr("turn_off"), menu)
         self.act_toggle.triggered.connect(self.toggle)
         menu.addAction(self.act_toggle)
-        act_settings = QAction(tr("settings"), menu)
-        act_settings.triggered.connect(self.open_settings)
-        menu.addAction(act_settings)
+        self.act_settings = QAction(tr("settings"), menu)
+        self.act_settings.triggered.connect(self.open_settings)
+        menu.addAction(self.act_settings)
         menu.addSeparator()
-        act_quit = QAction(tr("quit"), menu)
-        act_quit.triggered.connect(self.quit)
-        menu.addAction(act_quit)
+        self.act_quit = QAction(tr("quit"), menu)
+        self.act_quit.triggered.connect(self.quit)
+        menu.addAction(self.act_quit)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(
             lambda reason: self.open_settings()
             if reason == QSystemTrayIcon.ActivationReason.DoubleClick else None)
+
+    def retranslate(self):
+        """App-Sprache ohne Neustart übernehmen (vom Einstellungsfenster
+        aufgerufen, wenn die UI-Sprache gewechselt wird)."""
+        self.cfg.reload()
+        i18n.set_language(None if self.cfg.ui_language == "auto"
+                          else self.cfg.ui_language)
+        self.act_toggle.setText(tr("turn_off") if self.enabled else tr("turn_on"))
+        self.act_settings.setText(tr("settings"))
+        self.act_quit.setText(tr("quit"))
+        self.tray.setToolTip("Quassel")
 
     def open_settings(self):
         # Das Qt-Kontrollzentrum (center.py) ist plattformneutral nutzbar.
@@ -541,30 +568,30 @@ class WinApp(QObject):
 
 
 def run_setup():
-    """Vom Installer aufgerufen (--setup): lädt Whisper-Engine (GPU-passend)
-    und Sprachmodell mit Fortschrittsfenster — nach dem Wizard ist alles da."""
+    """Vom Installer aufgerufen (--setup): stellt mit Fortschrittsfenster ALLE
+    Modelle und Engines bereit (GPU-passende Engine wird aktiv geschaltet,
+    Standardmodell per Hardware). Quelle ist ein Offline-Bundle, falls
+    vorhanden, sonst Download — danach läuft Diktieren ohne weiteren Download."""
     from PySide6.QtWidgets import QProgressDialog
     app = QApplication([])
     app.setWindowIcon(app_icon())
     dlg = QProgressDialog("", None, 0, 100)
     dlg.setWindowTitle("Quassel Setup")
-    dlg.setLabelText(tr("downloading", model="whisper"))
-    dlg.setMinimumWidth(420)
+    dlg.setLabelText(tr("preparing", item="whisper"))
+    dlg.setMinimumWidth(440)
     dlg.setCancelButton(None)
     dlg.show()
     state = {"frac": 0.0, "what": ""}
     worker = {}
 
     def progress(frac, what=""):
-        state["frac"], state["what"] = frac, what
+        state["frac"] = frac
+        if what:
+            state["what"] = what
 
     def work():
         try:
-            if server.server_exe() is None:
-                server.download_binaries(progress)
-            if server.current_model() is None:
-                model = "large-v3-turbo" if server.has_nvidia() else "small"
-                server.download_model(model, progress)
+            server.provision(progress)
             server.ensure_working(progress)
             server.stop()              # App startet ihn bei Bedarf selbst
         except Exception:  # noqa: BLE001 — App holt Fehlendes beim 1. Start nach
@@ -576,7 +603,7 @@ def run_setup():
     def tick():
         dlg.setValue(int(state["frac"] * 100))
         if state["what"]:
-            dlg.setLabelText(tr("downloading", model=state["what"]))
+            dlg.setLabelText(tr("preparing", item=state["what"]))
         if worker.get("done"):
             app.quit()
 

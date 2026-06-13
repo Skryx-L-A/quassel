@@ -46,6 +46,7 @@ STRINGS = {
     "commands": ("Voice commands (“scratch that”)", "Sprachkommandos („lösch das“)"),
     "model": ("Whisper model", "Whisper-Modell"),
     "downloading": ("Downloading {model}…", "Lade {model} herunter…"),
+    "preparing": ("Preparing {item}…", "Bereite {item} vor…"),
     "model_switched": ("Model switched: {model}", "Modell gewechselt: {model}"),
     "download_failed": ("Download failed: {err}", "Download fehlgeschlagen: {err}"),
     "sec_mic": ("Microphone", "Mikrofon"),
