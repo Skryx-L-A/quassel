@@ -64,11 +64,19 @@ downloads the installer and opens the setup wizard right away:
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-Setup.exe -OutFile ([IO.Path]::GetTempPath()+'Quassel-Setup.exe'); Start-Process ([IO.Path]::GetTempPath()+'Quassel-Setup.exe')"
 ```
 
-The wizard downloads the matching whisper.cpp build (CUDA on NVIDIA GPUs,
-OpenBLAS otherwise) and a speech model as an install step — when it
-finishes, dictation works immediately, no further downloads. If you
-download the installer with a browser instead, SmartScreen may warn
-because it is not code-signed yet — click "More info" → "Run anyway".
+The wizard downloads every whisper.cpp build (NVIDIA/cuBLAS, OpenBLAS and CPU)
+and all speech models as an install step, then picks the one matching your
+hardware — when it finishes, dictation works immediately and you never need to
+download anything again. If you download the installer with a browser instead,
+SmartScreen may warn because it is not code-signed yet — click "More info" →
+"Run anyway".
+
+**No internet on the target PC?** Use the offline all-in-one package
+(`Quassel-Offline-Windows.exe` plus its `.7z` parts) from the
+[releases page](https://github.com/Skryx-L-A/quassel/releases/latest) — it
+already contains the app, every speech engine and all five models (~4.3 GB).
+Keep all parts in one folder, double-click the `.exe` to extract, then run
+`Quassel.exe`. Nothing is ever downloaded.
 
 > **Status:** the Windows build passed full hands-on testing (dictation,
 > hands-free mode, settings, autostart) on Windows 11 with an NVIDIA GPU —

@@ -27,11 +27,56 @@ Always build with `--clean` — PyInstaller otherwise caches stale analyses.
 - `PyInstaller` produces `windows\dist\Quassel\Quassel.exe` (the app folder).
 - `iscc` wraps it into `windows\Output\Quassel-Setup-2.1.0.exe`.
 
-## First launch
+## Two ways to ship it
 
-On first run Quassel downloads the matching whisper.cpp binaries
-(cuBLAS build if an NVIDIA GPU is present, otherwise CPU) and a speech model
-into `%LOCALAPPDATA%\Quassel`. After that it works fully offline.
+There are two distributions, both of which bundle *everything* so the user
+never has to download anything a second time:
+
+1. **Online installer** (`Quassel-Setup.exe`, ~33 MB) — the Inno Setup `.exe`
+   above. Its install step (`Quassel.exe --setup`) downloads **all** engines
+   (cuBLAS + OpenBLAS + CPU, ~458 MB) and **all five** models (~3.8 GB) with a
+   bilingual progress dialog, then picks the default model for the hardware.
+2. **Offline all-in-one** (`Quassel-Offline-Windows.exe` + `.7z.001/.002/...`)
+   — a self-extracting multi-volume 7-Zip archive that already contains the
+   app plus the whole payload (all engines + all five models, ~4.3 GB). No
+   internet needed at all.
+
+### Building the offline all-in-one
+
+Assemble a payload tree (downloaded once) and wrap the app + payload in a
+self-extracting multi-volume archive (volumes stay < 2 GB for GitHub):
+
+```
+payload/models/ggml-{tiny,base,small,medium,large-v3-turbo}.bin
+payload/engines/cpu/whisper-bin-x64.zip
+payload/engines/blas/whisper-blas-bin-x64.zip
+payload/engines/cublas/whisper-cublas-12.4.0-bin-x64.zip
+```
+
+```powershell
+# stage = <app dir> + payload + the bilingual readme
+robocopy windows\dist\Quassel  stage\Quassel  /E
+robocopy payload               stage\payload  /E
+# 7z.sfx is the GUI SFX module shipped with 7-Zip
+cd stage
+7z a -v1900m -mx=1 -sfx7z.sfx <out>\Quassel-Offline-Windows.exe Quassel payload <readme>
+```
+
+Ship all parts (`Quassel-Offline-Windows.exe` and every `…7z.001`, `…7z.002`,
+… volume) together; the user double-clicks the `.exe` and it finds the volumes
+next to it.
+
+## First launch / first run setup
+
+Provisioning is the same code in both distributions (`quassel.win.server`):
+it prefers an **offline bundle** — a `payload/` folder next to the exe (the
+offline package) or pointed to by the `QUASSEL_BUNDLE` environment variable —
+and only downloads when no bundle is present (the online installer). It places
+all five models in `%LOCALAPPDATA%\Quassel\models`, keeps every engine zip in
+`…\Quassel\engines`, activates the GPU-matched engine (NVIDIA -> cuBLAS, else
+OpenBLAS, CPU as a fallback) into `…\Quassel\whisper-bin`, and selects the
+default model from the hardware (`quassel.hwdetect`). After that Quassel works
+fully offline and model switching needs no further downloads.
 
 ## Notes
 
