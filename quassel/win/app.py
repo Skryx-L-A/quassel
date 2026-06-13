@@ -300,6 +300,7 @@ class WinApp(QObject):
         self.streamer = None
         self._clip_backup = None
         self.ducker = AudioDucker()   # Musik/Ton beim Diktieren leise schalten
+        self._capturing = False       # lief rec.start erfolgreich? (sonst Mikro-Fehler)
         self.enabled = True
 
         self.pill = Pill()
@@ -447,9 +448,13 @@ class WinApp(QObject):
         t = time.monotonic()
         if not self.rec.start(self.cfg.mic):
             dlog("on_start: rec.start FEHLGESCHLAGEN")
+            # Nicht still scheitern lassen: sonst bleibt die Pille grau und der
+            # Nutzer weiss nicht, warum nichts passiert (z.B. Mikro aus/weg).
+            self.sig_state.emit("error", tr("no_mic"))
             return
         dlog("on_start: rec.start %.2fs" % (time.monotonic() - t))
         self.ducker.apply(self.cfg.mute_mode)   # Musik pausieren / Ton stumm
+        self._capturing = True
         self.streamer = None
         self._clip_backup = None
         self.partial = PartialWorker(self.rec, self.cfg, self._on_partial)
@@ -474,6 +479,7 @@ class WinApp(QObject):
         self.streamer = StreamTyper(self.cfg.streaming_mode, type_chunk, send_backspaces)
 
     def on_cancel(self, reason_key):
+        self._capturing = False
         if self.partial:
             self.partial.stop()
             self.partial = None
@@ -487,6 +493,9 @@ class WinApp(QObject):
 
     def on_finish(self):
         dlog("on_finish")
+        if not self._capturing:
+            return        # nichts aufgenommen (z.B. Mikro-Fehler): Meldung stehen lassen
+        self._capturing = False
         if self.partial:
             self.partial.stop()
             self.partial = None

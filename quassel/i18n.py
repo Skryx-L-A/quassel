@@ -57,6 +57,8 @@ STRINGS = {
     "mic_nothing": ("No audio captured — check your microphone!", "Keine Audiodaten — Mikrofon prüfen!"),
     "mic_result": ("Recognized: {text}", "Erkannt: {text}"),
     "no_server": ("Whisper server unreachable", "Whisper-Server nicht erreichbar"),
+    "no_mic": ("No microphone — is it on and connected?",
+               "Kein Mikrofon — ist es an und verbunden?"),
     "sec_dict": ("Personal dictionary", "Persönliches Wörterbuch"),
     "dict_hint": ("One word or name per line — improves recognition of names and jargon.",
                   "Ein Wort/Name pro Zeile — verbessert die Erkennung von Namen und Fachwörtern."),
