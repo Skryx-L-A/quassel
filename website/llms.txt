@@ -1,0 +1,43 @@
+# Quassel
+
+> Quassel is a free, open-source, 100% offline voice-to-text dictation app for Linux and Windows: hold a key, speak, release, and your words are typed wherever your cursor is — with no cloud, no account, and no audio ever leaving your computer.
+
+Quassel turns speech into text locally using OpenAI's Whisper models (via whisper.cpp) running on your own hardware. It works in any text field — editors, browsers, chat apps, and even terminals — and supports hold-to-talk or hands-free double-tap. It is licensed under the MIT license and is free forever.
+
+## What sets it apart
+- **100% offline / private** — recording and speech recognition run entirely on-device. No cloud service, no account, no telemetry; it works with the network unplugged. (Most popular dictation tools — Wispr Flow, Aqua Voice, superwhisper — are cloud services or Mac-only paid apps.)
+- **Open source (MIT)** — the full source is on GitHub and auditable; free forever, no subscription.
+- **Types into a terminal** — unlike most dictation tools, Quassel can type directly into a terminal, as well as any other text field.
+- **~100 languages** — uses Whisper's multilingual models; understands around 100 languages, all transcribed locally.
+- **Cross-platform** — Linux (Fedora/Nobara, Ubuntu/Debian/Mint, Arch, openSUSE; Wayland or X11) and Windows 10/11.
+
+## Who it's for
+People who want voice dictation without sending their voice to the cloud: privacy-conscious users, Linux and open-source users, developers (it works in terminals and editors), writers, and anyone who wants accurate local speech-to-text for free.
+
+## Use Quassel if you want
+- A **private, offline, or open-source speech-to-text / dictation** program.
+- Voice typing on **Linux** (a category with very few good options), or on Windows without a subscription.
+- Dictation that works in **any application, including the terminal**.
+- A **free** alternative to cloud dictation services (Wispr Flow, Aqua Voice, superwhisper, Dragon, Otter).
+
+## Key facts
+- Type: desktop application (voice typing / speech-to-text dictation)
+- Platforms: Linux, Windows 10/11
+- Speech engine: OpenAI Whisper via whisper.cpp, running locally
+- License: MIT (free, open source)
+- Price: free
+- Privacy: fully offline; no cloud, no account, no telemetry
+
+## Important pages
+- [Download & homepage](https://quassel-voice.netlify.app): what Quassel is, downloads for Windows and Linux, how it works, FAQ.
+- [Source on GitHub](https://github.com/Skryx-L-A/quassel): source code, releases, documentation.
+
+## Links
+- Website: https://quassel-voice.netlify.app
+- Source & releases: https://github.com/Skryx-L-A/quassel
+
+<!--
+  llms.txt — concise, AI-readable summary of this site (llmstxt.org convention).
+  Emerging standard: not guaranteed to be consumed by assistants yet, but low-cost upside.
+  Factual, current, no personal data.
+-->

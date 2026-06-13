@@ -43,19 +43,24 @@ DBUS_XML = """<node><interface name='io.github.skryx.quassel.Pill'>
 CSS_TEMPLATE = """
 .quassel-pillwin {{ background: transparent; }}
 .quassel-pill {{
-    background-color: rgba(16, 16, 22, {op});
+    background-color: rgba(17, 32, 26, {op});
     border-radius: 999px;
     padding: {pad_v}px {pad_h}px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }}
-.quassel-pill label {{ color: #e8e8ee; font-size: {font}px; }}
+.quassel-pill label {{ color: #E7F0EB; font-size: {font}px; }}
 .quassel-text {{
-    background-color: rgba(16, 16, 22, {op});
+    background-color: rgba(17, 32, 26, {op});
     border-radius: 12px;
     padding: 6px 14px;
 }}
-.quassel-text label {{ color: #cfcfd8; font-size: {font_small}px; }}
+.quassel-text label {{ color: #BAC8C0; font-size: {font_small}px; }}
 """
+
+# Direction B (Lokal): Pine als Akzent, gedämpftes Grau für "aus", Bernstein für Fehler.
+WAVE_PINE = (0.20, 0.76, 0.55)   # #34C18C
+WAVE_GRAY = (0.42, 0.47, 0.44)   # #6A786F
+WAVE_AMBER = (0.91, 0.66, 0.23)  # #E9A93A
 
 KWIN_JS = f"""function quasselSend() {{
     callDBus("{BUS_NAME}", "/", "{BUS_NAME}", "SetActiveOutput",
@@ -76,21 +81,44 @@ def daemon_active():
         check=False).returncode == 0
 
 
-class PulseDot(Gtk.DrawingArea):
-    """Roter Aufnahme-Punkt, der langsam und ganz leicht pulsiert."""
+class Waveform(Gtk.DrawingArea):
+    """Fünf Balken wie auf der Website. Bewegen sich nur bei Aufnahme
+    (Sprechen), sonst ruhen sie auf einer leisen, festen Höhe."""
 
-    def __init__(self):
+    N = 5
+    REST = [0.30, 0.46, 0.38, 0.52, 0.34]   # ruhende Anteile der Höhe
+
+    def __init__(self, get_state):
         super().__init__()
+        self.get_state = get_state          # -> (animating: bool, (r,g,b))
         self.set_draw_func(self.draw)
 
+    @staticmethod
+    def _rrect(cr, x, y, w, h, r):
+        r = min(r, w / 2, h / 2)
+        cr.new_sub_path()
+        cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+        cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+        cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+        cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+        cr.close_path()
+
     def draw(self, _area, cr, w, h):
+        animating, (r, g, b) = self.get_state()
+        gap = w * 0.11
+        bw = (w - gap * (self.N - 1)) / self.N
         t = time.monotonic()
-        breathe = 0.5 + 0.5 * math.sin(t * 2 * math.pi / 2.4)   # 2,4-s-Atmung
-        r = (min(w, h) / 2 - 1.5) * (0.82 + 0.14 * breathe)
-        alpha = 0.65 + 0.35 * breathe
-        cr.set_source_rgba(1.0, 0.33, 0.33, alpha)
-        cr.arc(w / 2, h / 2, r, 0, 2 * math.pi)
-        cr.fill()
+        cr.set_source_rgb(r, g, b)
+        for i in range(self.N):
+            if animating:
+                frac = 0.22 + 0.78 * (0.5 + 0.5 * math.sin(t * 7.5 + i * 1.1))
+            else:
+                frac = self.REST[i]
+            bh = max(2.0, h * frac)
+            x = i * (bw + gap)
+            y = (h - bh) / 2
+            self._rrect(cr, x, y, bw, bh, bw / 2)
+            cr.fill()
 
 
 class Pill(Gtk.Application):
@@ -99,10 +127,9 @@ class Pill(Gtk.Application):
         self.cfg = config.Cfg()
         self.win = None
         self.css = None
-        self.icon = None
         self.textbox = None
         self.pillbox = None
-        self.dot = None
+        self.wave = None
         self.last_ts = None
         self.result_until = 0.0
         self.mode = "off"
@@ -137,13 +164,10 @@ class Pill(Gtk.Application):
         self.textbox.set_visible(False)
         outer.append(self.textbox)
 
-        self.pillbox = Gtk.Box(spacing=10, halign=Gtk.Align.CENTER)
+        self.pillbox = Gtk.Box(halign=Gtk.Align.CENTER)
         self.pillbox.add_css_class("quassel-pill")
-        self.icon = Gtk.Label()
-        self.pillbox.append(self.icon)
-        self.dot = PulseDot()
-        self.dot.set_visible(False)
-        self.pillbox.append(self.dot)
+        self.wave = Waveform(self.wave_state)
+        self.pillbox.append(self.wave)
         outer.append(self.pillbox)
         self.win.set_child(outer)
         self.apply_style()
@@ -227,13 +251,10 @@ class Pill(Gtk.Application):
         css = CSS_TEMPLATE.format(op=op, pad_v=int(5 * s), pad_h=int(12 * s),
                                   font=int(12 * s), font_small=int(11 * s))
         self.css.load_from_data(css.encode())
-        if self.dot:
-            self.dot.set_content_width(int(14 * s))
-            self.dot.set_content_height(int(14 * s))
-        if self.icon:
-            # gleiche Höhe wie der PulseDot -> Pille hüpft beim
-            # Zustandswechsel nicht mehr um ein paar Pixel
-            self.icon.set_size_request(int(14 * s), int(14 * s))
+        if self.wave:
+            # feste Größe -> Pille hüpft beim Zustandswechsel nicht
+            self.wave.set_content_width(int(22 * s))
+            self.wave.set_content_height(int(14 * s))
 
     def reload_cfg(self):
         if self.cfg.reload():
@@ -242,28 +263,29 @@ class Pill(Gtk.Application):
         return True
 
     # ------------------------------------------------------------- Zustand
+    def wave_state(self):
+        """(bewegt sich?, Farbe) für die Wellenform — nur bei Aufnahme bewegt."""
+        if self.mode == "recording":
+            return True, WAVE_PINE
+        if self.mode == "off":
+            return False, WAVE_GRAY
+        if self.mode == "error":
+            return False, WAVE_AMBER
+        return False, WAVE_PINE        # ready / transcribing / done: ruhend, Pine
+
     def set_mode(self, mode, text=""):
         self.mode = mode
-        self.dot.set_visible(mode == "recording")
-        self.icon.set_visible(mode != "recording")
-        if mode == "off":
-            self.icon.set_markup("<span foreground='#5c5c66' size='small'>●</span>")
-            self.textbox.set_visible(False)
-        elif mode == "ready":
-            self.icon.set_markup("<span foreground='#b9a7f5' size='small'>●</span>")
+        if mode in ("off", "ready"):
             self.textbox.set_visible(False)
         elif mode == "recording":
             self.show_text(text, italic=True)
         elif mode == "transcribing":
-            self.icon.set_markup("<span foreground='#e8e8ee'>…</span>")
-        elif mode == "done":
-            self.icon.set_markup("<span foreground='#7ddf7d'>✓</span>")
+            pass                       # Textbox bleibt wie zuletzt (Live-Transkript)
+        elif mode in ("done", "error"):
             self.show_text(text)
             self.result_until = time.monotonic() + RESULT_SHOW_MS / 1000
-        elif mode == "error":
-            self.icon.set_markup("<span foreground='#ff8888'>✕</span>")
-            self.show_text(text)
-            self.result_until = time.monotonic() + RESULT_SHOW_MS / 1000
+        if self.wave:
+            self.wave.queue_draw()
 
     def show_text(self, text, italic=False):
         if not self.cfg.pill_preview:
@@ -293,7 +315,7 @@ class Pill(Gtk.Application):
             self.set_mode(st.get("state", "idle") if st.get("state") != "idle"
                           else "ready", st.get("text", ""))
         if self.mode == "recording":
-            self.dot.queue_draw()
+            self.wave.queue_draw()
         if self.mode in ("done", "error") and now > self.result_until:
             self.set_mode("ready" if self.on else "off")
         return True

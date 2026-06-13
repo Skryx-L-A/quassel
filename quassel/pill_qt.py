@@ -38,13 +38,13 @@ def app_icon():
             return QIcon(p)
     return QIcon.fromTheme("quassel-voice")
 
-DOT_OFF = QColor("#5c5c66")
-DOT_READY = QColor("#b9a7f5")
-DOT_REC = QColor(255, 84, 84)
-C_INFO = QColor("#e8e8ee")
-C_DONE = QColor("#7ddf7d")
-C_ERR = QColor("#ff8888")
-C_TEXT = QColor("#cfcfd8")
+# Direction B (Lokal): Pine-Akzent, gedämpftes Grau (aus), Bernstein (Fehler).
+WAVE_PINE = QColor("#34C18C")
+WAVE_GRAY = QColor("#6A786F")
+WAVE_AMBER = QColor("#E9A93A")
+PILL_BG = QColor(17, 32, 26)
+C_LABEL = QColor("#E7F0EB")
+C_TEXT = QColor("#BAC8C0")
 
 
 def daemon_active():
@@ -129,44 +129,43 @@ class Pill(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         s, op = self._scale(), self._op()
         pill_h = int(28 * s)
-        pill_w = int(46 * s)
+        wave_w = 22 * s
+        pad = 13 * s
+        pill_w = pad * 2 + wave_w
         cx = self.width() / 2
         pill = QRectF(cx - pill_w / 2, self.height() - pill_h - 2, pill_w, pill_h)
         path = QPainterPath()
         path.addRoundedRect(pill, pill_h / 2, pill_h / 2)
-        bg = QColor(16, 16, 22)
+        bg = QColor(PILL_BG)
         bg.setAlphaF(op)
         p.fillPath(path, bg)
-        self._draw_indicator(p, pill, s)
+        self._draw_wave(p, pill.left() + pad, pill.center().y(), wave_w, 14 * s)
         if self.cfg.pill_preview and self.text and self.mode in ("recording", "done", "error"):
             self._draw_bubble(p, pill, s, op)
 
-    def _draw_indicator(self, p, rect, s):
-        cx, cy = rect.center().x(), rect.center().y()
-        if self.mode == "recording":
-            breathe = 0.5 + 0.5 * math.sin(time.monotonic() * 2 * math.pi / 2.4)
-            r = (7 * s) * (0.82 + 0.14 * breathe)
-            col = QColor(DOT_REC)
-            col.setAlphaF(0.65 + 0.35 * breathe)
-            p.setPen(Qt.NoPen)
-            p.setBrush(col)
-            p.drawEllipse(QRectF(cx - r, cy - r, 2 * r, 2 * r))
-            return
-        sym = {"transcribing": ("…", C_INFO), "done": ("✓", C_DONE),
-               "error": ("✕", C_ERR)}.get(self.mode)
-        if sym:
-            f = QFont()
-            f.setPixelSize(int(13 * s))
-            p.setFont(f)
-            p.setPen(sym[1])
-            p.drawText(QRectF(cx - 14 * s, cy - 14 * s, 28 * s, 28 * s),
-                       Qt.AlignCenter, sym[0])
-            return
-        col = DOT_READY if self.mode == "ready" else DOT_OFF
+    def _wave_color(self):
+        if self.mode == "off":
+            return WAVE_GRAY
+        if self.mode == "error":
+            return WAVE_AMBER
+        return WAVE_PINE        # ready / recording / transcribing / done
+
+    def _draw_wave(self, p, x, cy, w, h):
+        """Fünf Balken — bewegen sich nur bei Aufnahme, sonst ruhend."""
+        animating = self.mode == "recording"
+        rest = [0.30, 0.46, 0.38, 0.52, 0.34]
+        n = 5
+        gap = w * 0.11
+        bw = (w - gap * (n - 1)) / n
+        t = time.monotonic()
         p.setPen(Qt.NoPen)
-        p.setBrush(col)
-        r = 5 * s
-        p.drawEllipse(QRectF(cx - r, cy - r, 2 * r, 2 * r))
+        p.setBrush(self._wave_color())
+        for i in range(n):
+            frac = (0.22 + 0.78 * (0.5 + 0.5 * math.sin(t * 7.5 + i * 1.1))) \
+                if animating else rest[i]
+            bh = max(2.0, h * frac)
+            bx = x + i * (bw + gap)
+            p.drawRoundedRect(QRectF(bx, cy - bh / 2, bw, bh), bw / 2, bw / 2)
 
     def _draw_bubble(self, p, pill, s, op):
         txt = self.text if len(self.text) <= 140 else "…" + self.text[-139:]
@@ -182,7 +181,7 @@ class Pill(QWidget):
         box = br.adjusted(-2 * pad, -pad, 2 * pad, pad)
         path = QPainterPath()
         path.addRoundedRect(box, 10, 10)
-        bg = QColor(16, 16, 22)
+        bg = QColor(PILL_BG)
         bg.setAlphaF(op)
         p.fillPath(path, bg)
         p.setPen(C_TEXT)

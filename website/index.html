@@ -14,6 +14,53 @@
 <meta property="og:type" content="website">
 <meta property="og:image" content="apple-touch-icon.png">
 <link rel="stylesheet" href="styles.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "Quassel",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Linux, Windows 10, Windows 11",
+      "url": "https://quassel-voice.netlify.app",
+      "downloadUrl": "https://github.com/Skryx-L-A/quassel/releases/latest",
+      "softwareHelp": "https://github.com/Skryx-L-A/quassel#readme",
+      "sameAs": ["https://github.com/Skryx-L-A/quassel"],
+      "license": "https://opensource.org/licenses/MIT",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "description": "Quassel is a free, open-source, 100% offline voice-to-text dictation app for Linux and Windows. Hold a key, speak, release, and your words are typed wherever your cursor is. Speech recognition runs locally via OpenAI's Whisper (whisper.cpp) — no cloud, no account, and no audio ever leaves your computer.",
+      "featureList": [
+        "Fully offline, local speech-to-text (no cloud, no account, no telemetry)",
+        "Open source (MIT), free forever",
+        "Types into any text field, including terminals",
+        "~100 languages via OpenAI Whisper models",
+        "Hold-to-talk hotkey or hands-free double-tap",
+        "Linux (Wayland or X11) and Windows 10/11"
+      ],
+      "author": { "@type": "Organization", "name": "Skryx-L-A", "url": "https://github.com/Skryx-L-A" }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "Does my voice or audio ever leave my computer?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Recording and speech recognition both run locally through whisper.cpp. There is no cloud service, no account, and no telemetry — you can run Quassel with the network unplugged." } },
+        { "@type": "Question", "name": "Is it really free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Quassel is free and open source under the MIT license. No subscription, no trial, no paid tier." } },
+        { "@type": "Question", "name": "Which languages does it understand?",
+          "acceptedAnswer": { "@type": "Answer", "text": "It uses OpenAI's Whisper models, which understand around 100 languages — all transcribed locally on your machine." } },
+        { "@type": "Question", "name": "Do I need an internet connection?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Only to download. The quick installer fetches an engine and model that fit your hardware; after that Quassel runs fully offline. Offline all-in-one packages need no internet at all." } },
+        { "@type": "Question", "name": "Does it work on Wayland and X11?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Quassel runs on modern Linux desktops on both Wayland and X11, as well as Windows 10 and 11." } },
+        { "@type": "Question", "name": "Can it type into a terminal?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Unlike most dictation tools, Quassel types directly into a terminal, as well as any other text field — editors, browsers, and chat apps." } }
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -71,7 +118,6 @@
           <div class="mock-line w3"></div>
           <div class="pill">
             <span class="wave"><b></b><b></b><b></b><b></b><b></b></span>
-            <span class="lbl">listening…</span>
           </div>
         </div>
       </div>

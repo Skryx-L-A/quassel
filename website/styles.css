@@ -136,7 +136,7 @@ h1,h2,h3{line-height:1.12;letter-spacing:-.02em;color:var(--ink)}
   animation:blink 1.05s step-end infinite;border-radius:2px}
 @keyframes blink{50%{opacity:0}}
 /* the floating pill */
-.pill{display:inline-flex;align-items:center;gap:11px;margin-top:20px;padding:10px 16px;border-radius:999px;
+.pill{display:inline-flex;align-items:center;margin-top:20px;padding:10px 15px;border-radius:999px;
   background:var(--ink);color:#fff;box-shadow:var(--shadow);font-size:.9rem}
 @media (prefers-color-scheme:dark){.pill{background:#05100C;border:1px solid var(--line)}}
 .pill .wave{display:inline-flex;align-items:flex-end;gap:3px;height:18px}
@@ -147,7 +147,6 @@ h1,h2,h3{line-height:1.12;letter-spacing:-.02em;color:var(--ink)}
 .pill .wave b:nth-child(4){height:18px;animation-delay:.36s}
 .pill .wave b:nth-child(5){height:8px;animation-delay:.48s}
 @keyframes eq{0%,100%{transform:scaleY(.5)}50%{transform:scaleY(1)}}
-.pill .lbl{font-family:var(--mono);font-size:.8rem;letter-spacing:.02em;opacity:.92}
 @media (prefers-reduced-motion:reduce){.pill .wave b,.mock-caret{animation:none}}
 
 /* ---------- features ---------- */
