@@ -170,9 +170,11 @@ def _activate_engine(kind, progress):
     return server_exe() is not None
 
 
-def provision(progress=lambda frac, what: None):
-    """Erstausstattung: alle Modelle + alle Engines bereitstellen, passende
-    Engine aktiv schalten, Standardmodell per Hardware wählen.
+def provision(progress=lambda frac, what: None, full=False):
+    """Erstausstattung. Standardmaessig SCHLANK: nur die zur Hardware passende
+    Engine (NVIDIA -> cuBLAS, sonst OpenBLAS) und EIN Modell
+    (hwdetect.default_model_for_hardware()). Mit full=True alle Engines + alle
+    5 Modelle (volle Offline-Nutzung).
 
     Nutzt ein Offline-Bundle, falls vorhanden, sonst Download. Fuellt nur
     Fehlendes auf und ueberschreibt NICHTS, was schon da ist: eine bereits
@@ -182,24 +184,29 @@ def provision(progress=lambda frac, what: None):
     os.makedirs(MODEL_DIR, exist_ok=True)
     os.makedirs(ENGINES_DIR, exist_ok=True)
 
-    for model in config.MODELS:
+    kind = preferred_engine_kind()
+    default = hwdetect.default_model_for_hardware()
+    models = config.MODELS if full else [default]
+    engines = list(ENGINE_ZIPS) if full else [kind]
+
+    for model in models:
         _provide_model(model, bundle, progress)      # vorhandene werden uebersprungen
-    for kind in ENGINE_ZIPS:
-        _provide_engine_zip(kind, bundle, progress)  # vorhandene werden uebersprungen
+    for k in engines:
+        _provide_engine_zip(k, bundle, progress)     # vorhandene werden uebersprungen
 
     # Engine NUR aktivieren, wenn noch keine lauffaehige vorhanden ist — so
     # bleibt z.B. ein schon installierter neuerer CUDA-Build unangetastet
     # (_activate_engine wuerde whisper-bin sonst leeren und neu entpacken).
     if server_exe() is None:
-        kind = preferred_engine_kind()
         if not _activate_engine(kind, progress) and kind != "cpu":
+            # passende Engine fehlt/scheitert -> CPU-Build nachziehen + aktivieren
+            _provide_engine_zip("cpu", bundle, progress)
             _activate_engine("cpu", progress)
 
     env = config.read_serverenv()
     # Standardmodell nur waehlen, wenn noch keins (gueltiges) eingetragen ist —
     # eine bereits getroffene Modellwahl wird nicht ueberschrieben.
     if current_model() is None:
-        default = hwdetect.default_model_for_hardware()
         model_path = os.path.join(MODEL_DIR, f"ggml-{default}.bin")
         if not _have_model(model_path):           # Notfall: irgendein da liegendes
             for m in config.MODELS:

@@ -1,7 +1,7 @@
 ; Inno-Setup-Skript für den Quassel-Windows-Installer.
 ; Bauen: Inno Setup über "iscc quassel.iss" (nach dem PyInstaller-Build).
 #define MyAppName "Quassel"
-#define MyAppVersion "2.1.0"
+#define MyAppVersion "2.2.0"
 #define MyAppPublisher "Skryx-L-A"
 #define MyAppURL "https://github.com/Skryx-L-A/quassel"
 #define MyAppExeName "Quassel.exe"
@@ -39,13 +39,21 @@ english.AutostartTask=Start Quassel when I log in
 german.AutostartTask=Quassel beim Anmelden starten
 english.LaunchApp=Launch Quassel
 german.LaunchApp=Quassel starten
-english.SetupStatus=Downloading speech engine and model (GPU auto-detect)...
-german.SetupStatus=Lade Sprach-Engine und Modell herunter (GPU-Erkennung)...
-english.RemoveData=Also delete the downloaded speech engine and model (about 2 GB)?
-german.RemoveData=Auch die heruntergeladene Sprach-Engine und das Modell löschen (ca. 2 GB)?
+english.SetupStatus=Downloading the matching speech engine and one model (GPU auto-detect)...
+german.SetupStatus=Lade die passende Sprach-Engine und ein Modell herunter (GPU-Erkennung)...
+english.SetupStatusAll=Downloading all speech engines and all models (about 4.3 GB)...
+german.SetupStatusAll=Lade alle Sprach-Engines und alle Modelle herunter (ca. 4,3 GB)...
+english.RemoveData=Also delete the downloaded speech engine and models?
+german.RemoveData=Auch die heruntergeladenen Sprach-Engines und Modelle löschen?
+english.FullOfflineGroup=Offline use:
+german.FullOfflineGroup=Offline-Nutzung:
+english.FullOfflineTask=Download everything now for full offline use (all engines + all 5 models, about 4.3 GB)
+german.FullOfflineTask=Jetzt alles für volle Offline-Nutzung herunterladen (alle Engines + alle 5 Modelle, ca. 4,3 GB)
 
 [Tasks]
 Name: "autostart"; Description: "{cm:AutostartTask}"; GroupDescription: "Autostart:"
+; Standard AUS: der Erststart laedt sonst nur die passende Engine + EIN Modell.
+Name: "fulloffline"; Description: "{cm:FullOfflineTask}"; GroupDescription: "{cm:FullOfflineGroup}"; Flags: unchecked
 
 [Files]
 Source: "dist\Quassel\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
@@ -60,9 +68,14 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
   Tasks: autostart; Flags: uninsdeletevalue
 
 [Run]
+; Standard: schlank — nur die zur Hardware passende Engine + EIN Modell.
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--setup"; \
   StatusMsg: "{cm:SetupStatus}"; \
-  Flags: waituntilterminated
+  Flags: waituntilterminated; Tasks: not fulloffline
+; Mit Haken: alles fuer volle Offline-Nutzung (alle Engines + alle 5 Modelle).
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--setup --all"; \
+  StatusMsg: "{cm:SetupStatusAll}"; \
+  Flags: waituntilterminated; Tasks: fulloffline
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchApp}"; \
   Flags: nowait postinstall skipifsilent
 

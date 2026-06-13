@@ -64,12 +64,12 @@ downloads the installer and opens the setup wizard right away:
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-Setup.exe -OutFile ([IO.Path]::GetTempPath()+'Quassel-Setup.exe'); Start-Process ([IO.Path]::GetTempPath()+'Quassel-Setup.exe')"
 ```
 
-The wizard downloads every whisper.cpp build (NVIDIA/cuBLAS, OpenBLAS and CPU)
-and all speech models as an install step, then picks the one matching your
-hardware — when it finishes, dictation works immediately and you never need to
-download anything again. If you download the installer with a browser instead,
-SmartScreen may warn because it is not code-signed yet — click "More info" →
-"Run anyway".
+By default the wizard downloads just the matching speech engine and one model
+for your hardware (lean and quick) — when it finishes, dictation works right
+away. Tick **"Download everything now for full offline use"** in the installer
+to fetch all engines and all five models (~4.3 GB) instead. If you download the
+installer with a browser, SmartScreen may warn because it is not code-signed
+yet — click "More info" → "Run anyway".
 
 **No internet on the target PC?** Use the offline all-in-one package
 (`Quassel-Offline-Windows.exe` plus its `.7z` parts) from the

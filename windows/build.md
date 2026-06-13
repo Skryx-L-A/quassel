@@ -34,10 +34,13 @@ Always build with `--clean` — PyInstaller otherwise caches stale analyses.
 There are two distributions, both of which bundle *everything* so the user
 never has to download anything a second time:
 
-1. **Online installer** (`Quassel-Setup.exe`, ~33 MB) — the Inno Setup `.exe`
-   above. Its install step (`Quassel.exe --setup`) downloads **all** engines
-   (cuBLAS + OpenBLAS + CPU, ~458 MB) and **all five** models (~3.8 GB) with a
-   bilingual progress dialog, then picks the default model for the hardware.
+1. **Online installer** (`Quassel-Setup.exe`, ~37 MB) — the Inno Setup `.exe`
+   above. By default its install step (`Quassel.exe --setup`) is **lean**: it
+   downloads only the engine matching the hardware (cuBLAS on NVIDIA, else
+   OpenBLAS) and **one** model (`hwdetect.default_model_for_hardware()`), with a
+   bilingual progress dialog. A wizard checkbox "Download everything now for
+   full offline use" runs `--setup --all` instead, which fetches all engines
+   (~458 MB) and all five models (~3.8 GB).
 2. **Offline all-in-one** (`Quassel-Offline-Windows.exe` + `.7z.001/.002/...`)
    — a self-extracting multi-volume 7-Zip archive that already contains the
    app plus the whole payload (all engines + all five models, ~4.3 GB). No
@@ -73,12 +76,18 @@ next to it.
 Provisioning is the same code in both distributions (`quassel.win.server`):
 it prefers an **offline bundle** — a `payload/` folder next to the exe (the
 offline package) or pointed to by the `QUASSEL_BUNDLE` environment variable —
-and only downloads when no bundle is present (the online installer). It places
-all five models in `%LOCALAPPDATA%\Quassel\models`, keeps every engine zip in
-`…\Quassel\engines`, activates the GPU-matched engine (NVIDIA -> cuBLAS, else
-OpenBLAS, CPU as a fallback) into `…\Quassel\whisper-bin`, and selects the
-default model from the hardware (`quassel.hwdetect`). After that Quassel works
-fully offline and model switching needs no further downloads.
+and only downloads when no bundle is present (the online installer). It
+activates the GPU-matched engine (NVIDIA -> cuBLAS, else OpenBLAS, CPU as a
+fallback) into `…\Quassel\whisper-bin` and selects the default model from the
+hardware (`quassel.hwdetect`) in `%LOCALAPPDATA%\Quassel\models`.
+
+`provision()` takes a `full` flag. **Lean** (default, the online installer's
+plain `--setup`): only the matching engine and that one hardware-chosen model.
+**Full** (`--setup --all`, the installer's "full offline" checkbox, and always
+the offline all-in-one package since its bundle has everything): all engines
+and all five models, so later model switching needs no download. Either way it
+only fills gaps and never overwrites an existing — possibly newer — engine or
+model that is already there.
 
 ## Notes
 
