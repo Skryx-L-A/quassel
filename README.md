@@ -98,6 +98,20 @@ It installs distro packages, builds whisper.cpp (NVIDIA/CUDA and AMD/Intel/
 Vulkan auto-detected), downloads a speech model and sets up the app. Log out
 and back in once if the script says so. Details: [INSTALL.md](INSTALL.md).
 
+**No internet on the target Linux PC?** Use the offline all-in-one package
+(`quassel-linux-x86_64.tar.gz.part-*`) from the
+[releases page](https://github.com/Skryx-L-A/quassel/releases/latest): download
+all parts into one folder, then
+
+```bash
+cat quassel-linux-x86_64.tar.gz.part-* | tar xzf -
+cd quassel-linux-x86_64 && ./install.sh
+```
+
+It bundles a portable Python + Qt, both the CPU **and** CUDA engines (CUDA
+runtime included; the NVIDIA driver is used from your system) and **all** speech
+models — nothing is ever downloaded. Runs on x86_64 with glibc ≥ 2.28.
+
 > **Tested:** Fedora / Nobara (daily driver). **Untested but prepared:**
 > Ubuntu/Debian/Mint, Arch and openSUSE — the package lists are verified in
 > containers, but no full install has run on real systems yet. Feedback is
