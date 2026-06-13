@@ -357,7 +357,9 @@ class WinApp(QObject):
                 last["what"] = what
                 self.sig_state.emit("transcribing", tr("preparing", item=what))
         try:
-            server.provision(progress)
+            # Offline-Bundle vorhanden -> alles lokal uebernehmen (volle Offline-
+            # Nutzung); sonst schlank (nur passende Engine + ein Modell laden).
+            server.provision(progress, full=server.bundle_dir() is not None)
             if server.ensure_working(progress):
                 self.sig_state.emit("done", tr("ready"))
             else:
@@ -581,11 +583,12 @@ class WinApp(QObject):
                 "ready" if self.enabled else "off"))
 
 
-def run_setup():
-    """Vom Installer aufgerufen (--setup): stellt mit Fortschrittsfenster ALLE
-    Modelle und Engines bereit (GPU-passende Engine wird aktiv geschaltet,
-    Standardmodell per Hardware). Quelle ist ein Offline-Bundle, falls
-    vorhanden, sonst Download — danach läuft Diktieren ohne weiteren Download."""
+def run_setup(full=False):
+    """Vom Installer aufgerufen (--setup): stellt mit Fortschrittsfenster die
+    Sprach-Engine + ein Modell bereit. Standardmaessig SCHLANK (nur die zur
+    Hardware passende Engine + EIN Modell per hwdetect). Mit --setup --all
+    werden alle Engines + alle 5 Modelle geladen (volle Offline-Nutzung).
+    Quelle ist ein Offline-Bundle, falls vorhanden, sonst Download."""
     from PySide6.QtWidgets import QProgressDialog
     app = QApplication([])
     app.setWindowIcon(app_icon())
@@ -605,7 +608,7 @@ def run_setup():
 
     def work():
         try:
-            server.provision(progress)
+            server.provision(progress, full=full)
             server.ensure_working(progress)
             server.stop()              # App startet ihn bei Bedarf selbst
         except Exception:  # noqa: BLE001 — App holt Fehlendes beim 1. Start nach
@@ -653,7 +656,7 @@ def main():
     if os.name != "nt":
         raise SystemExit("quassel.win.app läuft nur unter Windows.")
     if "--setup" in sys.argv:
-        run_setup()
+        run_setup(full="--all" in sys.argv)
         return
     if "--audiocheck" in sys.argv:
         audiocheck()
