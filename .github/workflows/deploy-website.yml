@@ -1,0 +1,26 @@
+name: Deploy website to Netlify
+
+# Deployt die Download-Website (website/) automatisch bei jedem Push auf main,
+# der die Seite betrifft. Secrets: NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'netlify.toml'
+      - '.github/workflows/deploy-website.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Deploy to Netlify (production)
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: npx --yes netlify-cli@26 deploy --prod --dir=website
