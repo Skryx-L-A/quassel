@@ -57,7 +57,10 @@ record → transcribe locally → paste.
 
 ### Windows 10 / 11
 
-Paste this into **PowerShell or cmd** (the same line works in both) — it
+**Easiest — [download from quassel-voice.netlify.app](https://quassel-voice.netlify.app):**
+one click, it picks the right file for your system.
+
+Or paste this into **PowerShell or cmd** (the same line works in both) — it
 downloads the installer and opens the setup wizard right away:
 
 ```
@@ -87,7 +90,10 @@ Keep all parts in one folder, double-click the `.exe` to extract, then run
 
 ### Linux — Ubuntu, Debian, Mint, Fedora, Nobara, Arch, openSUSE
 
-One command for all supported distros (the installer detects your package
+**Easiest — [download from quassel-voice.netlify.app](https://quassel-voice.netlify.app):**
+one click, it picks the right file for your system.
+
+Or one command for all supported distros (the installer detects your package
 manager):
 
 ```bash
