@@ -9,7 +9,9 @@
 ## Prerequisites (on a Windows machine)
 
 - Python 3.13 (64-bit) — **not 3.14**, the windowed exe crashes with it
-- `pip install pyside6 sounddevice pyinstaller`
+- `pip install pyside6 sounddevice pyinstaller pycaw winrt-Windows.Media.Control winrt-Windows.Foundation`
+  (pycaw pulls comtypes for the mute-all path; the winrt packages drive the
+  pause-media path via SMTC — both get bundled into the offline package)
 - [Inno Setup 6](https://jrsoftware.org/isinfo.php) (for the `.exe` installer)
 
 ## Build

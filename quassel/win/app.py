@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from .. import __version__, config, i18n, textproc, whisperclient
 from ..audio import RATE, SAMPLE_BYTES, wav_from_raw
 from ..config import CHORDS
+from ..mediacontrol import AudioDucker
 from ..streaming import StreamTyper
 from ..i18n import tr
 from ..state import PARTWAV, WAV
@@ -298,6 +299,7 @@ class WinApp(QObject):
         self.last_paste_len = 0
         self.streamer = None
         self._clip_backup = None
+        self.ducker = AudioDucker()   # Musik/Ton beim Diktieren leise schalten
         self.enabled = True
 
         self.pill = Pill()
@@ -447,6 +449,7 @@ class WinApp(QObject):
             dlog("on_start: rec.start FEHLGESCHLAGEN")
             return
         dlog("on_start: rec.start %.2fs" % (time.monotonic() - t))
+        self.ducker.apply(self.cfg.mute_mode)   # Musik pausieren / Ton stumm
         self.streamer = None
         self._clip_backup = None
         self.partial = PartialWorker(self.rec, self.cfg, self._on_partial)
@@ -479,6 +482,7 @@ class WinApp(QObject):
             streaming_restore(self._clip_backup)
             self.streamer = None
         self.rec.stop()
+        self.ducker.restore()                   # Musik/Ton wiederherstellen
         self.sig_state.emit("ready", "")
 
     def on_finish(self):
@@ -488,6 +492,7 @@ class WinApp(QObject):
             self.partial = None
         t = time.monotonic()
         self.rec.stop()
+        self.ducker.restore()                   # Musik/Ton wiederherstellen
         dlog("on_finish: rec.stop %.2fs" % (time.monotonic() - t))
         data = self.rec.raw_bytes()
         if len(data) < 8000:
@@ -613,11 +618,36 @@ def run_setup():
     app.exec()
 
 
+def audiocheck():
+    """Diagnose (--audiocheck): schreibt nach DATADIR/audiocheck.json, welche
+    Audio-Ducking-Backends verfügbar sind, und probt einmal die Medien-
+    Enumeration. Nur für Support/Build-Verifikation — verändert nichts."""
+    import json
+    from . import audioctl
+    info = {"have_pycaw": audioctl._HAVE_PYCAW, "have_smtc": audioctl._HAVE_SMTC}
+    try:
+        tok = audioctl.duck_apply("music")      # pausiert nichts, wenn nichts spielt
+        audioctl.duck_restore("music", tok)
+        info["music_token"] = tok
+    except Exception as e:  # noqa: BLE001
+        info["music_error"] = str(e)[:200]
+    try:
+        os.makedirs(config.DATADIR, exist_ok=True)
+        with open(os.path.join(config.DATADIR, "audiocheck.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(info, f)
+    except OSError:
+        pass
+
+
 def main():
     if os.name != "nt":
         raise SystemExit("quassel.win.app läuft nur unter Windows.")
     if "--setup" in sys.argv:
         run_setup()
+        return
+    if "--audiocheck" in sys.argv:
+        audiocheck()
         return
     probe = QLocalSocket()
     probe.connectToServer("quassel-app")
