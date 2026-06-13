@@ -23,18 +23,8 @@ cp -a "$BUILD/engine/cpu"    "$DEST/engine/cpu"
     || echo "    ! CUDA-Engine fehlt — Paket wird CPU-only"
 cp -a "$BUILD/engine/tools"  "$DEST/tools"
 cp -a "$BUILD/models"        "$DEST/models"
-
-# CUDA-Runtime (cudart/cublas/cublasLt) in einen Fallback-Unterordner verschieben:
-# der Wrapper hängt ihn nur ein, wenn das System keine passende CUDA-Runtime hat
-# (vorhandenes/neueres System-CUDA bleibt so unangetastet und bevorzugt).
-if [ -d "$DEST/engine/cuda" ]; then
-    mkdir -p "$DEST/engine/cuda/cudart-fallback"
-    for pat in 'libcudart.so*' 'libcublas.so*' 'libcublasLt.so*'; do
-        find "$DEST/engine/cuda" -maxdepth 1 -name "$pat" \
-            -exec mv {} "$DEST/engine/cuda/cudart-fallback/" \;
-    done
-    echo "    CUDA-Runtime -> engine/cuda/cudart-fallback/ (nur Fallback)"
-fi
+# CUDA-Runtime bleibt in engine/cuda/ (prozess-lokal genutzt, nie systemweit);
+# der NVIDIA-Treiber kommt zur Laufzeit immer vom Zielsystem (nicht gebündelt).
 
 echo "==> App-Quelltext (quassel/) + Assets"
 cp -a "$REPO/quassel" "$DEST/quassel"
