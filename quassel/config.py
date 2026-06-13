@@ -76,6 +76,10 @@ class Cfg:
         self.streaming_mode = g("streaming", "mode", fallback="stable")
         if self.streaming_mode not in ("stable", "aggressive"):
             self.streaming_mode = "stable"
+        # Beim Diktieren Audio leise machen: off | music | all (Standard aus)
+        self.mute_mode = g("behavior", "mute_while_dictating", fallback="off")
+        if self.mute_mode not in ("off", "music", "all"):
+            self.mute_mode = "off"
         return True
 
 

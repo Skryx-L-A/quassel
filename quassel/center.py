@@ -297,6 +297,15 @@ class Center(QMainWindow):
         self.chord.currentIndexChanged.connect(self.save_settings)
         g.addWidget(self.chord)
 
+        g = self.group(tr("sec_dictating"), lay)
+        self.mute_combo = self.guard(QComboBox())
+        for val, key in (("off", "mute_off"), ("music", "mute_music"), ("all", "mute_all")):
+            self.mute_combo.addItem(tr(key), val)
+        self.mute_combo.setCurrentIndex({"off": 0, "music": 1, "all": 2}.get(self.cfg.mute_mode, 0))
+        self.mute_combo.currentIndexChanged.connect(self.save_settings)
+        self.labeled_row(tr("mute_label"), self.mute_combo, g)
+        self.desc(tr("mute_hint"), g)
+
         lay.addStretch(1)
         note = QLabel(tr("close_note"))
         note.setObjectName("desc")
@@ -473,6 +482,7 @@ class Center(QMainWindow):
             ("pill", "opacity"): self.pill_opacity.value() / 100,
             ("pill", "show_preview"): str(self.pill_preview.isChecked()).lower(),
             ("hotkey", "chord"): self.chord.currentData(),
+            ("behavior", "mute_while_dictating"): self.mute_combo.currentData(),
             ("speech", "language"): self.lang.currentData(),
             ("speech", "punctuation"): str(self.punct.isChecked()).lower(),
             ("speech", "commands"): str(self.cmds.isChecked()).lower(),

@@ -16,6 +16,7 @@ import threading
 import time
 
 from . import config, i18n, textproc, whisperclient
+from .mediacontrol import AudioDucker
 from .streaming import StreamTyper
 from .audio import RATE, SAMPLE_BYTES, Recorder, wav_from_raw
 from .config import CHORDS
@@ -94,6 +95,7 @@ class Daemon:
         self.last_paste_len = 0
         self.streamer = None        # aktiv nur im Freihand-Modus mit Streaming
         self._clip_backup = None
+        self.ducker = AudioDucker()  # Musik pausieren / Ton stummschalten beim Diktieren
 
     # ------------------------------------------------------------- Aufnahme
     def start_recording(self):
@@ -102,6 +104,7 @@ class Daemon:
         if not self.rec.start(self.cfg.mic):
             notify("Fehler: pw-record/parecord fehlt")
             return False
+        self.ducker.apply(self.cfg.mute_mode)
         self.streamer = None
         self.partial = PartialLoop(self.rec, self.cfg, self)
         self.partial.start()
@@ -130,6 +133,7 @@ class Daemon:
             streaming_restore(self._clip_backup)
             self.streamer = None
         self.rec.stop()
+        self.ducker.restore()
         state_set("idle")
         notify("✖ " + tr(reason_key))
 
@@ -139,6 +143,7 @@ class Daemon:
             self.partial.stop()
             self.partial = None
         self.rec.stop()
+        self.ducker.restore()
         data = self.rec.raw_bytes()
         if len(data) < 8000:  # < ~0,25 s Audio
             state_set("idle")

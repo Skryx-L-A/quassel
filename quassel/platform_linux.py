@@ -4,6 +4,7 @@ Das Einfügen über die Zwischenablage ist layout-sicher (QWERTZ inkl.
 Umlauten) und funktioniert auch in Terminals.
 """
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -102,3 +103,85 @@ def notify(text, ms=4000):
         ["notify-send", "-a", "Quassel", "-t", str(ms),
          "-h", "string:x-canonical-private-synchronous:quassel", "Quassel", text],
         check=False)
+
+
+# ---------------------------------------------------------- Audio-Ducking
+# Backend für quassel.mediacontrol: Master-Ton stummschalten (pactl) bzw.
+# spielende MPRIS-Player pausieren (playerctl, sonst busctl/systemd).
+def _pactl(*args):
+    # LC_ALL=C: erzwingt englische Ausgabe ("Mute: yes/no") — sonst liest die
+    # Mute-Erkennung auf z.B. deutschen Systemen ("Mute: ja/nein") falsch.
+    return subprocess.run(["pactl", *args], capture_output=True, text=True,
+                          check=False, env={**os.environ, "LC_ALL": "C"})
+
+
+def _default_sink_muted():
+    return "yes" in _pactl("get-sink-mute", "@DEFAULT_SINK@").stdout.lower()
+
+
+def _mpris_playing():
+    """Liste der gerade spielenden Player als (backend, name)-Paare."""
+    if shutil.which("playerctl"):
+        names = subprocess.run(["playerctl", "-l"], capture_output=True,
+                               text=True, check=False).stdout.split()
+        out = []
+        for n in names:
+            s = subprocess.run(["playerctl", "-p", n, "status"], capture_output=True,
+                               text=True, check=False).stdout.strip()
+            if s == "Playing":
+                out.append(("playerctl", n))
+        return out
+    if shutil.which("busctl"):
+        listing = subprocess.run(["busctl", "--user", "list", "--no-legend"],
+                                 capture_output=True, text=True, check=False).stdout
+        svcs = [ln.split()[0] for ln in listing.splitlines()
+                if ln.startswith("org.mpris.MediaPlayer2.")]
+        out = []
+        for svc in svcs:
+            r = subprocess.run(["busctl", "--user", "get-property", svc,
+                                "/org/mpris/MediaPlayer2",
+                                "org.mpris.MediaPlayer2.Player", "PlaybackStatus"],
+                               capture_output=True, text=True, check=False)
+            if '"Playing"' in r.stdout:
+                out.append(("busctl", svc))
+        return out
+    return []
+
+
+def _mpris_call(item, method):
+    backend, name = item
+    if backend == "playerctl":
+        subprocess.run(["playerctl", "-p", name,
+                        "pause" if method == "Pause" else "play"], check=False)
+    else:
+        subprocess.run(["busctl", "--user", "call", name, "/org/mpris/MediaPlayer2",
+                        "org.mpris.MediaPlayer2.Player", method], check=False)
+
+
+def duck_apply(mode):
+    """'all' -> Master-Sink stumm; 'music' -> spielende Player pausieren.
+    Rückgabe: Token, das duck_restore unverändert erhält."""
+    if mode == "all":
+        if not shutil.which("pactl"):
+            return None
+        token = {"was_muted": _default_sink_muted()}
+        _pactl("set-sink-mute", "@DEFAULT_SINK@", "1")
+        return token
+    if mode == "music":
+        players = _mpris_playing()
+        for p in players:
+            _mpris_call(p, "Pause")
+        return {"players": players}
+    return None
+
+
+def duck_restore(mode, token):
+    if not token:
+        return
+    if mode == "all":
+        # nur entstummen, wenn der Ton vor dem Diktat NICHT stumm war
+        if not token.get("was_muted") and shutil.which("pactl"):
+            _pactl("set-sink-mute", "@DEFAULT_SINK@", "0")
+    elif mode == "music":
+        for p in token.get("players", []):
+            _mpris_call(p, "Play")
