@@ -29,3 +29,5 @@ jobs:
         run: python3 tests/test_machine.py
       - name: Streaming typing tests
         run: python3 tests/test_streaming.py
+      - name: Hardware model-selection tests (shared Linux/Windows logic)
+        run: python3 tests/test_hwdetect.py
