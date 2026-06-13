@@ -429,7 +429,7 @@ class Center(QMainWindow):
         for val, label in (("auto", tr("ui_auto")), ("de", "Deutsch"), ("en", "English")):
             self.uilang.addItem(label, val)
         self.uilang.setCurrentIndex({"auto": 0, "de": 1, "en": 2}.get(self.cfg.ui_language, 0))
-        self.uilang.currentIndexChanged.connect(self.save_settings)
+        self.uilang.currentIndexChanged.connect(self.on_uilang_changed)
         self.labeled_row(tr("ui_language"), self.uilang, g)
 
         g = self.group(tr("about"), lay)
@@ -494,6 +494,30 @@ class Center(QMainWindow):
         })
         self.cfg.reload(force=True)
         self.hint.setText(tr("hint", chord=self.chord_label()))
+
+    def on_uilang_changed(self, *_a):
+        """App-Sprache ohne Neustart wechseln: speichern, Sprache setzen und
+        das Fenster neu aufbauen. Der Neuaufbau wird verzögert (singleShot),
+        damit nicht das gerade sendende Dropdown mitten im Signal gelöscht
+        wird."""
+        if self._loading:
+            return
+        self.save_settings()
+        lang = self.uilang.currentData()
+        i18n.set_language(None if lang == "auto" else lang)
+        QTimer.singleShot(0, self._rebuild_ui)
+
+    def _rebuild_ui(self):
+        row = self.sidebar.currentRow()
+        self._loading = True
+        self.build()
+        self._loading = False
+        if 0 <= row < self.sidebar.count():
+            self.sidebar.setCurrentRow(row)
+        self.refresh_status()
+        # Windows: Tray-Menü der Hintergrund-App in der neuen Sprache nachziehen
+        if self.controller is not None and hasattr(self.controller, "retranslate"):
+            self.controller.retranslate()
 
     def _sync_streaming_enabled(self, on):
         self.stream_mode.setEnabled(on)
