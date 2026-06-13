@@ -7,7 +7,9 @@
 #define MyAppExeName "Quassel.exe"
 
 [Setup]
-AppId={{B6F1B6B0-VOX-TYPE-0001-SKRYXLA000001}
+; Eigene Produkt-GUID fuer Quassel (das fruehere Beta-Produkt hatte eine
+; andere) — so installiert Quassel sauber nach ...\Programs\Quassel.
+AppId={{5F9B9F78-80B3-4100-868E-53C6DD317F24}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -80,6 +82,26 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   KillProcesses;
   Result := '';
+end;
+
+function InitializeSetup(): Boolean;
+var
+  unins: String;
+  rc: Integer;
+begin
+  // Migration: ein zuvor installiertes fruheres Beta-Produkt (frueherer
+  // Produktname, andere AppId unten) still entfernen, damit kein verwaister
+  // Ordner/Eintrag zurueckbleibt. Der Datenordner bleibt unangetastet.
+  if RegQueryStringValue(HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{B6F1B6B0-VOX-TYPE-0001-SKRYXLA000001}_is1',
+      'UninstallString', unins) then
+  begin
+    unins := RemoveQuotes(unins);
+    if unins <> '' then
+      Exec(unins, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE,
+           ewWaitUntilTerminated, rc);
+  end;
+  Result := True;
 end;
 
 function InitializeUninstall(): Boolean;
