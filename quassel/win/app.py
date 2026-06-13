@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QObject, QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QRectF, Qt, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter
 from PySide6.QtWidgets import (
@@ -154,11 +154,11 @@ class _Bubble(QWidget):
 
 
 class _PillBody(QWidget):
-    """Die eigentliche Pille: Punkt (aus/bereit), roter Atem-Kreis
-    (Aufnahme) oder Glyphe (…, Haken, Kreuz) — exakt wie auf Linux."""
+    """Die eigentliche Pille: minimale Wellenform aus fünf Balken in der
+    Direction-B-Palette (Pine; Grau=aus, Bernstein=Fehler). Bewegt sich nur
+    bei Aufnahme, sonst ruhend — gleiche Optik wie die Linux-Pille."""
 
-    GLYPHS = {"transcribing": ("…", "#e8e8ee"),
-              "done": ("✓", "#7ddf7d"), "error": ("✕", "#ff8888")}
+    REST = [0.30, 0.46, 0.38, 0.52, 0.34]
 
     def __init__(self, cfg):
         super().__init__()
@@ -169,7 +169,14 @@ class _PillBody(QWidget):
 
     def resize_to_cfg(self):
         s = max(0.6, min(2.0, self.cfg.pill_scale))
-        self.setFixedSize(int(42 * s), int(28 * s))
+        self.setFixedSize(int(48 * s), int(28 * s))
+
+    def _wave_color(self):
+        if self.mode == "off":
+            return QColor("#6A786F")
+        if self.mode == "error":
+            return QColor("#E9A93A")
+        return QColor("#34C18C")        # ready / recording / transcribing / done
 
     def paintEvent(self, _ev):
         import math
@@ -177,35 +184,30 @@ class _PillBody(QWidget):
         op = max(0.15, min(1.0, self.cfg.pill_opacity))
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(QColor(16, 16, 22, int(op * 255)))
-        p.setPen(QColor(255, 255, 255, 15))
+        p.setBrush(QColor(17, 32, 26, int(op * 255)))
+        p.setPen(QColor(255, 255, 255, 13))
         radius = self.height() / 2 - 1
-        p.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), radius, radius)
-        # QPointF-Mittelpunkt: mit int-Koordinaten rundet jeder Radius anders
-        # und der Kreis sitzt schief bzw. wandert beim Pulsieren
-        center = QPointF(self.width() / 2, self.height() / 2)
+        p.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), radius, radius)
+        # Fünf Balken, mittig — bewegen sich nur bei Aufnahme.
         p.setPen(Qt.NoPen)
-        if self.mode in ("off", "ready"):
-            r = 3.5 * s
-            p.setBrush(QColor("#5c5c66" if self.mode == "off" else "#b9a7f5"))
-            p.drawEllipse(center, r, r)
-        elif self.mode == "recording":
-            breathe = 0.5 + 0.5 * math.sin(
-                (time.monotonic() - self.t0) * 2 * math.pi / 2.4)
-            r = 7 * s * (0.82 + 0.14 * breathe)
-            p.setBrush(QColor(255, 84, 84, int((0.65 + 0.35 * breathe) * 255)))
-            p.drawEllipse(center, r, r)
-        elif self.mode in self.GLYPHS:
-            glyph, color = self.GLYPHS[self.mode]
-            font = p.font()
-            font.setPixelSize(int(13 * s))
-            p.setFont(font)
-            p.setPen(QColor(color))
-            p.drawText(self.rect(), Qt.AlignCenter, glyph)
+        p.setBrush(self._wave_color())
+        wave_w, wave_h, n = 22 * s, 14 * s, 5
+        gap = wave_w * 0.11
+        bw = (wave_w - gap * (n - 1)) / n
+        x0 = (self.width() - wave_w) / 2
+        cy = self.height() / 2
+        animating = self.mode == "recording"
+        t = time.monotonic()
+        for i in range(n):
+            frac = (0.22 + 0.78 * (0.5 + 0.5 * math.sin(t * 7.5 + i * 1.1))) \
+                if animating else self.REST[i]
+            bh = max(2.0, wave_h * frac)
+            bx = x0 + i * (bw + gap)
+            p.drawRoundedRect(QRectF(bx, cy - bh / 2, bw, bh), bw / 2, bw / 2)
 
     def set_mode(self, mode):
         if mode == "recording" and self.mode != "recording":
-            self.t0 = time.monotonic()   # Atmung neu beginnen
+            self.t0 = time.monotonic()
         self.mode = mode
         self.resize_to_cfg()
         self.update()
