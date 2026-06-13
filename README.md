@@ -12,7 +12,7 @@ No cloud, no account, no subscription, no telemetry.
 **Linux** and **Windows** (Windows build is fresh — see
 [windows/build.md](windows/build.md)). Fully offline, no cloud, no account.
 
-<p align="center"><img src="assets/screenshots/demo.gif" alt="Quassel pill while dictating: pulsing red dot, live transcript, result" width="700"></p>
+<p align="center"><img src="assets/screenshots/hero.png" alt="Quassel — type with your voice, privately. Offline voice typing for Linux and Windows." width="820"></p>
 
 ## Features
 
