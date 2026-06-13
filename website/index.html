@@ -3,147 +3,247 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quassel — local, private voice typing</title>
-<meta name="description" content="Quassel turns your voice into text anywhere, fully offline. Free and open source for Linux and Windows.">
+<title>Quassel — private voice typing for Linux &amp; Windows</title>
+<meta name="description" content="Quassel turns your voice into text anywhere on your screen — fully offline. Hold a key, speak, release. Free, open source, and nothing ever leaves your computer.">
+<meta name="theme-color" content="#0F6B4F">
 <link rel="icon" href="quassel.svg" type="image/svg+xml">
-<style>
-  :root{
-    --bg:#0c0c11; --card:#16161f; --line:rgba(255,255,255,.07);
-    --txt:#e8e8ee; --mut:#cfcfd8; --dim:#8a8a96;
-    --grad:linear-gradient(110deg,#5B2EE5,#7A3BE0,#17B9D4);
-    --ready:#b9a7f5; --ok:#7ddf7d;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--txt);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-  a{color:var(--ready);text-decoration:none}
-  .wrap{max-width:1040px;margin:0 auto;padding:0 22px}
-  header{position:relative;overflow:hidden;text-align:center;padding:84px 0 52px}
-  header::before{content:"";position:absolute;inset:-40% 0 auto;height:520px;
-    background:radial-gradient(60% 60% at 50% 0,rgba(106,46,224,.28),transparent 70%);z-index:0}
-  header .wrap{position:relative;z-index:1}
-  .logo{width:96px;height:96px;filter:drop-shadow(0 8px 30px rgba(91,46,229,.45))}
-  h1{font-size:clamp(2.4rem,6vw,3.6rem);font-weight:800;letter-spacing:-.02em;margin:18px 0 6px;
-     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .tag{font-size:clamp(1.05rem,2.4vw,1.3rem);color:var(--mut);max-width:640px;margin:0 auto}
-  .sub{color:var(--dim);margin-top:10px;font-size:.95rem}
-  .cta{display:inline-flex;align-items:center;gap:10px;margin-top:28px;padding:15px 30px;border-radius:999px;
-       font-weight:700;font-size:1.05rem;color:#fff;background:var(--grad);border:none;cursor:pointer;
-       box-shadow:0 10px 30px rgba(91,46,229,.35);transition:transform .12s ease,box-shadow .12s ease}
-  .cta:hover{transform:translateY(-2px);box-shadow:0 14px 38px rgba(91,46,229,.5)}
-  .cta small{font-weight:500;opacity:.85}
-  .trust{display:flex;flex-wrap:wrap;gap:8px 22px;justify-content:center;margin-top:24px;color:var(--dim);font-size:.92rem}
-  .trust span{display:inline-flex;align-items:center;gap:7px}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block}
-  section{padding:34px 0}
-  h2{font-size:1.5rem;font-weight:700;margin-bottom:4px}
-  .lead{color:var(--dim);margin-bottom:24px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-  @media(max-width:760px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;position:relative}
-  .card.active{border-color:rgba(122,59,224,.6);box-shadow:0 0 0 1px rgba(122,59,224,.35),0 16px 40px rgba(0,0,0,.35)}
-  .badge{position:absolute;top:16px;right:16px;font-size:.72rem;font-weight:700;letter-spacing:.04em;
-         text-transform:uppercase;color:var(--ready);border:1px solid rgba(185,167,245,.4);border-radius:999px;padding:3px 10px}
-  .os{font-size:1.25rem;font-weight:700;margin-bottom:2px}
-  .osnote{color:var(--dim);font-size:.9rem;margin-bottom:18px}
-  .opt{border-top:1px solid var(--line);padding:16px 0}
-  .opt:first-of-type{border-top:none;padding-top:4px}
-  .opt b{display:block;font-size:1.02rem}
-  .opt p{color:var(--dim);font-size:.9rem;margin:2px 0 12px}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;font-weight:600;
-       color:var(--txt);background:rgba(122,59,224,.16);border:1px solid rgba(122,59,224,.4);transition:background .12s}
-  .btn:hover{background:rgba(122,59,224,.3)}
-  .btn.ghost{background:transparent;border-color:var(--line);color:var(--mut)}
-  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-  code{background:#0a0a0e;border:1px solid var(--line);border-radius:8px;padding:11px 14px;display:block;
-       color:var(--ready);font:13px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;overflow-x:auto;white-space:pre;margin-top:10px}
-  .inl{display:inline;padding:2px 6px;margin:0}
-  .check{display:flex;gap:11px;align-items:flex-start;margin:9px 0;color:var(--mut)}
-  .check .c{color:var(--ok);font-weight:700;flex:none}
-  footer{border-top:1px solid var(--line);padding:34px 0;color:var(--dim);text-align:center;font-size:.92rem}
-  footer a{color:var(--mut)}
-  .hl{color:var(--ready)}
-</style>
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta property="og:title" content="Quassel — private voice typing">
+<meta property="og:description" content="Type with your voice, anywhere, fully offline. Free &amp; open source for Linux and Windows.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header>
+
+<!-- ================= TOP BAR ================= -->
+<header class="topbar">
   <div class="wrap">
-    <img class="logo" src="quassel.svg" alt="Quassel">
-    <h1>Quassel</h1>
-    <p class="tag">Hold a key, speak, release — your words are typed wherever your cursor is. Fully offline.</p>
-    <p class="sub">Free &amp; open source · Linux &amp; Windows · nothing leaves your computer</p>
-    <a class="cta" id="heroBtn" href="#downloads">Download<small id="heroOs"></small></a>
-    <div class="trust">
-      <span><i class="dot"></i> 100% offline · 0 bytes sent</span>
-      <span><i class="dot"></i> Local Whisper speech engine</span>
-      <span><i class="dot"></i> Open source (MIT)</span>
-    </div>
+    <a class="brand" href="#top"><img src="quassel.svg" alt="">Quassel</a>
+    <nav class="topnav">
+      <a class="navlink" href="#features">Why Quassel</a>
+      <a class="navlink" href="#how">How it works</a>
+      <a class="navlink" href="#faq">FAQ</a>
+      <a class="navlink" href="https://github.com/Skryx-L-A/quassel">GitHub</a>
+      <a class="btn btn-primary" href="#download">Download</a>
+    </nav>
   </div>
 </header>
 
-<section id="downloads">
+<!-- ================= HERO + DOWNLOAD ================= -->
+<main id="top">
+<section class="hero" id="download">
   <div class="wrap">
-    <h2>Download</h2>
-    <p class="lead">The quick installer is a small file — it downloads only the engine and model that fit
-      <em>your</em> hardware. Prefer one big file or no internet on the target? Use the offline packages.</p>
-    <div class="grid">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <span class="eyebrow"><i class="gdot"></i>Free · Open source · 100% offline</span>
+        <h1>Type with your voice — <span class="accent">privately.</span></h1>
+        <p class="lead">Hold a key, speak, release. Quassel writes your words wherever your cursor is —
+          in any app, on Linux or Windows. The speech engine runs on your own machine, so your voice
+          never leaves your computer.</p>
+
+        <div class="dl-buttons">
+          <a class="dl-os" id="heroWin" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-Setup.exe">
+            <span class="os-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg></span>
+            <span class="os-txt"><b>Download for Windows<span class="det-tag" id="heroWinTag" hidden>your system</span></b><small>Windows 10 / 11 · quick installer</small></span>
+          </a>
+          <a class="dl-os secondary" id="heroLin" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install.run">
+            <span class="os-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3 2.5-3 2.5"/><path d="M12.5 15h4.5"/></svg></span>
+            <span class="os-txt"><b>Download for Linux<span class="det-tag" id="heroLinTag" hidden>your system</span></b><small>Fedora · Ubuntu · Arch · openSUSE · .run</small></span>
+          </a>
+        </div>
+        <p class="dl-fine">Small quick installers — they fetch only what your hardware needs.
+          <a href="#allinstalls">Offline &amp; advanced installs &darr;</a></p>
+
+        <div class="trust">
+          <span><i class="dot"></i> 0 bytes sent to any server</span>
+          <span><i class="dot"></i> Local Whisper engine</span>
+          <span><i class="dot"></i> MIT licensed</span>
+        </div>
+      </div>
+
+      <!-- product mock -->
+      <div class="hero-visual" aria-hidden="true">
+        <div class="mock">
+          <div class="mock-bar"><i></i><i></i><i></i><span class="t">your editor</span></div>
+          <div class="mock-line w1"></div>
+          <div class="mock-line w2"></div>
+          <p class="mock-typed">Meeting notes: ship the release on Friday<span class="mock-caret"></span></p>
+          <div class="mock-line w3"></div>
+          <div class="pill">
+            <span class="wave"><b></b><b></b><b></b><b></b><b></b></span>
+            <span class="lbl">listening…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WHAT IS IT ================= -->
+<section id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">// what it is</p>
+      <h2>Dictation that respects you</h2>
+      <p class="lead">Most voice typing sends your microphone to the cloud. Quassel doesn't.
+        Everything — recording, recognition, typing — happens locally. It just works, everywhere you type.</p>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.4-3 7.4-7 8.6C8 18.4 5 15.4 5 11V6z"/><path d="M9 11.5l2 2 4-4"/></svg></span>
+        <h3>100% offline</h3>
+        <p>Your audio never leaves the device. No cloud, no account, no telemetry — works with the network cable unplugged.</p>
+      </div>
+      <div class="feature">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M9 8l-4 4 4 4"/><path d="M15 8l4 4-4 4"/></svg></span>
+        <h3>Open source (MIT)</h3>
+        <p>Every line is auditable on GitHub. Free forever — no subscription, no upsell, nothing hidden.</p>
+      </div>
+      <div class="feature">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M9.5 13v3"/></svg></span>
+        <h3>Works everywhere</h3>
+        <p>Any text field — editor, browser, chat, even a terminal. Text lands at your cursor, exactly where you're typing.</p>
+      </div>
+      <div class="feature">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v2M15 3v2M9 19v2M15 19v2M3 9h2M3 15h2M19 9h2M19 15h2"/></svg></span>
+        <h3>Local Whisper engine</h3>
+        <p>Powered by OpenAI's Whisper running on your hardware via whisper.cpp. Pick a model size to balance speed and accuracy.</p>
+      </div>
+      <div class="feature">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.6 2.5 2.6 14.5 0 17M12 3.5c-2.6 2.5-2.6 14.5 0 17"/></svg></span>
+        <h3>English &amp; German</h3>
+        <p>Ships ready for English and German — and many more languages are available through Whisper's models.</p>
+      </div>
+      <div class="feature">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M8 13.5h8"/></svg></span>
+        <h3>Your hotkey, your flow</h3>
+        <p>Hold to talk, or double-tap for hands-free. A small floating pill shows status — and stays out of your way.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= HOW IT WORKS ================= -->
+<section id="how" style="background:var(--surface-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">// how it works</p>
+      <h2>Three steps, then forget it's there</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <span class="n">01</span>
+        <h3>Turn it on</h3>
+        <p>A small pill sits at the bottom of your screen, showing Quassel is ready.</p>
+      </div>
+      <div class="step">
+        <span class="n">02</span>
+        <h3>Click into any field</h3>
+        <p>An editor, a browser box, a chat window, even a terminal — anywhere your cursor blinks.</p>
+      </div>
+      <div class="step">
+        <span class="n">03</span>
+        <h3>Hold, speak, release</h3>
+        <p>Hold <span class="kbd">Ctrl</span> + <span class="kbd">Meta</span> and talk; release and your words appear. Or double-tap for hands-free.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WHAT SETS IT APART ================= -->
+<section id="compare">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">// what sets it apart</p>
+      <h2>Local by design, not as an afterthought</h2>
+      <p class="lead">The popular dictation tools are cloud services — your voice is uploaded, tied to an account, and billed monthly.
+        Quassel takes the opposite approach.</p>
+    </div>
+    <div class="compare">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th class="q">Quassel</th><th>Typical cloud dictation</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="col">Audio stays on your device</td><td class="qcol"><span class="yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12l4 4 10-10"/></svg>Always</span></td><td><span class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 12h12"/></svg>Uploaded to cloud</span></td></tr>
+          <tr><td class="col">Works offline</td><td class="qcol"><span class="yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12l4 4 10-10"/></svg>Yes</span></td><td><span class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 12h12"/></svg>Needs internet</span></td></tr>
+          <tr><td class="col">Account required</td><td class="qcol"><span class="yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12l4 4 10-10"/></svg>None</span></td><td><span class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 12h12"/></svg>Sign-up + login</span></td></tr>
+          <tr><td class="col">Price</td><td class="qcol"><span class="yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12l4 4 10-10"/></svg>Free</span></td><td><span class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 12h12"/></svg>Monthly subscription</span></td></tr>
+          <tr><td class="col">Source code</td><td class="qcol"><span class="yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12l4 4 10-10"/></svg>Open (MIT)</span></td><td><span class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 12h12"/></svg>Closed</span></td></tr>
+          <tr><td class="col">Types into a terminal</td><td class="qcol"><span class="yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12l4 4 10-10"/></svg>Yes</span></td><td><span class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 12h12"/></svg>Usually not</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DETAILED DOWNLOADS ================= -->
+<section id="allinstalls" style="background:var(--surface-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">// all install options</p>
+      <h2>Pick what fits you</h2>
+      <p class="lead">The quick installer is the easiest start — a small download that fetches only the engine and model
+        matching <em>your</em> hardware. Want one big file, or no internet on the target machine? Grab an offline package.</p>
+    </div>
+    <div class="grid2">
 
       <!-- Windows -->
-      <div class="card" id="win">
-        <span class="badge" id="winBadge" hidden>Your system</span>
-        <div class="os">Windows 10 / 11</div>
-        <div class="osnote">Tray app with global hotkey and floating pill.</div>
-
+      <div class="card" id="cardWin">
+        <span class="badge" id="winBadge" hidden>your system</span>
+        <div class="os-head">
+          <span class="os-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg></span>
+          <h3>Windows 10 / 11</h3>
+        </div>
+        <p class="osnote">Tray app with a global hotkey and a floating pill.</p>
         <div class="opt">
-          <b>Quick installer <span class="hl">(recommended)</span></b>
-          <p>Small download. Double-click and it fetches what your PC needs (tick “download everything” for full offline).</p>
-          <a class="btn" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-Setup.exe">Download Quassel-Setup.exe</a>
+          <b>Quick installer <span class="rec">(recommended)</span></b>
+          <p>Small download. Double-click and it fetches what your PC needs — tick "download everything" for full offline.</p>
+          <a class="btn btn-primary" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-Setup.exe">Download Quassel-Setup.exe</a>
         </div>
         <div class="opt">
           <b>Offline all-in-one — single file</b>
           <p>~3.75 GiB. Everything bundled, no internet ever needed.</p>
-          <a class="btn ghost" id="winSingle" href="https://github.com/Skryx-L-A/quassel/releases/latest">Single-file download</a>
+          <a class="btn btn-soft" id="winSingle" href="https://github.com/Skryx-L-A/quassel/releases/latest">Single-file download</a>
         </div>
         <div class="opt">
           <b>Offline all-in-one — split parts</b>
-          <p>Same package as 4 parts (each &lt; 2 GB). Put all parts in one folder, double-click part 1.</p>
-          <a class="btn ghost" href="https://github.com/Skryx-L-A/quassel/releases/latest">Parts on GitHub</a>
+          <p>Same package as 4 parts (each &lt; 2 GB). Put them in one folder, double-click part 1.</p>
+          <a class="btn btn-ghost" href="https://github.com/Skryx-L-A/quassel/releases/latest">Parts on GitHub</a>
         </div>
       </div>
 
       <!-- Linux -->
-      <div class="card" id="lin">
-        <span class="badge" id="linBadge" hidden>Your system</span>
-        <div class="os">Linux</div>
-        <div class="osnote">Fedora/Nobara, Ubuntu/Debian/Mint, Arch, openSUSE — systemd, Wayland or X11.</div>
-
+      <div class="card" id="cardLin">
+        <span class="badge" id="linBadge" hidden>your system</span>
+        <div class="os-head">
+          <span class="os-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3 2.5-3 2.5"/><path d="M12.5 15h4.5"/></svg></span>
+          <h3>Linux</h3>
+        </div>
+        <p class="osnote">Fedora/Nobara, Ubuntu/Debian/Mint, Arch, openSUSE — systemd, Wayland or X11.</p>
         <div class="opt">
-          <b>Quick installer <span class="hl">(recommended)</span></b>
-          <p>Small file. Downloads only the engine + model matching your hardware (no compiling). Add
-            <code class="inl">--all</code> for every model.</p>
+          <b>Quick installer <span class="rec">(recommended)</span></b>
+          <p>Small file. Downloads only the engine + model matching your hardware — no compiling. Add <span class="inl">--all</span> for every model.</p>
           <div class="row">
-            <a class="btn" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install.run">Download installer (.run)</a>
-            <a class="btn ghost" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install.sh">.sh script</a>
+            <a class="btn btn-primary" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install.run">Download installer (.run)</a>
+            <a class="btn btn-ghost" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install.sh">.sh script</a>
           </div>
           <p style="margin:12px 0 0">…or one line in a terminal:</p>
-          <code>curl -fsSL https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install.sh | bash</code>
-          <p style="margin-top:8px;font-size:.84rem">Tip: a downloaded <code class="inl">.run</code>/<code class="inl">.sh</code> may need
-            “Allow executing” / <code class="inl">chmod +x</code> before double-clicking.</p>
+          <pre>curl -fsSL https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install.sh | bash</pre>
+          <p style="margin-top:8px;font-size:.84rem">Tip: a downloaded <span class="inl">.run</span>/<span class="inl">.sh</span> may need "Allow executing" / <span class="inl">chmod +x</span> first.</p>
         </div>
         <div class="opt">
           <b>Offline all-in-one — single file</b>
-          <p>4.6 GB. Portable Python+Qt, CPU &amp; CUDA engines, all models. x86_64, glibc ≥ 2.28.</p>
-          <a class="btn ghost" id="linSingle" href="https://github.com/Skryx-L-A/quassel/releases/latest">Single-file download</a>
+          <p>4.6 GB. Portable Python+Qt, CPU &amp; CUDA engines, all models. x86_64, glibc &ge; 2.28.</p>
+          <a class="btn btn-soft" id="linSingle" href="https://github.com/Skryx-L-A/quassel/releases/latest">Single-file download</a>
         </div>
         <div class="opt">
-          <b>Offline all-in-one — split parts</b>
-          <p>Same package as 3 parts. <code class="inl">cat …part-* | tar xzf -</code> then <code class="inl">./install.sh</code></p>
-          <a class="btn ghost" href="https://github.com/Skryx-L-A/quassel/releases/latest">Parts on GitHub</a>
-        </div>
-        <div class="opt">
-          <b>From source</b>
-          <p>Builds whisper.cpp tuned to your machine (needs a compiler).</p>
-          <code>git clone https://github.com/Skryx-L-A/quassel.git \
-  &amp;&amp; cd quassel &amp;&amp; ./install.sh</code>
+          <b>Offline all-in-one — split parts &amp; source</b>
+          <p>3 parts: <span class="inl">cat …part-* | tar xzf -</span> then <span class="inl">./install.sh</span>. Or build from source (needs a compiler):</p>
+          <pre>git clone https://github.com/Skryx-L-A/quassel.git \
+  &amp;&amp; cd quassel &amp;&amp; ./install.sh</pre>
         </div>
       </div>
 
@@ -151,45 +251,83 @@
   </div>
 </section>
 
-<section>
+<!-- ================= FAQ ================= -->
+<section id="faq">
   <div class="wrap">
-    <h2>How it works</h2>
-    <div style="margin-top:14px;max-width:720px">
-      <div class="check"><span class="c">1</span><div>Turn Quassel on. A small pill sits at the bottom of your screen.</div></div>
-      <div class="check"><span class="c">2</span><div>Click into any text field — editor, browser, chat, even a terminal.</div></div>
-      <div class="check"><span class="c">3</span><div><b>Hold</b> Ctrl+Meta and speak, then release — the text appears at your cursor. Or <b>double-tap</b> for hands-free.</div></div>
+    <div class="section-head">
+      <p class="kicker">// questions</p>
+      <h2>Frequently asked</h2>
+    </div>
+    <div class="faq">
+      <details open>
+        <summary>Does my voice or audio ever leave my computer?</summary>
+        <div class="ans">No. Recording and speech recognition both run locally through whisper.cpp. There is no cloud service,
+          no account, and no telemetry — you can run Quassel with the network unplugged.</div>
+      </details>
+      <details>
+        <summary>Is it really free?</summary>
+        <div class="ans">Yes — Quassel is free and open source under the MIT license. No subscription, no trial, no paid tier.
+          The full source is on <a href="https://github.com/Skryx-L-A/quassel">GitHub</a>.</div>
+      </details>
+      <details>
+        <summary>Which languages does it understand?</summary>
+        <div class="ans">It ships ready for English and German. Because it uses OpenAI's Whisper models, many more languages
+          are available — you can pick the model that suits you.</div>
+      </details>
+      <details>
+        <summary>Do I need an internet connection?</summary>
+        <div class="ans">Only to download. The quick installer pulls the engine and a model that fit your hardware. After that
+          Quassel runs fully offline — and the offline all-in-one packages need no internet at all, even to install.</div>
+      </details>
+      <details>
+        <summary>Does it work on Wayland and X11?</summary>
+        <div class="ans">Yes. Quassel runs on modern Linux desktops on both Wayland and X11, with systemd integration, as well as on
+          Windows 10 and 11.</div>
+      </details>
+      <details>
+        <summary>How accurate is it?</summary>
+        <div class="ans">It uses the same Whisper models behind many commercial tools, just running locally. Larger models are more
+          accurate; smaller ones are faster. You choose the trade-off, and you can switch any time.</div>
+      </details>
     </div>
   </div>
 </section>
+</main>
 
+<!-- ================= FOOTER ================= -->
 <footer>
   <div class="wrap">
-    <p>Quassel is free and open source (MIT). Speech runs locally via whisper.cpp — nothing is uploaded.</p>
-    <p style="margin-top:8px">
-      <a href="https://github.com/Skryx-L-A/quassel">Source on GitHub</a> ·
-      <a href="https://github.com/Skryx-L-A/quassel/releases/latest">All releases</a> ·
-      <a href="https://github.com/Skryx-L-A/quassel#readme">Documentation</a>
-    </p>
+    <div class="foot-grid">
+      <div class="foot-brand"><img src="quassel.svg" alt="">Quassel</div>
+      <nav class="foot-links">
+        <a href="https://github.com/Skryx-L-A/quassel">Source on GitHub</a>
+        <a href="https://github.com/Skryx-L-A/quassel/releases/latest">All releases</a>
+        <a href="https://github.com/Skryx-L-A/quassel#readme">Documentation</a>
+        <a href="#download">Download</a>
+      </nav>
+    </div>
+    <p class="foot-note">Quassel is free and open source under the <span class="hl">MIT license</span>.
+      Speech runs locally via whisper.cpp — <span class="hl">nothing is ever uploaded</span>. Made for people who'd
+      rather their voice stayed on their own machine.</p>
   </div>
 </footer>
 
 <script>
-  // Single-file hosts for the >2 GB packages (set once uploaded to a large-file
-  // host such as Hugging Face). Empty -> button falls back to the GitHub release
-  // (split parts) so links never break.
-  var WIN_SINGLE = "https://huggingface.co/Skryx/quassel-offline/resolve/main/Quassel-Offline-OnePackage.exe?download=true";
+  // Single-file hosts for the >2 GB packages. Empty -> button keeps its GitHub
+  // fallback (split parts) so links never break.
+  var WIN_SINGLE   = "https://huggingface.co/Skryx/quassel-offline/resolve/main/Quassel-Offline-OnePackage.exe?download=true";
   var LINUX_SINGLE = "https://huggingface.co/Skryx/quassel-offline/resolve/main/quassel-linux-x86_64.tar.gz?download=true";
-  if (WIN_SINGLE) document.getElementById("winSingle").href = WIN_SINGLE;
-  if (LINUX_SINGLE) document.getElementById("linSingle").href = LINUX_SINGLE;
+  var ws = document.getElementById("winSingle"); if (ws && WIN_SINGLE) ws.href = WIN_SINGLE;
+  var ls = document.getElementById("linSingle"); if (ls && LINUX_SINGLE) ls.href = LINUX_SINGLE;
 
-  // Highlight the visitor's OS.
+  // Highlight the visitor's OS in the hero and the detailed cards.
   var ua = navigator.userAgent.toLowerCase();
-  if (ua.indexOf("windows") !== -1) pick("win","winBadge"," for Windows");
-  else if (ua.indexOf("linux") !== -1 && ua.indexOf("android") === -1) pick("lin","linBadge"," for Linux");
-  function pick(card,badge,label){
-    document.getElementById(card).classList.add("active");
-    document.getElementById(badge).hidden = false;
-    document.getElementById("heroOs").textContent = label;
+  function add(id, cls){ var e = document.getElementById(id); if (e) e.classList.add(cls); }
+  function show(id){ var e = document.getElementById(id); if (e) e.hidden = false; }
+  if (ua.indexOf("windows") !== -1){
+    add("heroWin","detected"); show("heroWinTag"); add("cardWin","active"); show("winBadge");
+  } else if (ua.indexOf("linux") !== -1 && ua.indexOf("android") === -1){
+    add("heroLin","detected"); show("heroLinTag"); add("cardLin","active"); show("linBadge");
   }
 </script>
 </body>

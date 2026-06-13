@@ -13,7 +13,7 @@ import time
 import wave
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtGui import QDesktopServices, QIcon, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFrame, QGroupBox, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit,
@@ -40,36 +40,52 @@ ICON_PATHS = [
     os.path.join(os.path.dirname(__file__), "..", "assets", "quassel.svg"),
 ]
 
+# Stylesheet-Vorlage. Die Markenfarbe (Pine-Grün, Direction B "Lokal") wird je
+# nach hellem/dunklem System-Theme eingesetzt — der Rest bleibt bewusst
+# nativ/palette-basiert, damit das Fenster sich dem Desktop anpasst.
 STYLE = """
-QGroupBox {
+QGroupBox {{
     font-weight: 600;
     border: 1px solid palette(midlight);
-    border-radius: 8px;
-    margin-top: 14px;
-    padding: 12px 12px 10px 12px;
-}
-QGroupBox::title {
+    border-radius: 10px;
+    margin-top: 16px;
+    padding: 14px 14px 12px 14px;
+}}
+QGroupBox::title {{
     subcontrol-origin: margin;
-    left: 10px;
+    left: 12px;
     padding: 0 5px;
-}
-QListWidget#sidebar {
+    color: {accent};
+    font-weight: 700;
+}}
+QWidget#brandhead {{
+    background: palette(alternate-base);
+    border-bottom: 1px solid palette(midlight);
+}}
+QLabel#brandword {{
+    font-size: 15px;
+    font-weight: 800;
+}}
+QListWidget#sidebar {{
     border: none;
     background: palette(alternate-base);
     font-size: 13px;
     outline: none;
-    padding-top: 6px;
-}
-QListWidget#sidebar::item {
+    padding-top: 8px;
+}}
+QListWidget#sidebar::item {{
     padding: 9px 14px;
-    border-radius: 6px;
-    margin: 1px 6px;
-}
-QListWidget#sidebar::item:selected {
-    background: palette(highlight);
-    color: palette(highlighted-text);
-}
-QLabel#desc { color: palette(placeholder-text); }
+    border-radius: 8px;
+    margin: 2px 8px;
+}}
+QListWidget#sidebar::item:hover {{
+    background: {accent_soft};
+}}
+QListWidget#sidebar::item:selected {{
+    background: {accent};
+    color: {accent_text};
+}}
+QLabel#desc {{ color: palette(placeholder-text); }}
 """
 
 
@@ -221,18 +237,55 @@ class Center(QMainWindow):
         self.setWindowTitle(tr("app_name"))
         self.setWindowIcon(app_icon())
         self.setMinimumSize(680, 520)
-        self.setStyleSheet(STYLE)
+
+        # Markenakzent (Pine) themenabhängig wählen, damit der Kontrast in hellen
+        # wie dunklen Desktop-Themes stimmt. Auf der Website dieselbe Identität.
+        dark = self.palette().color(QPalette.Window).value() < 128
+        if dark:
+            self._accent = "#34C18C"
+            self._accent_text = "#06140E"
+            self._accent_hover = "#48D49E"
+            accent_soft = "rgba(52,193,140,0.16)"
+        else:
+            self._accent = "#0F6B4F"
+            self._accent_text = "#FFFFFF"
+            self._accent_hover = "#0B5238"
+            accent_soft = "rgba(15,107,79,0.12)"
+        self.setStyleSheet(STYLE.format(
+            accent=self._accent, accent_text=self._accent_text,
+            accent_soft=accent_soft))
 
         root = QWidget()
         outer = QHBoxLayout(root)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
+        # Linke Spalte: Marken-Kopf (Logo + Wortmarke) über der Seitenleiste.
+        left = QWidget()
+        left.setFixedWidth(176)
+        lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.setSpacing(0)
+
+        head = QWidget()
+        head.setObjectName("brandhead")
+        hh = QHBoxLayout(head)
+        hh.setContentsMargins(16, 12, 14, 12)
+        hh.setSpacing(9)
+        logo = QLabel()
+        logo.setPixmap(app_icon().pixmap(22, 22))
+        hh.addWidget(logo)
+        word = QLabel("Quassel")
+        word.setObjectName("brandword")
+        hh.addWidget(word)
+        hh.addStretch(1)
+        lv.addWidget(head)
+
         self.sidebar = QListWidget()
         self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(176)
         self.stack = QStackedWidget()
-        outer.addWidget(self.sidebar)
+        lv.addWidget(self.sidebar, 1)
+        outer.addWidget(left)
         outer.addWidget(self.stack, 1)
 
         for key, builder in [("nav_general", self.page_general),
@@ -261,7 +314,10 @@ class Center(QMainWindow):
         row.addStretch(1)
         self.toggle_btn = QPushButton()
         self.toggle_btn.setMinimumHeight(34)
-        self.toggle_btn.setStyleSheet("font-weight: 600; padding: 4px 24px;")
+        self.toggle_btn.setStyleSheet(
+            f"QPushButton{{background:{self._accent};color:{self._accent_text};"
+            f"font-weight:600;padding:7px 26px;border:none;border-radius:9px;}}"
+            f"QPushButton:hover{{background:{self._accent_hover};}}")
         self.toggle_btn.clicked.connect(self.on_toggle)
         if IS_WINDOWS and self.controller is None:
             self.toggle_btn.hide()      # ohne Tray-App nichts zu schalten
@@ -458,7 +514,7 @@ class Center(QMainWindow):
             on = self.controller.enabled
         else:
             on = daemon_active()
-        color = "#2e9e2e" if on else "#8a8a96"
+        color = self._accent if on else "#8a8a96"
         self.status_dot.setStyleSheet(f"background: {color}; border-radius: 6px;")
         self.status_lbl.setText(tr("on") if on else tr("off"))
         self.toggle_btn.setText(tr("turn_off") if on else tr("turn_on"))

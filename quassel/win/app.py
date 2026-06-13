@@ -655,6 +655,13 @@ def audiocheck():
 def main():
     if os.name != "nt":
         raise SystemExit("quassel.win.app läuft nur unter Windows.")
+    # Eigene AppUserModelID setzen, sonst gruppiert Windows unter dem Host-
+    # python.exe und zeigt dessen Symbol in der Taskleiste statt unseres.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Quassel.VoiceTyping")
+    except Exception:
+        pass
     if "--setup" in sys.argv:
         run_setup(full="--all" in sys.argv)
         return
