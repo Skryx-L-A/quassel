@@ -166,15 +166,18 @@ ok "udev-Regel für /dev/uinput installiert"
 say "6/6  App-Eintrag + Icon"
 # ---------------------------------------------------------------------------
 mkdir -p "$APPS" "$ICONS/scalable/apps"
+# Eindeutiger Name "quassel-voice": der Theme-Name "quassel" gehört dem
+# Quassel-IRC-Client und würde unser Symbol überdecken.
 [[ -f "$BUNDLE/quassel/../assets/quassel.svg" ]] && \
-    install -m 644 "$BUNDLE/quassel/../assets/quassel.svg" "$ICONS/scalable/apps/quassel.svg" 2>/dev/null || true
+    install -m 644 "$BUNDLE/quassel/../assets/quassel.svg" "$ICONS/scalable/apps/quassel-voice.svg" 2>/dev/null || true
 cat > "$APPS/quassel.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Quassel
 Comment=Local private voice typing / Lokale Spracheingabe
 Exec=$BIN/quassel-type
-Icon=quassel
+Icon=quassel-voice
+StartupWMClass=quassel
 Terminal=false
 Categories=Utility;AudioVideo;
 EOF

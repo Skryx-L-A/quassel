@@ -74,7 +74,9 @@ h1,h2,h3{line-height:1.12;letter-spacing:-.02em;color:var(--ink)}
 .btn-soft:hover{background:var(--mint-2);color:var(--pine-700)}
 
 /* big OS download buttons */
-.dl-buttons{display:flex;flex-wrap:wrap;gap:14px;margin-top:30px}
+.dl-intro{margin-top:28px;color:var(--ink-2);font-size:1rem;font-weight:500}
+.dl-buttons{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px}
+.dl-advanced{margin-top:14px;padding:8px 16px;font-size:.9rem;gap:6px}
 .dl-os{display:flex;align-items:center;gap:14px;text-align:left;padding:15px 22px;border-radius:var(--r);
   background:var(--pine);color:#fff;border:1px solid var(--pine-700);box-shadow:var(--shadow);
   transition:transform .12s ease,box-shadow .12s ease,background .12s ease}

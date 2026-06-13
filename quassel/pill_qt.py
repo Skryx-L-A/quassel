@@ -27,7 +27,7 @@ RESULT_SHOW_S = 3.0
 CENTER_CMD = os.environ.get("QUASSEL_CENTER_CMD", "quassel-type")
 
 ICON_PATHS = [
-    os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/quassel.svg"),
+    os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/quassel-voice.svg"),
     os.path.join(os.path.dirname(__file__), "..", "assets", "quassel.svg"),
 ]
 
@@ -36,7 +36,7 @@ def app_icon():
     for p in ICON_PATHS:
         if os.path.exists(p):
             return QIcon(p)
-    return QIcon.fromTheme("quassel")
+    return QIcon.fromTheme("quassel-voice")
 
 DOT_OFF = QColor("#5c5c66")
 DOT_READY = QColor("#b9a7f5")

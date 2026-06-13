@@ -36,7 +36,7 @@ else:
 UNITS_START = ["quasseld", "quassel-server", "quassel-pill"]
 UNITS_STOP = ["quasseld", "quassel-server", "quassel-ydotoold"]
 ICON_PATHS = [
-    os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/quassel.svg"),
+    os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/quassel-voice.svg"),
     os.path.join(os.path.dirname(__file__), "..", "assets", "quassel.svg"),
 ]
 
@@ -152,7 +152,7 @@ def app_icon():
     for p in ICON_PATHS:
         if os.path.exists(p):
             return QIcon(p)
-    return QIcon.fromTheme("quassel")
+    return QIcon.fromTheme("quassel-voice")
 
 
 class NoWheel(QObject):

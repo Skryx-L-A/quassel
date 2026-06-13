@@ -215,12 +215,18 @@ EOF
 fi
 sed "s|@HOME@|$HOME|g" "$SRC/desktop/quassel.desktop.in" \
     > "$HOME/.local/share/applications/quassel.desktop"
+# Unter eindeutigem Namen installieren: der Icon-Theme-Name "quassel" gehört
+# dem Quassel-IRC-Client (Papirus/Breeze/Oxygen liefern ihn) und würde unser
+# Symbol in Taskleiste/Starter überdecken. "quassel-voice" ist kollisionsfrei.
 mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
-install -m 644 "$SRC/assets/quassel.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/quassel.svg"
+install -m 644 "$SRC/assets/quassel.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/quassel-voice.svg"
 for sz in 48 64 128 256; do
     mkdir -p "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps"
-    install -m 644 "$SRC/assets/icons/quassel-${sz}.png"         "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps/quassel.png"
+    install -m 644 "$SRC/assets/icons/quassel-${sz}.png"         "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps/quassel-voice.png"
 done
+# evtl. alt installiertes (kollidierendes) Symbol entfernen
+rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/quassel.svg" \
+      "$HOME"/.local/share/icons/hicolor/*/apps/quassel.png 2>/dev/null || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 systemctl --user daemon-reload
 command -v update-desktop-database >/dev/null && update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
