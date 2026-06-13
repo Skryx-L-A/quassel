@@ -177,8 +177,8 @@
   // Single-file hosts for the >2 GB packages (set once uploaded to a large-file
   // host such as Hugging Face). Empty -> button falls back to the GitHub release
   // (split parts) so links never break.
-  var WIN_SINGLE = "";
-  var LINUX_SINGLE = "";
+  var WIN_SINGLE = "https://huggingface.co/Skryx/quassel-offline/resolve/main/Quassel-Offline-OnePackage.exe?download=true";
+  var LINUX_SINGLE = "https://huggingface.co/Skryx/quassel-offline/resolve/main/quassel-linux-x86_64.tar.gz?download=true";
   if (WIN_SINGLE) document.getElementById("winSingle").href = WIN_SINGLE;
   if (LINUX_SINGLE) document.getElementById("linSingle").href = LINUX_SINGLE;
 
