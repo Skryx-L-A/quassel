@@ -22,10 +22,15 @@ LIB="$HOME/.local/lib/quassel"
 BIN="$HOME/.local/bin"
 VENV="$DATA/venv"
 MODEL=""
+PREBUILT=0          # --prebuilt: vorgebaute Engine laden statt kompilieren
+ALL_MODELS=0        # --all: alle Modelle statt nur des passenden
+RELEASE="https://github.com/Skryx-L-A/quassel/releases/latest/download"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --model) MODEL="${2:?}"; shift 2 ;;
+        --prebuilt) PREBUILT=1; shift ;;
+        --all) ALL_MODELS=1; shift ;;
         -h|--help) grep '^#' "$0" | head -8; exit 0 ;;
         *) die "Unbekannte Option: $1" ;;
     esac
@@ -103,48 +108,85 @@ sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput 2>/dev/n
 ok "udev-Regel für /dev/uinput installiert"
 
 # ----------------------------------------------------------------------------
-say "3/8  whisper.cpp bauen (einmalig; GPU wird automatisch erkannt)"
+say "3/8  Spracherkennungs-Engine (vorgebaut laden ODER selbst kompilieren)"
 # ----------------------------------------------------------------------------
 mkdir -p "$DATA" "$BIN" "$LIB"
-if [[ ! -d "$DATA/whisper.cpp" ]]; then
-    git clone --depth 1 https://github.com/ggml-org/whisper.cpp "$DATA/whisper.cpp"
-fi
-GPU="CPU"
-CMAKE_FLAGS=(-DCMAKE_BUILD_TYPE=Release)
-if command -v nvcc >/dev/null; then
-    CMAKE_FLAGS+=(-DGGML_CUDA=1); GPU="NVIDIA/CUDA"
-elif command -v glslc >/dev/null && { pkg-config --exists vulkan 2>/dev/null || [[ -e /usr/include/vulkan/vulkan.h ]]; }; then
-    CMAKE_FLAGS+=(-DGGML_VULKAN=1); GPU="Vulkan (AMD/Intel/NVIDIA)"
-fi
-build_whisper() {
-    ( cd "$DATA/whisper.cpp" && rm -rf build &&
-      cmake -B build "$@" >/dev/null &&
-      cmake --build build -j"$(nproc)" --config Release >/dev/null )
-}
-if [[ ! -x "$DATA/whisper.cpp/build/bin/whisper-server" ]]; then
-    if ! build_whisper "${CMAKE_FLAGS[@]}"; then
-        warn "GPU-Build fehlgeschlagen – baue CPU-Version"
-        GPU="CPU"
-        build_whisper -DCMAKE_BUILD_TYPE=Release
+HAS_GPU=0
+if [[ "$PREBUILT" -eq 1 ]]; then
+    # Vorgebaute portable Engine aus dem Release laden — kein git/Compiler nötig.
+    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+        EVAR="cuda"; HAS_GPU=1
+    else
+        EVAR="cpu"
     fi
+    EDIR="$DATA/engine/$EVAR"
+    if [[ ! -x "$EDIR/whisper-server" ]]; then
+        mkdir -p "$EDIR"
+        echo "    Lade vorgebaute Engine ($EVAR)…"
+        curl -L --fail --progress-bar -o "$DATA/engine-$EVAR.tar.gz" \
+            "$RELEASE/quassel-engine-linux-$EVAR-x86_64.tar.gz" \
+            || die "Engine-Download fehlgeschlagen ($EVAR)"
+        tar -xzf "$DATA/engine-$EVAR.tar.gz" -C "$DATA/engine"
+        rm -f "$DATA/engine-$EVAR.tar.gz"
+    fi
+    # Wrapper: gebündelte Libs prozess-lokal (System bleibt unangetastet);
+    # der NVIDIA-Treiber kommt zur Laufzeit immer vom Zielsystem.
+    cat > "$EDIR/run-server.sh" <<'WRAP'
+#!/usr/bin/env bash
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LD_LIBRARY_PATH="$here:${LD_LIBRARY_PATH:-}"
+exec "$here/whisper-server" "$@"
+WRAP
+    chmod +x "$EDIR/run-server.sh"
+    SERVER_BIN_PATH="$EDIR/run-server.sh"
+    ok "Engine (vorgebaut): $EVAR"
+else
+    if [[ ! -d "$DATA/whisper.cpp" ]]; then
+        git clone --depth 1 https://github.com/ggml-org/whisper.cpp "$DATA/whisper.cpp"
+    fi
+    GPU="CPU"; CMAKE_FLAGS=(-DCMAKE_BUILD_TYPE=Release)
+    if command -v nvcc >/dev/null; then
+        CMAKE_FLAGS+=(-DGGML_CUDA=1); GPU="NVIDIA/CUDA"; HAS_GPU=1
+    elif command -v glslc >/dev/null && { pkg-config --exists vulkan 2>/dev/null || [[ -e /usr/include/vulkan/vulkan.h ]]; }; then
+        CMAKE_FLAGS+=(-DGGML_VULKAN=1); GPU="Vulkan (AMD/Intel/NVIDIA)"; HAS_GPU=1
+    fi
+    build_whisper() {
+        ( cd "$DATA/whisper.cpp" && rm -rf build &&
+          cmake -B build "$@" >/dev/null &&
+          cmake --build build -j"$(nproc)" --config Release >/dev/null )
+    }
+    if [[ ! -x "$DATA/whisper.cpp/build/bin/whisper-server" ]]; then
+        if ! build_whisper "${CMAKE_FLAGS[@]}"; then
+            warn "GPU-Build fehlgeschlagen – baue CPU-Version"
+            GPU="CPU"; HAS_GPU=0
+            build_whisper -DCMAKE_BUILD_TYPE=Release
+        fi
+    fi
+    [[ -x "$DATA/whisper.cpp/build/bin/whisper-server" ]] || die "whisper.cpp-Build fehlgeschlagen"
+    SERVER_BIN_PATH="$DATA/whisper.cpp/build/bin/whisper-server"
+    ok "whisper.cpp gebaut ($GPU)"
 fi
-[[ -x "$DATA/whisper.cpp/build/bin/whisper-server" ]] || die "whisper.cpp-Build fehlgeschlagen"
-ok "whisper.cpp gebaut ($GPU)"
 
 # ----------------------------------------------------------------------------
-say "4/8  Sprachmodell laden"
+say "4/8  Sprachmodell(e) laden"
 # ----------------------------------------------------------------------------
-if [[ -z "$MODEL" ]]; then
-    [[ "$GPU" == "CPU" ]] && MODEL="small" || MODEL="large-v3-turbo"
+mkdir -p "$DATA/models"
+HF="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
+dl_model() {
+    local m="$1" f="ggml-$1.bin"
+    [[ -s "$DATA/models/$f" ]] && return 0
+    echo "    Lade Modell '$m' (75 MB – 1,6 GB)…"
+    curl -L --fail --progress-bar -o "$DATA/models/$f" "$HF/$f" \
+        || die "Modell-Download fehlgeschlagen: $m"
+}
+[[ -z "$MODEL" ]] && { [[ "$HAS_GPU" -eq 1 ]] && MODEL="large-v3-turbo" || MODEL="small"; }
+if [[ "$ALL_MODELS" -eq 1 ]]; then
+    for m in tiny base small medium large-v3-turbo; do dl_model "$m"; done
+else
+    dl_model "$MODEL"
 fi
 MODELFILE="ggml-${MODEL}.bin"
-mkdir -p "$DATA/models"
-if [[ ! -s "$DATA/models/$MODELFILE" ]]; then
-    echo "    Lade Modell '$MODEL' (75 MB – 1,6 GB)…"
-    curl -L --progress-bar -o "$DATA/models/$MODELFILE" \
-        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODELFILE"
-fi
-ok "Modell: $MODELFILE"
+ok "Modell: $MODELFILE  (Standard für diese Hardware)"
 
 # ----------------------------------------------------------------------------
 say "5/8  Qt-Oberfläche einrichten (PySide6 in eigener venv, ~150 MB einmalig)"
@@ -167,7 +209,7 @@ mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/share/applications" \
 install -m 644 "$SRC"/systemd/*.service "$HOME/.config/systemd/user/"
 if [[ ! -s "$HOME/.config/quassel/server.env" ]]; then
     cat > "$HOME/.config/quassel/server.env" <<EOF
-SERVER_BIN=$DATA/whisper.cpp/build/bin/whisper-server
+SERVER_BIN=$SERVER_BIN_PATH
 MODEL_PATH=$DATA/models/$MODELFILE
 EOF
 fi

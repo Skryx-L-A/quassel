@@ -1,0 +1,11 @@
+# Netlify-Konfiguration für die Quassel-Download-Website (statisch, im Ordner website/).
+# Deploy: Repo mit Netlify verbinden (Publish-Verzeichnis = website) ODER
+#   netlify deploy --prod --dir=website
+[build]
+  publish = "website"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
