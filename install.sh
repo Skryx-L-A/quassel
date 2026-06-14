@@ -231,18 +231,23 @@ mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/share/applications" \
 install -m 644 "$SRC"/systemd/*.service "$HOME/.config/systemd/user/"
 # whisper-Threads: bis ~8 (darüber bringt mehr kaum etwas, HT-Kerne wenig)
 THREADS=$(nproc 2>/dev/null || echo 4); [[ "$THREADS" -gt 8 ]] && THREADS=8
+# Decode: mit GPU Beam-Search (genauer, dort günstig); ohne GPU greedy + kein
+# Temperatur-Fallback (-nf) -> deckelt die Decode-Zeit auf schwacher CPU.
+[[ "$HAS_GPU" -eq 1 ]] && DECODE="-bs 5" || DECODE="-nf"
 if [[ ! -s "$HOME/.config/quassel/server.env" ]]; then
     cat > "$HOME/.config/quassel/server.env" <<EOF
 SERVER_BIN=$SERVER_BIN_PATH
 MODEL_PATH=$DATA/models/$MODELFILE
 WHISPER_THREADS=$THREADS
+WHISPER_DECODE=$DECODE
 VAD_MODEL=$VAD_PATH
 EOF
 else
     # Bestehende server.env nicht überschreiben (Modellwahl bleibt), aber Thread-
-    # Zahl und VAD-Modell bei Bedarf ergänzen.
+    # Zahl, Decode-Flags und VAD-Modell bei Bedarf ergänzen.
     SENV="$HOME/.config/quassel/server.env"
     grep -q '^WHISPER_THREADS=' "$SENV" || echo "WHISPER_THREADS=$THREADS" >> "$SENV"
+    grep -q '^WHISPER_DECODE=' "$SENV" || echo "WHISPER_DECODE=$DECODE" >> "$SENV"
     [[ -n "$VAD_PATH" ]] && ! grep -q '^VAD_MODEL=' "$SENV" \
         && echo "VAD_MODEL=$VAD_PATH" >> "$SENV"
 fi
