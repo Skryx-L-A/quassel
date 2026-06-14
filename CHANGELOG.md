@@ -14,6 +14,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-06-14
+
+> Online installer is v2.4.0. The offline all-in-one packages remain v2.2.0 for now
+> (older) and are noted as such on the download page.
+
 ### Added
 - Local AI tier (opt-in, off by default, 100% on your machine via Ollama):
   - Auto-clean every dictation (remove filler words, fix grammar/punctuation) — choose the mode.
