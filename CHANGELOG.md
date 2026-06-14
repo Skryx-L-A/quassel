@@ -55,6 +55,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Local AI post-processing now reliably inserts the text: the recognized text is pasted
   immediately (while your cursor is still in the field) and then replaced with the AI-refined
   version once it's ready — so slower/larger models no longer leave the target window empty.
+- The floating pill no longer turns Quassel off on a stray left-click. Left-click now opens the
+  control center (as documented); on/off moved to right-click. Previously, clicking into a text
+  field that sat under the pill — e.g. mid-dictation — could shut Quassel down entirely.
+
+### Changed (settings layout)
+- The Speech page now lists the Whisper model and microphone above the wake word; Beta features
+  always sit at the very bottom.
 
 ### Beta
 - Wake word (hands-free voice activation) is shipped as **Beta** — opt-in, off by default, and

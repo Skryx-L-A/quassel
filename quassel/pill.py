@@ -172,7 +172,9 @@ class Pill(Gtk.Application):
         self.win.set_child(outer)
         self.apply_style()
 
-        # Linksklick: Diktat an/aus · Rechtsklick: Kontrollzentrum
+        # Linksklick: Kontrollzentrum öffnen (sicher) · Rechtsklick: Diktat an/aus.
+        # (Früher schaltete Linksklick aus — ein versehentlicher Klick beim Anvisieren
+        #  des Textfelds unter der Pille beendete dann mitten im Diktat ganz Quassel.)
         left = Gtk.GestureClick(button=1)
         left.connect("released", self.on_left_click)
         self.win.add_controller(left)
@@ -322,6 +324,11 @@ class Pill(Gtk.Application):
 
     # --------------------------------------------------------------- Klicks
     def on_left_click(self, *_a):
+        # Sichere Hauptaktion: Kontrollzentrum öffnen (stoppt Quassel NIE).
+        subprocess.Popen(["quassel-type"])
+
+    def on_right_click(self, *_a):
+        # Bewusste Geste zum An/Aus-Schalten.
         if daemon_active():
             subprocess.run(["systemctl", "--user", "stop",
                             "quasseld", "quassel-server", "quassel-ydotoold"],
@@ -333,9 +340,6 @@ class Pill(Gtk.Application):
                             "quasseld", "quassel-server"], check=False)
             self.on = True
             self.set_mode("ready")
-
-    def on_right_click(self, *_a):
-        subprocess.Popen(["quassel-type"])
 
 
 def main():

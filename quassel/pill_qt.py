@@ -189,10 +189,13 @@ class Pill(QWidget):
 
     # -------------------------------------------------------------- Klicks
     def mouseReleaseEvent(self, ev):
+        # Linksklick öffnet (sicher) das Kontrollzentrum; An/Aus liegt auf dem
+        # Rechtsklick — sonst beendet ein versehentlicher Klick neben dem Textfeld
+        # unter der Pille mitten im Diktat ganz Quassel.
         if ev.button() == Qt.LeftButton:
-            self._toggle()
-        elif ev.button() == Qt.RightButton:
             subprocess.Popen(CENTER_CMD.split())
+        elif ev.button() == Qt.RightButton:
+            self._toggle()
 
     def _toggle(self):
         if os.name == "nt":

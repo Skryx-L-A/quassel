@@ -433,21 +433,6 @@ class Center(QMainWindow):
         self.labeled_row(tr("streaming_mode"), self.stream_mode, g)
         self._sync_streaming_enabled(self.cfg.streaming)
 
-        # --- Wake-Word (Freisprechen, opt-in, BETA) ---
-        g = self.group(tr("sec_wakeword"), lay)
-        beta = self.desc(tr("wakeword_beta"), g)
-        beta.setStyleSheet("color:#E9A93A;font-weight:600;")   # Bernstein = Beta-Warnung
-        self.wake_on = QCheckBox(tr("wakeword_enable"))
-        self.wake_on.setChecked(self.cfg.wakeword_enabled)
-        self.wake_on.toggled.connect(self.save_settings)
-        g.addWidget(self.wake_on)
-        self.desc(tr("wakeword_hint"), g)
-        self.wake_phrase = QLineEdit(self.cfg.wakeword_phrase)
-        self.wake_phrase.setPlaceholderText(config.WAKEWORD_DEFAULT)
-        self.wake_phrase.editingFinished.connect(self.save_settings)
-        self.labeled_row(tr("wakeword_phrase"), self.wake_phrase, g)
-        self.desc(tr("wakeword_change_hint"), g)
-
         g = self.group(tr("model"), lay)
         self.model = self.guard(QComboBox())
         env = config.read_serverenv()
@@ -477,6 +462,21 @@ class Center(QMainWindow):
         self.test_out = QLabel()
         self.test_out.setWordWrap(True)
         g.addWidget(self.test_out)
+
+        # --- Wake-Word (Freisprechen, opt-in, BETA) — Beta-Funktionen ganz unten ---
+        g = self.group(tr("sec_wakeword"), lay)
+        beta = self.desc(tr("wakeword_beta"), g)
+        beta.setStyleSheet("color:#E9A93A;font-weight:600;")   # Bernstein = Beta-Warnung
+        self.wake_on = QCheckBox(tr("wakeword_enable"))
+        self.wake_on.setChecked(self.cfg.wakeword_enabled)
+        self.wake_on.toggled.connect(self.save_settings)
+        g.addWidget(self.wake_on)
+        self.desc(tr("wakeword_hint"), g)
+        self.wake_phrase = QLineEdit(self.cfg.wakeword_phrase)
+        self.wake_phrase.setPlaceholderText(config.WAKEWORD_DEFAULT)
+        self.wake_phrase.editingFinished.connect(self.save_settings)
+        self.labeled_row(tr("wakeword_phrase"), self.wake_phrase, g)
+        self.desc(tr("wakeword_change_hint"), g)
 
         lay.addStretch(1)
         return scroll
