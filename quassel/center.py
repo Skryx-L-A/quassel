@@ -15,13 +15,14 @@ import wave
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QIcon, QPalette
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFrame, QGroupBox, QHBoxLayout,
-    QLabel, QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit,
-    QProgressBar, QPushButton, QScrollArea, QSlider, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+    QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMainWindow, QPlainTextEdit, QProgressBar, QPushButton,
+    QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import __version__, config, i18n, whisperclient
+from . import (__version__, config, i18n, stats, transcribe_file, updatecheck,
+               whisperclient)
 from .audio import RATE
 from .config import MODEL_URL, MODELS
 from .i18n import tr
@@ -171,6 +172,8 @@ class Bridge(QObject):
     progress = Signal(float)
     message = Signal(str)
     model_done = Signal(str)
+    file_done = Signal(str, str)      # (Statuszeile, Ergebnistext)
+    update_done = Signal(dict)        # updatecheck.check()-Resultat
 
 
 class Center(QMainWindow):
@@ -185,6 +188,8 @@ class Center(QMainWindow):
         self.bridge.progress.connect(self.on_progress)
         self.bridge.message.connect(self.on_message)
         self.bridge.model_done.connect(self.on_model_done)
+        self.bridge.file_done.connect(self.on_file_done)
+        self.bridge.update_done.connect(self.on_update_done)
         self.nowheel = NoWheel(self)
         self._loading = True
         self.build()
@@ -193,6 +198,10 @@ class Center(QMainWindow):
         timer = QTimer(self)
         timer.timeout.connect(self.refresh_status)
         timer.start(2000)
+        QTimer.singleShot(0, self._maybe_onboard)
+        if self.cfg.update_check:
+            QTimer.singleShot(1500, lambda: updatecheck.check_async(
+                __version__, self.bridge.update_done.emit))
 
     # ------------------------------------------------------------- Hilfen
     def guard(self, w):
@@ -220,6 +229,11 @@ class Center(QMainWindow):
         row.addWidget(QLabel(label))
         row.addWidget(widget, 1)
         layout.addLayout(row)
+
+    def select_data(self, combo, value, default=0):
+        """Combo-Eintrag mit passenden userData auswählen (Reihenfolge-unabhängig)."""
+        i = combo.findData(value)
+        combo.setCurrentIndex(i if i >= 0 else default)
 
     def page(self):
         scroll = QScrollArea()
@@ -291,6 +305,8 @@ class Center(QMainWindow):
         for key, builder in [("nav_general", self.page_general),
                              ("nav_speech", self.page_speech),
                              ("nav_dict", self.page_dict),
+                             ("nav_replace", self.page_replace),
+                             ("nav_file", self.page_file),
                              ("nav_history", self.page_history),
                              ("nav_system", self.page_system)]:
             QListWidgetItem(tr(key), self.sidebar)
@@ -375,9 +391,10 @@ class Center(QMainWindow):
 
         g = self.group(tr("sec_speech"), lay)
         self.lang = self.guard(QComboBox())
-        for val, key in (("auto", "lang_auto"), ("de", "lang_de"), ("en", "lang_en")):
+        for val, key in (("auto", "lang_auto"), ("de", "lang_de"),
+                         ("en", "lang_en"), ("mixed", "lang_mixed")):
             self.lang.addItem(tr(key), val)
-        self.lang.setCurrentIndex({"auto": 0, "de": 1, "en": 2}.get(self.cfg.language, 0))
+        self.select_data(self.lang, self.cfg.language)
         self.lang.currentIndexChanged.connect(self.save_settings)
         self.labeled_row(tr("language"), self.lang, g)
         self.punct = QCheckBox(tr("punctuation"))
@@ -388,6 +405,11 @@ class Center(QMainWindow):
         self.cmds.setChecked(self.cfg.commands)
         self.cmds.toggled.connect(self.save_settings)
         g.addWidget(self.cmds)
+        self.progmode = QCheckBox(tr("programmer_enable"))
+        self.progmode.setChecked(self.cfg.programmer_mode)
+        self.progmode.toggled.connect(self.save_settings)
+        g.addWidget(self.progmode)
+        self.desc(tr("programmer_hint"), g)
 
         # --- Streaming-Tippen (Live-Tippen ins Zielfenster, nur Freihand) ---
         g = self.group(tr("sec_streaming"), lay)
@@ -398,12 +420,25 @@ class Center(QMainWindow):
         g.addWidget(self.stream_on)
         self.desc(tr("streaming_hint"), g)
         self.stream_mode = self.guard(QComboBox())
-        for val, key in (("stable", "streaming_stable"), ("aggressive", "streaming_aggressive")):
+        for val, key in (("word", "streaming_word"), ("stable", "streaming_stable")):
             self.stream_mode.addItem(tr(key), val)
-        self.stream_mode.setCurrentIndex(0 if self.cfg.streaming_mode == "stable" else 1)
+        self.select_data(self.stream_mode, self.cfg.streaming_mode)
         self.stream_mode.currentIndexChanged.connect(self.save_settings)
         self.labeled_row(tr("streaming_mode"), self.stream_mode, g)
         self._sync_streaming_enabled(self.cfg.streaming)
+
+        # --- Wake-Word (Freisprechen, opt-in) ---
+        g = self.group(tr("sec_wakeword"), lay)
+        self.wake_on = QCheckBox(tr("wakeword_enable"))
+        self.wake_on.setChecked(self.cfg.wakeword_enabled)
+        self.wake_on.toggled.connect(self.save_settings)
+        g.addWidget(self.wake_on)
+        self.desc(tr("wakeword_hint"), g)
+        self.wake_phrase = QLineEdit(self.cfg.wakeword_phrase)
+        self.wake_phrase.setPlaceholderText(config.WAKEWORD_DEFAULT)
+        self.wake_phrase.editingFinished.connect(self.save_settings)
+        self.labeled_row(tr("wakeword_phrase"), self.wake_phrase, g)
+        self.desc(tr("wakeword_change_hint"), g)
 
         g = self.group(tr("model"), lay)
         self.model = self.guard(QComboBox())
@@ -450,6 +485,50 @@ class Center(QMainWindow):
             lambda: config.dictionary_save(self.dict_edit.toPlainText()))
         self.dict_edit.textChanged.connect(lambda: self.dict_timer.start(800))
         g.addWidget(self.dict_edit)
+        self.auto_learn = QCheckBox(tr("auto_learn"))
+        self.auto_learn.setChecked(self.cfg.auto_learn)
+        self.auto_learn.toggled.connect(self.save_settings)
+        g.addWidget(self.auto_learn)
+        self.desc(tr("auto_learn_hint"), g)
+        return scroll
+
+    # ------------------------------------------------ Seite: Textersetzungen
+    def page_replace(self):
+        scroll, lay = self.page()
+        g = self.group(tr("sec_replace"), lay)
+        self.replace_on = QCheckBox(tr("replace_enable"))
+        self.replace_on.setChecked(self.cfg.text_replace)
+        self.replace_on.toggled.connect(self.save_settings)
+        g.addWidget(self.replace_on)
+        self.desc(tr("replace_hint"), g)
+        self.replace_edit = QPlainTextEdit(config.replacement_text())
+        self.replace_timer = QTimer(self)
+        self.replace_timer.setSingleShot(True)
+        self.replace_timer.timeout.connect(
+            lambda: config.replacement_save(self.replace_edit.toPlainText()))
+        self.replace_edit.textChanged.connect(lambda: self.replace_timer.start(800))
+        g.addWidget(self.replace_edit)
+        return scroll
+
+    # --------------------------------------------- Seite: Datei transkribieren
+    def page_file(self):
+        scroll, lay = self.page()
+        g = self.group(tr("sec_file"), lay)
+        self.desc(tr("file_hint"), g)
+        pick = QPushButton(tr("file_pick"))
+        pick.clicked.connect(self.on_pick_file)
+        g.addWidget(pick)
+        self.file_status = QLabel()
+        self.file_status.setObjectName("desc")
+        self.file_status.setWordWrap(True)
+        g.addWidget(self.file_status)
+        self.file_result = QPlainTextEdit()
+        self.file_result.setReadOnly(True)
+        g.addWidget(self.file_result)
+        copy = QPushButton(tr("copy"))
+        copy.clicked.connect(lambda: clip_copy(self.file_result.toPlainText()))
+        g.addWidget(copy)
+        lay.addStretch(1)
         return scroll
 
     # ----------------------------------------------------- Seite: Verlauf
@@ -487,6 +566,51 @@ class Center(QMainWindow):
         self.uilang.setCurrentIndex({"auto": 0, "de": 1, "en": 2}.get(self.cfg.ui_language, 0))
         self.uilang.currentIndexChanged.connect(self.on_uilang_changed)
         self.labeled_row(tr("ui_language"), self.uilang, g)
+
+        # --- Aktualisierungen ---
+        g = self.group(tr("update_label"), lay)
+        self.update_startup = QCheckBox(tr("update_check_startup"))
+        self.update_startup.setChecked(self.cfg.update_check)
+        self.update_startup.toggled.connect(self.save_settings)
+        g.addWidget(self.update_startup)
+        row = QHBoxLayout()
+        check_btn = QPushButton(tr("update_check_now"))
+        check_btn.clicked.connect(self.on_check_update)
+        row.addWidget(check_btn)
+        self.update_get = QPushButton(tr("update_get"))
+        self.update_get.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl("https://github.com/Skryx-L-A/quassel/releases/latest")))
+        self.update_get.setVisible(False)
+        row.addWidget(self.update_get)
+        row.addStretch(1)
+        g.addLayout(row)
+        self.update_status = QLabel()
+        self.update_status.setObjectName("desc")
+        self.update_status.setWordWrap(True)
+        g.addWidget(self.update_status)
+
+        # --- Nutzungsstatistik (#22) ---
+        g = self.group(tr("sec_stats"), lay)
+        self.stats_on = QCheckBox(tr("stats_enable"))
+        self.stats_on.setChecked(self.cfg.stats_enabled)
+        self.stats_on.toggled.connect(self.save_settings)
+        g.addWidget(self.stats_on)
+        self.stats_label = QLabel(self._stats_text())
+        self.stats_label.setWordWrap(True)
+        g.addWidget(self.stats_label)
+        stats_reset = QPushButton(tr("stats_reset"))
+        stats_reset.clicked.connect(self.on_stats_reset)
+        g.addWidget(stats_reset)
+
+        # --- Zurücksetzen (#31) ---
+        g = self.group(tr("sec_reset"), lay)
+        self.desc(tr("reset_hint"), g)
+        reset_btn = QPushButton(tr("reset_defaults"))
+        reset_btn.clicked.connect(self.on_reset_defaults)
+        g.addWidget(reset_btn)
+        self.reset_status = QLabel()
+        self.reset_status.setObjectName("desc")
+        g.addWidget(self.reset_status)
 
         g = self.group(tr("about"), lay)
         row = QHBoxLayout()
@@ -539,13 +663,20 @@ class Center(QMainWindow):
             ("pill", "show_preview"): str(self.pill_preview.isChecked()).lower(),
             ("hotkey", "chord"): self.chord.currentData(),
             ("behavior", "mute_while_dictating"): self.mute_combo.currentData(),
+            ("behavior", "text_replace"): str(self.replace_on.isChecked()).lower(),
+            ("behavior", "stats_enabled"): str(self.stats_on.isChecked()).lower(),
             ("speech", "language"): self.lang.currentData(),
             ("speech", "punctuation"): str(self.punct.isChecked()).lower(),
             ("speech", "commands"): str(self.cmds.isChecked()).lower(),
+            ("speech", "programmer_mode"): str(self.progmode.isChecked()).lower(),
+            ("speech", "auto_learn"): str(self.auto_learn.isChecked()).lower(),
             ("speech", "mic"): self.mic.currentData(),
             ("streaming", "enabled"): str(self.stream_on.isChecked()).lower(),
             ("streaming", "mode"): self.stream_mode.currentData(),
+            ("wakeword", "enabled"): str(self.wake_on.isChecked()).lower(),
+            ("wakeword", "phrase"): self.wake_phrase.text().strip() or config.WAKEWORD_DEFAULT,
             ("history", "enabled"): str(self.hist_enable.isChecked()).lower(),
+            ("system", "update_check"): str(self.update_startup.isChecked()).lower(),
             ("ui", "language"): self.uilang.currentData(),
         })
         self.cfg.reload(force=True)
@@ -577,6 +708,28 @@ class Center(QMainWindow):
 
     def _sync_streaming_enabled(self, on):
         self.stream_mode.setEnabled(on)
+
+    def _stats_text(self):
+        s = stats.summary()
+        if not s.get("sessions"):
+            return tr("stats_none")
+        return tr("stats_line", words=f"{s['words']:,}", sessions=s["sessions"],
+                  minutes=round(s.get("seconds_saved", 0) / 60))
+
+    def on_stats_reset(self):
+        stats.reset()
+        self.stats_label.setText(self._stats_text())
+
+    # ----------------------------------------------------- Erst-Einrichtung (#27)
+    def _maybe_onboard(self):
+        if self.cfg.onboarded:
+            return
+        dlg = OnboardingDialog(self, self.chord_label())
+        dlg.exec()
+        if dlg.open_settings:
+            self.sidebar.setCurrentRow(1)       # Spracherkennung (Wake-Word)
+        config.save({("system", "onboarded"): "true"})
+        self.cfg.reload(force=True)
 
     def on_autostart(self, on):
         if IS_WINDOWS:
@@ -703,6 +856,118 @@ class Center(QMainWindow):
             text = " ".join(text.split()).strip() or "—"
             self.bridge.message.emit("✓ " + tr("mic_result", text=text))
         threading.Thread(target=run, daemon=True).start()
+
+    # ------------------------------------------------ Datei transkribieren (#21)
+    def on_pick_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, tr("file_pick"))
+        if not path:
+            return
+        if not transcribe_file.is_supported(path):
+            self.file_status.setText("✕ " + tr("file_failed"))
+            return
+        if not transcribe_file.have_ffmpeg() and not path.lower().endswith(".wav"):
+            self.file_status.setText("✕ " + tr("file_no_ffmpeg"))
+            return
+        name = os.path.basename(path)
+        self.file_status.setText(tr("file_running", name=name))
+        self.file_result.setPlainText("")
+
+        def run():
+            try:
+                text = transcribe_file.transcribe_file(path, self.cfg)
+            except Exception:    # noqa: BLE001
+                text = None
+            if not text or not text.strip():
+                self.bridge.file_done.emit("✕ " + tr("file_failed"), "")
+                return
+            text = text.strip()
+            self.bridge.file_done.emit(
+                "✓ " + tr("file_done", chars=len(text)), text)
+        threading.Thread(target=run, daemon=True).start()
+
+    def on_file_done(self, status, text):
+        self.file_status.setText(status)
+        if text:
+            self.file_result.setPlainText(text)
+            clip_copy(text)
+
+    # ------------------------------------------------------- Update-Prüfung
+    def on_check_update(self):
+        self.update_status.setText(tr("update_checking"))
+        updatecheck.check_async(__version__, self.bridge.update_done.emit)
+
+    def on_update_done(self, result):
+        latest = result.get("latest")
+        if not latest:
+            self.update_status.setText(tr("update_failed"))
+            self.update_get.setVisible(False)
+            return
+        if result.get("update_available"):
+            self.update_status.setText(
+                tr("update_available", latest=latest, current=__version__))
+            self.update_get.setVisible(True)
+        else:
+            self.update_status.setText(tr("update_none", current=__version__))
+            self.update_get.setVisible(False)
+
+    # ---------------------------------------------------- Zurücksetzen (#31)
+    def on_reset_defaults(self):
+        config.reset_defaults()
+        self.cfg.reload(force=True)
+        i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
+        QTimer.singleShot(0, self._rebuild_ui)
+        QTimer.singleShot(10, lambda: self._toast_reset())
+
+    def _toast_reset(self):
+        # nach dem Neuaufbau die Bestätigung in der System-Seite anzeigen
+        if hasattr(self, "reset_status"):
+            self.reset_status.setText("✓ " + tr("reset_done"))
+
+
+class OnboardingDialog(QDialog):
+    """Erst-Start-Begrüßung (#27): erklärt den Hotkey und „nichts einzustellen,
+    einfach schließen", plus den Hinweis, dass das Wake-Word änderbar ist."""
+
+    def __init__(self, parent, chord_label):
+        super().__init__(parent)
+        self.open_settings = False
+        self.setWindowTitle(tr("ob_title"))
+        self.setModal(True)
+        self.setMinimumWidth(480)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 22, 24, 18)
+        lay.setSpacing(12)
+
+        head = QHBoxLayout()
+        logo = QLabel()
+        logo.setPixmap(app_icon().pixmap(36, 36))
+        head.addWidget(logo)
+        title = QLabel(tr("ob_title"))
+        title.setStyleSheet("font-size: 18px; font-weight: 800;")
+        head.addWidget(title)
+        head.addStretch(1)
+        lay.addLayout(head)
+
+        body = QLabel(tr("ob_body", chord=chord_label))
+        body.setWordWrap(True)
+        lay.addWidget(body)
+        wake = QLabel(tr("ob_wake"))
+        wake.setWordWrap(True)
+        wake.setObjectName("desc")
+        lay.addWidget(wake)
+        lay.addStretch(1)
+
+        buttons = QDialogButtonBox()
+        settings_btn = buttons.addButton(tr("ob_open_settings"),
+                                         QDialogButtonBox.ActionRole)
+        close_btn = buttons.addButton(tr("ob_close"), QDialogButtonBox.AcceptRole)
+        settings_btn.clicked.connect(self._go_settings)
+        close_btn.clicked.connect(self.accept)
+        lay.addWidget(buttons)
+
+    def _go_settings(self):
+        self.open_settings = True
+        self.accept()
 
 
 def main():
