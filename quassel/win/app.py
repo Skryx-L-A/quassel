@@ -76,10 +76,11 @@ def app_icon():
 class PartialWorker(threading.Thread):
     """Live-Vorschau: Teiltranskripte während der Aufnahme."""
 
-    def __init__(self, rec, cfg, on_partial):
+    def __init__(self, rec, cfg, on_partial, is_streaming=None):
         super().__init__(daemon=True)
         self.rec, self.cfg = rec, cfg
         self.on_partial = on_partial
+        self.is_streaming = is_streaming
         self.stop_event = threading.Event()
 
     def run(self):
@@ -89,6 +90,9 @@ class PartialWorker(threading.Thread):
         while not self.stop_event.wait(PARTIAL_EVERY):
             if not self.rec.active:
                 return
+            # Weder Vorschau noch Streaming -> Teiltranskript spart man sich (CPU).
+            if not self.cfg.pill_preview and not (self.is_streaming and self.is_streaming()):
+                continue
             data = self.rec.raw_bytes()
             if len(data) < RATE * SAMPLE_BYTES // 2:
                 continue
@@ -464,7 +468,8 @@ class WinApp(QObject):
         self._capturing = True
         self.streamer = None
         self._clip_backup = None
-        self.partial = PartialWorker(self.rec, self.cfg, self._on_partial)
+        self.partial = PartialWorker(self.rec, self.cfg, self._on_partial,
+                                     is_streaming=lambda: self.streamer is not None)
         self.partial.start()
         self.sig_state.emit("recording", "")
 

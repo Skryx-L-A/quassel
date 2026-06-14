@@ -63,6 +63,11 @@ class PartialLoop(threading.Thread):
         while not self.stop_event.wait(PARTIAL_EVERY):
             if not self.rec.active:
                 return
+            # Ohne Streaming UND ohne Vorschaublase braucht niemand das
+            # Teiltranskript — die teure Transkription dann überspringen
+            # (spart auf schwacher CPU viel Last, die sonst das Finale bremst).
+            if self.owner.streamer is None and not self.cfg.pill_preview:
+                continue
             data = self.rec.raw_bytes()
             if len(data) < RATE * SAMPLE_BYTES // 2:   # < 0,5 s
                 continue

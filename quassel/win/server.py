@@ -269,8 +269,10 @@ def start():
         env["PATH"] = os.pathsep.join(
             p for p in env.get("PATH", "").split(os.pathsep)
             if p and not p.startswith(mei))
+    # whisper-Threads: bis ~8 (mehr bringt kaum etwas; HT-Kerne wenig).
+    threads = str(min(8, os.cpu_count() or 4))
     _proc = subprocess.Popen(
-        [exe, "-m", model, "--host", "127.0.0.1", "--port", "8765",
+        [exe, "-m", model, "-t", threads, "--host", "127.0.0.1", "--port", "8765",
          "-l", "auto", "-nt"],
         cwd=os.path.dirname(exe), env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

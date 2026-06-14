@@ -35,7 +35,11 @@ CHORDS = {
 }
 CHORD_LABEL_KEYS = {"ctrl+meta": "chord_ctrl_meta", "alt+meta": "chord_alt_meta",
                     "ctrl+alt": "chord_ctrl_alt"}
-MODELS = ["tiny", "base", "small", "medium", "large-v3-turbo"]
+# Volle + quantisierte (q5) Modelle. Quantisierte laufen auf CPU deutlich
+# schneller bei nahezu gleicher Genauigkeit — die Wahl für schwächere Hardware.
+# Alle liegen im selben HF-Repo unter ggml-<name>.bin, daher genügt der Name.
+MODELS = ["tiny", "base", "base-q5_1", "small", "small-q5_1",
+          "medium", "medium-q5_0", "large-v3-turbo", "large-v3-turbo-q5_0"]
 MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin"
 
 

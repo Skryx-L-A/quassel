@@ -29,31 +29,32 @@ def test_nvidia_low_vram_medium():
 
 
 def test_no_nvidia_strong_cpu_medium():
+    # Ohne GPU: quantisiert (CPU-schnell, balanced)
     _mock(None, 8, 16)           # genau an den Schwellen
-    assert hwdetect.default_model_for_hardware() == "medium"
+    assert hwdetect.default_model_for_hardware() == "medium-q5_0"
     _mock(None, 12, 32)
-    assert hwdetect.default_model_for_hardware() == "medium"
+    assert hwdetect.default_model_for_hardware() == "medium-q5_0"
 
 
 def test_no_nvidia_enough_cores_small():
     _mock(None, 4, 8)            # >= 4 Kerne, aber RAM/Kerne zu wenig für medium
-    assert hwdetect.default_model_for_hardware() == "small"
+    assert hwdetect.default_model_for_hardware() == "small-q5_1"
     _mock(None, 8, 8)            # 8 Kerne aber nur 8 GB RAM -> medium-Zweig fällt
-    assert hwdetect.default_model_for_hardware() == "small"
-    _mock(None, 16, 12)          # viele Kerne, RAM < 16 -> small
-    assert hwdetect.default_model_for_hardware() == "small"
+    assert hwdetect.default_model_for_hardware() == "small-q5_1"
+    _mock(None, 16, 12)          # viele Kerne, RAM < 16 -> small-q5_1
+    assert hwdetect.default_model_for_hardware() == "small-q5_1"
 
 
 def test_weak_machine_base():
     _mock(None, 2, 4)
-    assert hwdetect.default_model_for_hardware() == "base"
+    assert hwdetect.default_model_for_hardware() == "base-q5_1"
     _mock(None, 1, 2)
-    assert hwdetect.default_model_for_hardware() == "base"
+    assert hwdetect.default_model_for_hardware() == "base-q5_1"
 
 
 def test_ram_none_is_safe():
     _mock(None, 8, None)         # RAM nicht ermittelbar -> wie 0, medium-Zweig fällt
-    assert hwdetect.default_model_for_hardware() == "small"
+    assert hwdetect.default_model_for_hardware() == "small-q5_1"
 
 
 if __name__ == "__main__":

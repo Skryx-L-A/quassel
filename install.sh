@@ -179,7 +179,18 @@ dl_model() {
     curl -L --fail --progress-bar -o "$DATA/models/$f" "$HF/$f" \
         || die "Modell-Download fehlgeschlagen: $m"
 }
-[[ -z "$MODEL" ]] && { [[ "$HAS_GPU" -eq 1 ]] && MODEL="large-v3-turbo" || MODEL="small"; }
+# Standardmodell: mit GPU das volle large-v3-turbo; ohne GPU ein QUANTISIERTES
+# Modell passend zur CPU (hwdetect: medium-q5/small-q5/base-q5) — auf CPU klar
+# schneller bei nahezu gleicher Genauigkeit.
+if [[ -z "$MODEL" ]]; then
+    if [[ "$HAS_GPU" -eq 1 ]]; then
+        MODEL="large-v3-turbo"
+    else
+        MODEL=$(PYTHONPATH="$SRC" python3 -c \
+            "from quassel.hwdetect import default_model_for_hardware as d; print(d())" \
+            2>/dev/null || echo "small-q5_1")
+    fi
+fi
 if [[ "$ALL_MODELS" -eq 1 ]]; then
     for m in tiny base small medium large-v3-turbo; do dl_model "$m"; done
 else
@@ -207,11 +218,19 @@ install -m 755 "$SRC/bin/quasseld" "$SRC/bin/quassel-type" "$SRC/bin/quassel-pil
 mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/share/applications" \
          "$HOME/.config/quassel"
 install -m 644 "$SRC"/systemd/*.service "$HOME/.config/systemd/user/"
+# whisper-Threads: bis ~8 (darüber bringt mehr kaum etwas, HT-Kerne wenig)
+THREADS=$(nproc 2>/dev/null || echo 4); [[ "$THREADS" -gt 8 ]] && THREADS=8
 if [[ ! -s "$HOME/.config/quassel/server.env" ]]; then
     cat > "$HOME/.config/quassel/server.env" <<EOF
 SERVER_BIN=$SERVER_BIN_PATH
 MODEL_PATH=$DATA/models/$MODELFILE
+WHISPER_THREADS=$THREADS
 EOF
+else
+    # Bestehende server.env nicht überschreiben (Modellwahl bleibt), aber die
+    # Thread-Zahl bei Bedarf ergänzen.
+    grep -q '^WHISPER_THREADS=' "$HOME/.config/quassel/server.env" \
+        || echo "WHISPER_THREADS=$THREADS" >> "$HOME/.config/quassel/server.env"
 fi
 sed "s|@HOME@|$HOME|g" "$SRC/desktop/quassel.desktop.in" \
     > "$HOME/.local/share/applications/quassel.desktop"

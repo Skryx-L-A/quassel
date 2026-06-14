@@ -14,6 +14,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Quantized Whisper models (q5) in the model picker — much faster on CPU at nearly the same
+  accuracy: `base-q5_1`, `small-q5_1`, `medium-q5_0`, `large-v3-turbo-q5_0`.
+
+### Changed
+- Better default model on machines without an NVIDIA GPU: a quantized model matched to the CPU
+  (`medium-q5_0` / `small-q5_1` / `base-q5_1`) instead of the slower full `small`/`medium`.
+- whisper-server now runs with a tuned thread count (up to 8).
+
+### Fixed
+- Performance on weaker hardware: the live-preview transcription that ran every 2 s during
+  dictation is now skipped when the preview bubble is off and streaming is off — it was pure
+  wasted CPU that competed with and slowed the final transcription.
+
 ## [2.4.0] - 2026-06-14
 
 > Online installer is v2.4.0. The offline all-in-one packages remain v2.2.0 for now
