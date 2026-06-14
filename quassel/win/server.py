@@ -288,9 +288,11 @@ def start():
             p for p in env.get("PATH", "").split(os.pathsep)
             if p and not p.startswith(mei))
     # whisper-Threads: bis ~8 (mehr bringt kaum etwas; HT-Kerne wenig).
-    # -nf: keine Temperatur-Fallbacks (deckelt die Decode-Zeit auf schwacher CPU).
+    # Decode: mit NVIDIA Beam-Search (genauer, dort günstig); sonst greedy + -nf
+    # (kein Temperatur-Fallback -> deckelt die Decode-Zeit auf schwacher CPU).
     threads = str(min(8, os.cpu_count() or 4))
-    args = [exe, "-m", model, "-t", threads, "-nf",
+    decode = ["-bs", "5"] if has_nvidia() else ["-nf"]
+    args = [exe, "-m", model, "-t", threads, *decode,
             "--host", "127.0.0.1", "--port", "8765", "-l", "auto", "-nt"]
     vad = vad_model_path()
     if vad:                                   # Stille überspringen + keine Halluzinationen
