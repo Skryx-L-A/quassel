@@ -1,4 +1,6 @@
 """AudioDucker: Dispatch- und Zustandslogik (Backend gemockt, kein echtes Audio)."""
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import quassel.mediacontrol as mc
 
 
