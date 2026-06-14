@@ -22,9 +22,11 @@ CONFIG = os.path.join(CONFDIR, "config.ini")
 SERVERENV = os.path.join(CONFDIR, "server.env")
 DICTIONARY = os.path.join(CONFDIR, "dictionary.txt")
 REPLACEMENTS = os.path.join(CONFDIR, "replacements.txt")
+AI_MODES = os.path.join(CONFDIR, "ai_modes.txt")
 HISTORY = os.path.join(DATADIR, "history.jsonl")
 HISTORY_MAX = 50
 WAKEWORD_DEFAULT = "Hey Quassel"
+OLLAMA_DEFAULT = "http://127.0.0.1:11434"
 
 CHORDS = {
     "ctrl+meta": ({29, 97}, {125, 126}),   # Strg + Windows-Taste
@@ -99,6 +101,14 @@ class Cfg:
         self.update_check = p.getboolean("system", "update_check", fallback=True)
         # Erst-Einrichtung schon gesehen?
         self.onboarded = p.getboolean("system", "onboarded", fallback=False)
+        # Lokale KI-Nachbearbeitung (Ollama, opt-in, Standard AUS — bleibt lokal)
+        self.ai_enabled = p.getboolean("ai", "enabled", fallback=False)
+        self.ai_endpoint = g("ai", "endpoint", fallback=OLLAMA_DEFAULT).strip() or OLLAMA_DEFAULT
+        self.ai_model = g("ai", "model", fallback="").strip()
+        self.ai_post_process = p.getboolean("ai", "post_process", fallback=False)
+        self.ai_post_mode = g("ai", "post_mode", fallback="cleanup").strip() or "cleanup"
+        self.ai_voice_modes = p.getboolean("ai", "voice_modes", fallback=True)
+        self.ai_timeout = p.getfloat("ai", "timeout", fallback=30.0)
         return True
 
 
@@ -180,6 +190,22 @@ def replacement_rules():
     """Geparste Regeln als Liste von (trigger, ersatz) — leer bei Fehler."""
     from . import textreplace
     return textreplace.parse_rules(replacement_text())
+
+
+# ------------------------------------------------------ KI-Modi (eigene Prompts)
+def ai_modes_text():
+    """Roher Inhalt der ai_modes.txt (eine Regel 'name=system-prompt' pro Zeile)."""
+    try:
+        with open(AI_MODES, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def ai_modes_save(text):
+    os.makedirs(CONFDIR, exist_ok=True)
+    with open(AI_MODES, "w", encoding="utf-8") as f:
+        f.write(text.strip() + "\n" if text.strip() else "")
 
 
 # ----------------------------------------------------------------- Verlauf

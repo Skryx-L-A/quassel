@@ -15,8 +15,8 @@ import sys
 import threading
 import time
 
-from . import (config, i18n, learn, progmode, stats, textproc, textreplace,
-               vad, wakeword, whisperclient)
+from . import (aimodes, config, i18n, learn, progmode, stats, textproc,
+               textreplace, vad, wakeword, whisperclient)
 from .mediacontrol import AudioDucker
 from .streaming import StreamTyper
 from .audio import RATE, SAMPLE_BYTES, Recorder, wav_from_raw
@@ -206,14 +206,44 @@ class Daemon:
         self._after_insert(value)
 
     def _refine(self, text):
-        """Programmier-Diktat und Textersetzungen auf den Endtext anwenden."""
+        """Programmier-Diktat, Textersetzungen und lokale KI auf den Endtext anwenden."""
         if self.cfg.programmer_mode:
             text = progmode.apply(text)
         if self.cfg.text_replace:
             rules = config.replacement_rules()
             if rules:
                 text = textreplace.apply_rules(text, rules)
+        if self.cfg.ai_enabled:
+            text = self._ai_refine(text)
         return text
+
+    def _ai_refine(self, text):
+        """Lokale KI-Nachbearbeitung (Ollama): Sprach-Modus ('als E-Mail', …) hat
+        Vorrang, sonst optional ein Auto-Modus auf jedes Diktat. Schlägt etwas fehl
+        oder läuft Ollama nicht, bleibt der Rohtext (KI darf nie Worte verlieren)."""
+        self.cfg.ai_modes_text = config.ai_modes_text()
+        mode, remaining = None, text
+        if self.cfg.ai_voice_modes:
+            m, rest = aimodes.detect_voice_mode(text)
+            if m is None:
+                m, rest = self._detect_custom_voice(text)
+            if m:
+                mode, remaining = m, rest
+        if mode is None and self.cfg.ai_post_process:
+            mode = self.cfg.ai_post_mode
+        if mode is None or not remaining.strip():
+            return text
+        return aimodes.transform(remaining, mode, self.cfg)
+
+    def _detect_custom_voice(self, text):
+        """Eigenen Modusnamen als Eröffnungsphrase erkennen ('tweet: …')."""
+        custom = aimodes.parse_custom(getattr(self.cfg, "ai_modes_text", "") or "")
+        low = text.lower().strip()
+        for name in sorted(custom, key=len, reverse=True):
+            if low.startswith(name):
+                rest = text.strip()[len(name):].lstrip(" ,:").strip()
+                return name, rest
+        return None, text
 
     def _after_insert(self, value):
         """Nach dem Einfügen: Verlauf, Statistik, Wörterbuch-Lernen."""

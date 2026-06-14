@@ -53,3 +53,7 @@ jobs:
         run: python3 tests/test_whisperclient.py
       - name: Wake-word tests
         run: python3 tests/test_wakeword.py
+      - name: Local-AI client tests (Ollama, no network)
+        run: python3 tests/test_ai.py
+      - name: AI modes tests (modes, voice triggers)
+        run: python3 tests/test_aimodes.py
