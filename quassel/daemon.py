@@ -195,29 +195,50 @@ class Daemon:
             else:
                 state_set("error", tr("nothing"))
             return
-        value = self._refine(value)
+        mech = self._refine_mechanical(value)
         if self.streamer is not None:
-            # Streaming: Zielfenster exakt auf den Endtext bringen (inkl. der
-            # zurückgehaltenen Zeilenumbrüche), dann Zwischenablage zurück
-            typed = self.streamer.finish(value)
+            # Streaming: KI auf den Endtext, dann Zielfenster exakt darauf bringen.
+            final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
+            typed = self.streamer.finish(final)
             self.last_paste_len = len(typed)
             streaming_restore(self._clip_backup)
             self.streamer = None
+            value = final
+        elif self.cfg.ai_enabled:
+            # Lokale KI braucht Sekunden. ERST den Rohtext einfügen (solange der
+            # Fokus sicher im Zielfeld ist), DANN durch die KI-Fassung ersetzen —
+            # sonst landet bei langsamen Modellen nichts mehr im Fenster.
+            paste(mech)
+            self.last_paste_len = len(mech)
+            state_set("transcribing")
+            final = self._ai_refine(mech)
+            if final != mech:
+                send_backspaces(len(mech))
+                paste(final)
+                self.last_paste_len = len(final)
+                log("ai: replaced %d -> %d chars" % (len(mech), len(final)))
+            value = final
         else:
-            paste(value)
-            self.last_paste_len = len(value)
+            paste(mech)
+            self.last_paste_len = len(mech)
+            value = mech
         state_set("done", value)
         secs = len(data) / (RATE * SAMPLE_BYTES)
         self._after_insert(value, secs)
 
-    def _refine(self, text):
-        """Programmier-Diktat, Textersetzungen und lokale KI auf den Endtext anwenden."""
+    def _refine_mechanical(self, text):
+        """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
         if self.cfg.programmer_mode:
             text = progmode.apply(text)
         if self.cfg.text_replace:
             rules = config.replacement_rules()
             if rules:
                 text = textreplace.apply_rules(text, rules)
+        return text
+
+    def _refine(self, text):
+        """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
+        text = self._refine_mechanical(text)
         if self.cfg.ai_enabled:
             text = self._ai_refine(text)
         return text

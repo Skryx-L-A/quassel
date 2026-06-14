@@ -570,31 +570,51 @@ class WinApp(QObject):
             else:
                 self.sig_state.emit("error", tr("nothing"))
             return
-        value = self._refine(value)
+        mech = self._refine_mechanical(value)
         t = time.monotonic()
         if self.streamer is not None:
-            typed = self.streamer.finish(value)
+            final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
+            typed = self.streamer.finish(final)
             self.last_paste_len = len(typed)
             streaming_restore(self._clip_backup)
             self.streamer = None
+            value = final
             dlog("transcribe: streaming finish %.2fs" % (time.monotonic() - t))
+        elif self.cfg.ai_enabled:
+            # KI braucht Sekunden -> ERST Rohtext einfügen (Fokus noch sicher),
+            # DANN durch die KI-Fassung ersetzen.
+            paste(mech)
+            self.last_paste_len = len(mech)
+            final = self._ai_refine(mech)
+            if final != mech:
+                send_backspaces(len(mech))
+                paste(final)
+                self.last_paste_len = len(final)
+                dlog("transcribe: ai replace %d -> %d" % (len(mech), len(final)))
+            value = final
         else:
-            paste(value)
+            paste(mech)
+            self.last_paste_len = len(mech)
+            value = mech
             dlog("transcribe: paste %.2fs (%d Zeichen)"
                  % (time.monotonic() - t, len(value)))
-            self.last_paste_len = len(value)
         self.sig_state.emit("done", value)
         secs = len(data) / (RATE * SAMPLE_BYTES)
         self._after_insert(value, secs)
 
-    def _refine(self, text):
-        """Programmier-Diktat, Textersetzungen und lokale KI auf den Endtext anwenden."""
+    def _refine_mechanical(self, text):
+        """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
         if self.cfg.programmer_mode:
             text = progmode.apply(text)
         if self.cfg.text_replace:
             rules = config.replacement_rules()
             if rules:
                 text = textreplace.apply_rules(text, rules)
+        return text
+
+    def _refine(self, text):
+        """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
+        text = self._refine_mechanical(text)
         if self.cfg.ai_enabled:
             text = self._ai_refine(text)
         return text

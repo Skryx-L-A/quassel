@@ -101,7 +101,11 @@ STRINGS = {
                        "Wort für Wort (korrigiert bei Bedarf)"),
     # --- Wake-Word ---
     "nav_wakeword": ("Wake word", "Wake-Word"),
-    "sec_wakeword": ("Wake word (hands-free)", "Wake-Word (Freisprechen)"),
+    "sec_wakeword": ("Wake word - hands-free (Beta)", "Wake-Word - Freisprechen (Beta)"),
+    "wakeword_beta": ("Beta - not reliable yet: it may miss the phrase or trigger by mistake. "
+                      "Off by default; work in progress (tracked on GitHub).",
+                      "Beta - noch nicht zuverlässig: erkennt die Phrase nicht immer oder löst "
+                      "versehentlich aus. Standardmäßig aus; wird noch verbessert (auf GitHub verfolgt)."),
     "wakeword_enable": ("Listen for a wake word to start dictation",
                         "Auf ein Wake-Word hören, um das Diktat zu starten"),
     "wakeword_hint": ("When on, Quassel listens locally for your phrase; say it, then speak — it stops on its own after a short silence. Everything stays on this computer; nothing is ever sent. Uses a little more CPU while armed.",

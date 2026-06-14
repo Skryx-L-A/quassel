@@ -433,8 +433,10 @@ class Center(QMainWindow):
         self.labeled_row(tr("streaming_mode"), self.stream_mode, g)
         self._sync_streaming_enabled(self.cfg.streaming)
 
-        # --- Wake-Word (Freisprechen, opt-in) ---
+        # --- Wake-Word (Freisprechen, opt-in, BETA) ---
         g = self.group(tr("sec_wakeword"), lay)
+        beta = self.desc(tr("wakeword_beta"), g)
+        beta.setStyleSheet("color:#E9A93A;font-weight:600;")   # Bernstein = Beta-Warnung
         self.wake_on = QCheckBox(tr("wakeword_enable"))
         self.wake_on.setChecked(self.cfg.wakeword_enabled)
         self.wake_on.toggled.connect(self.save_settings)

@@ -52,9 +52,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - (none)
 
 ### Fixed
-- Wake word is far more reliable: tolerant matching (so a misheard "Hey Quassel" still triggers),
-  the wake phrase now biases recognition, a dedicated audio buffer avoids clashing with normal
-  dictation, and the daemon logs what it heard for easy troubleshooting.
+- Local AI post-processing now reliably inserts the text: the recognized text is pasted
+  immediately (while your cursor is still in the field) and then replaced with the AI-refined
+  version once it's ready — so slower/larger models no longer leave the target window empty.
+
+### Beta
+- Wake word (hands-free voice activation) is shipped as **Beta** — opt-in, off by default, and
+  clearly labelled in settings. It is not reliable yet (see GitHub issue #33). Improvements so far:
+  tolerant matching, phrase-biased recognition, a dedicated audio buffer, and diagnostic logging.
 
 ## [2.2.0] - 2026-06-13
 - Direction-B visual redesign across the app, pill, icon and website; AEO artifacts for the
