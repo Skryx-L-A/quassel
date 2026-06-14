@@ -21,8 +21,10 @@ else:
 CONFIG = os.path.join(CONFDIR, "config.ini")
 SERVERENV = os.path.join(CONFDIR, "server.env")
 DICTIONARY = os.path.join(CONFDIR, "dictionary.txt")
+REPLACEMENTS = os.path.join(CONFDIR, "replacements.txt")
 HISTORY = os.path.join(DATADIR, "history.jsonl")
 HISTORY_MAX = 50
+WAKEWORD_DEFAULT = "Hey Quassel"
 
 CHORDS = {
     "ctrl+meta": ({29, 97}, {125, 126}),   # Strg + Windows-Taste
@@ -81,6 +83,22 @@ class Cfg:
         self.mute_mode = g("behavior", "mute_while_dictating", fallback="off")
         if self.mute_mode not in ("off", "music", "all"):
             self.mute_mode = "off"
+        # Textersetzung / Snippets anwenden (Regeln in replacements.txt)
+        self.text_replace = p.getboolean("behavior", "text_replace", fallback=True)
+        # Lokale Nutzungsstatistik sammeln (nur auf diesem PC)
+        self.stats_enabled = p.getboolean("behavior", "stats_enabled", fallback=True)
+        # Programmier-Diktat: gesprochene Symbole/Bezeichner in Code wandeln
+        self.programmer_mode = p.getboolean("speech", "programmer_mode", fallback=False)
+        # Auffällige Fachwörter/Namen automatisch ins Wörterbuch lernen
+        self.auto_learn = p.getboolean("speech", "auto_learn", fallback=False)
+        # Wake-Word (Freisprechen): standardmäßig AUS
+        self.wakeword_enabled = p.getboolean("wakeword", "enabled", fallback=False)
+        self.wakeword_phrase = g("wakeword", "phrase", fallback=WAKEWORD_DEFAULT).strip() \
+            or WAKEWORD_DEFAULT
+        # Beim Start auf neue Version prüfen
+        self.update_check = p.getboolean("system", "update_check", fallback=True)
+        # Erst-Einrichtung schon gesehen?
+        self.onboarded = p.getboolean("system", "onboarded", fallback=False)
         return True
 
 
@@ -95,6 +113,15 @@ def save(values):
     os.makedirs(CONFDIR, exist_ok=True)
     with open(CONFIG, "w", encoding="utf-8") as f:
         p.write(f)
+
+
+def reset_defaults():
+    """Alle Einstellungen auf Standard zurücksetzen (config.ini entfernen).
+    Wörterbuch, Textersetzungen, Verlauf und das Whisper-Modell bleiben erhalten."""
+    try:
+        os.remove(CONFIG)
+    except OSError:
+        pass
 
 
 # ----------------------------------------------------------------- server.env
@@ -131,6 +158,28 @@ def dictionary_save(text):
     os.makedirs(CONFDIR, exist_ok=True)
     with open(DICTIONARY, "w", encoding="utf-8") as f:
         f.write(text.strip() + "\n" if text.strip() else "")
+
+
+# ------------------------------------------------------------- Textersetzungen
+def replacement_text():
+    """Roher Inhalt der replacements.txt (eine Regel 'trigger=ersatz' pro Zeile)."""
+    try:
+        with open(REPLACEMENTS, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def replacement_save(text):
+    os.makedirs(CONFDIR, exist_ok=True)
+    with open(REPLACEMENTS, "w", encoding="utf-8") as f:
+        f.write(text.strip() + "\n" if text.strip() else "")
+
+
+def replacement_rules():
+    """Geparste Regeln als Liste von (trigger, ersatz) — leer bei Fehler."""
+    from . import textreplace
+    return textreplace.parse_rules(replacement_text())
 
 
 # ----------------------------------------------------------------- Verlauf

@@ -2,10 +2,20 @@
 Auto-Großschreibung und Sprachkommandos."""
 import re
 
-COMMAND_WORDS = {
-    "lösch das", "lösche das", "rückgängig",
-    "delete that", "scratch that", "undo",
+# Ganzes Diktat == Phrase -> Kommando (action). Phrasen normalisiert (lower,
+# ohne Satzzeichen). Längere/spezifische Phrasen brauchen keine Sonderordnung,
+# da exakt-Match gegen das gesamte Transkript geprüft wird.
+COMMANDS = {
+    # letztes Diktat löschen
+    "lösch das": "undo", "lösche das": "undo", "rückgängig": "undo",
+    "delete that": "undo", "scratch that": "undo", "undo": "undo",
+    # Eingabetaste drücken (#32)
+    "press enter": "enter", "hit enter": "enter", "enter": "enter",
+    "drück enter": "enter", "drücke enter": "enter", "enter drücken": "enter",
+    "neue zeile drücken": "enter",
 }
+# Rückwärtskompatibilität: Menge aller Kommando-Phrasen
+COMMAND_WORDS = set(COMMANDS)
 
 # Reihenfolge wichtig: längere Phrasen zuerst
 PUNCT_RULES = [
@@ -20,8 +30,10 @@ PUNCT_RULES = [
 
 
 def is_command(text):
+    """-> action ('undo' | 'enter') wenn das ganze Diktat ein Kommando ist, sonst None."""
     norm = re.sub(r"[^\wäöüß ]", "", text.lower()).strip()
-    return norm if norm in COMMAND_WORDS else None
+    norm = " ".join(norm.split())
+    return COMMANDS.get(norm)
 
 
 def apply_punctuation(text):

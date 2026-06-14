@@ -45,5 +45,9 @@ jobs:
         run: python3 tests/test_updatecheck.py
       - name: Audio-file transcription tests
         run: python3 tests/test_transcribe_file.py
+      - name: Auto-learn dictionary tests
+        run: python3 tests/test_learn.py
+      - name: Text post-processing tests (commands, punctuation)
+        run: python3 tests/test_textproc.py
       - name: Wake-word tests
         run: python3 tests/test_wakeword.py

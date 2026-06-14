@@ -10,6 +10,7 @@ import threading
 import time
 
 KEY_BACKSPACE = 14
+KEY_ENTER = 28
 
 XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR",
     f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else "")
@@ -96,6 +97,11 @@ def send_backspaces(n):
     while keys:
         subprocess.run(["ydotool", "key"] + keys[:400], check=False)
         keys = keys[400:]
+
+
+def send_enter():
+    """Eingabetaste drücken (Sprachkommando 'press enter')."""
+    subprocess.run(["ydotool", "key", f"{KEY_ENTER}:1", f"{KEY_ENTER}:0"], check=False)
 
 
 def notify(text, ms=4000):

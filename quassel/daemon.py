@@ -15,14 +15,15 @@ import sys
 import threading
 import time
 
-from . import config, i18n, textproc, whisperclient
+from . import (config, i18n, learn, progmode, stats, textproc, textreplace,
+               whisperclient)
 from .mediacontrol import AudioDucker
 from .streaming import StreamTyper
 from .audio import RATE, SAMPLE_BYTES, Recorder, wav_from_raw
 from .config import CHORDS
 from .i18n import tr
-from .platform_linux import (notify, paste, send_backspaces, type_chunk,
-                             streaming_begin, streaming_restore)
+from .platform_linux import (notify, paste, send_backspaces, send_enter,
+                             type_chunk, streaming_begin, streaming_restore)
 from .state import PARTWAV, WAV, state_set
 
 EVENT_FORMAT = "llHHi"
@@ -166,11 +167,22 @@ class Daemon:
             state_set("error", tr("nothing"))
             return
         if kind == "command":
-            # Im Streaming wurde live getippt -> getippte Länge zurücknehmen
-            undo = len(self.streamer.typed) if self.streamer is not None else self.last_paste_len
+            action = value
+            # Im Streaming wurde das Kommando ("scratch that" / "press enter")
+            # selbst live getippt -> diese Länge zurücknehmen.
+            live_typed = len(self.streamer.typed) if self.streamer is not None else 0
             if self.streamer is not None:
                 streaming_restore(self._clip_backup)
                 self.streamer = None
+            if action == "enter":
+                if live_typed:
+                    send_backspaces(live_typed)
+                send_enter()
+                self.last_paste_len = 0
+                state_set("done", tr("pressed_enter"))
+                return
+            # action == "undo": im Streaming das live Getippte, sonst letztes Diktat
+            undo = live_typed if live_typed else self.last_paste_len
             if undo > 0:
                 send_backspaces(undo)
                 self.last_paste_len = 0
@@ -178,6 +190,7 @@ class Daemon:
             else:
                 state_set("error", tr("nothing"))
             return
+        value = self._refine(value)
         if self.streamer is not None:
             # Streaming: Zielfenster exakt auf den Endtext bringen (inkl. der
             # zurückgehaltenen Zeilenumbrüche), dann Zwischenablage zurück
@@ -189,10 +202,36 @@ class Daemon:
             paste(value)
             self.last_paste_len = len(value)
         state_set("done", value)
+        self._after_insert(value)
+
+    def _refine(self, text):
+        """Programmier-Diktat und Textersetzungen auf den Endtext anwenden."""
+        if self.cfg.programmer_mode:
+            text = progmode.apply(text)
+        if self.cfg.text_replace:
+            rules = config.replacement_rules()
+            if rules:
+                text = textreplace.apply_rules(text, rules)
+        return text
+
+    def _after_insert(self, value):
+        """Nach dem Einfügen: Verlauf, Statistik, Wörterbuch-Lernen."""
         if self.cfg.history_enabled:
             try:
                 config.history_append(value)
             except OSError:
+                pass
+        if self.cfg.stats_enabled:
+            try:
+                stats.record(value)
+            except Exception:    # noqa: BLE001 — Statistik darf nie stören
+                pass
+        if self.cfg.auto_learn:
+            try:
+                merged, added = learn.learn(value, config.dictionary_words())
+                if added:
+                    config.dictionary_save("\n".join(merged))
+            except Exception:    # noqa: BLE001 — Lernen darf nie stören
                 pass
 
     # ------------------------------------------------------------- Hauptloop
