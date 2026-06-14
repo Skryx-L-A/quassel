@@ -1,7 +1,7 @@
 ; Inno-Setup-Skript für den Quassel-Windows-Installer.
 ; Bauen: Inno Setup über "iscc quassel.iss" (nach dem PyInstaller-Build).
 #define MyAppName "Quassel"
-#define MyAppVersion "2.4.0"
+#define MyAppVersion "2.5.0"
 #define MyAppPublisher "Skryx-L-A"
 #define MyAppURL "https://github.com/Skryx-L-A/quassel"
 #define MyAppExeName "Quassel.exe"
