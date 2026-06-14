@@ -15,6 +15,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Local AI tier (opt-in, off by default, 100% on your machine via Ollama):
+  - Auto-clean every dictation (remove filler words, fix grammar/punctuation) — choose the mode.
+  - Smart formatting modes: email, bullet list, tidy paragraphs, formal, concise.
+  - Voice modes: start a dictation with "as an email", "as a list", "make it concise" (also in
+    German) to reshape just that dictation.
+  - Custom modes: define your own name=instruction prompts and trigger them by name.
+  - New AI settings page: enable, Ollama address, model picker, auto mode, voice modes, a live Test.
+  - Fails soft: if Ollama or the model isn't there, your dictation is inserted as plain text.
 - First-run onboarding wizard: a short, skippable welcome that explains the hotkey and the
   "nothing to configure, just close it" idea, and points out the wake word can be changed.
 - Hands-free wake word (opt-in, off by default): say a phrase (default "Hey Quassel") to

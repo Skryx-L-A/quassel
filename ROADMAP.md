@@ -19,12 +19,14 @@ GitHub `Skryx-L-A/quassel`. Effort: **S** = hours, **M** = a day, **L** = multi-
 - #23 Better mixed-language dictation (German + English in one sentence) — **L**
 - CHANGELOG + release-notes discipline — **S**
 
-## Next — v2.4 "AI tier" (opt-in, still 100% local, via Ollama)
-- #16 Local AI post-processing (filler removal, grammar, formatting) — **L**
-- #30 Smart formatting (lists, paragraphs, emails) — **M**
-- #17 Custom AI commands / prompt modes ("turn this into an email") — **M**
+## In progress — v2.4 "AI tier" (opt-in, still 100% local, via Ollama)
+- #16 Local AI post-processing (filler removal, grammar, formatting) — **done (branch worktree-voxtype-ai-tier)**
+- #30 Smart formatting (lists, paragraphs, emails) — **done** (email/bullets/paragraphs/formal/concise modes)
+- #17 Custom AI commands / prompt modes ("turn this into an email") — **done** (built-in + custom + voice triggers)
+
+## Next — v2.5
 - #18 Per-app profiles (tone / mode / language per application) — **M**
-  (deferred: depends on the AI modes/languages above)
+  (now unblocked by the AI modes/languages above)
 
 ## Trust & distribution (parallel track)
 - Windows code signing — removes SmartScreen "unknown publisher" — **M**
