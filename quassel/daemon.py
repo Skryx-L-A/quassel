@@ -16,7 +16,7 @@ import threading
 import time
 
 from . import (config, i18n, learn, progmode, stats, textproc, textreplace,
-               whisperclient)
+               vad, wakeword, whisperclient)
 from .mediacontrol import AudioDucker
 from .streaming import StreamTyper
 from .audio import RATE, SAMPLE_BYTES, Recorder, wav_from_raw
@@ -97,6 +97,7 @@ class Daemon:
         self.streamer = None        # aktiv nur im Freihand-Modus mit Streaming
         self._clip_backup = None
         self.ducker = AudioDucker()  # Musik pausieren / Ton stummschalten beim Diktieren
+        self.wake = None             # WakeListener-Thread (nur wenn Wake-Word an)
 
     # ------------------------------------------------------------- Aufnahme
     def start_recording(self):
@@ -234,6 +235,63 @@ class Daemon:
             except Exception:    # noqa: BLE001 — Lernen darf nie stören
                 pass
 
+    # ----------------------------------------------------- Wake-Word (opt-in)
+    def _sync_wakeword(self):
+        """Listener nach Konfig starten/stoppen (idempotent)."""
+        if self.cfg.wakeword_enabled and self.wake is None:
+            self.wake = wakeword.WakeListener(
+                self.cfg, self._wake_record_utterance, self._wake_transcribe,
+                self._wake_insert, is_busy=lambda: self.rec.active)
+            self.wake.start()
+        elif not self.cfg.wakeword_enabled and self.wake is not None:
+            self.wake.stop()
+            self.wake = None
+
+    def _wake_record_utterance(self):
+        """Eine Äußerung über VAD aufnehmen (für den Wake-Listener). Eigener
+        Recorder, damit der Tastatur-Pfad ungestört bleibt."""
+        rec = Recorder()
+        if not rec.start(self.cfg.mic):
+            return None
+        det = vad.SilenceDetector()
+        prev = 0
+        deadline = time.monotonic() + 12
+        try:
+            while time.monotonic() < deadline and self.wake is not None:
+                time.sleep(0.1)
+                data = rec.raw_bytes()
+                new = data[prev:]
+                prev = len(data)
+                if new:
+                    det.feed(new)
+                if det.stopped:
+                    break
+        finally:
+            rec.stop()
+        data = rec.raw_bytes()
+        if not det.speech_started or len(data) < 8000:
+            return None
+        return data
+
+    def _wake_transcribe(self, pcm):
+        if not pcm or not whisperclient.ensure_server():
+            return None
+        try:
+            wav_from_raw(pcm, WAV)
+        except OSError:
+            return None
+        return whisperclient.transcribe(WAV, self.cfg, timeout=30)
+
+    def _wake_insert(self, raw_text):
+        kind, value = textproc.postprocess(raw_text, self.cfg)
+        if kind != "text" or not value.strip():
+            return
+        value = self._refine(value)
+        paste(value)
+        self.last_paste_len = len(value)
+        state_set("done", value)
+        self._after_insert(value)
+
     # ------------------------------------------------------------- Hauptloop
     def run(self):
         pressed = set()
@@ -253,6 +311,7 @@ class Daemon:
             sys.exit(1)
         state_set("idle")
         notify(tr("ready"), 2000)
+        self._sync_wakeword()
 
         while True:
             now = time.monotonic()
@@ -263,6 +322,7 @@ class Daemon:
                 if self.cfg.reload():
                     i18n.set_language(None if self.cfg.ui_language == "auto"
                                       else self.cfg.ui_language)
+                self._sync_wakeword()
                 last_scan = now
 
             timeout = 0.05 if (pending or st == "await2") else 1.0
