@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from .. import __version__, config, i18n, textproc, whisperclient
+from .. import (__version__, config, i18n, learn, progmode, stats, textproc,
+                textreplace, vad, wakeword, whisperclient)
 from ..audio import RATE, SAMPLE_BYTES, wav_from_raw
 from ..config import CHORDS
 from ..mediacontrol import AudioDucker
@@ -27,7 +28,7 @@ from . import server
 from .audio_win import Recorder
 from .hook import CHORDS_VK, KeyboardHook
 from .machine import ChordMachine
-from .paste import paste, send_backspaces, type_chunk
+from .paste import paste, send_backspaces, send_enter, type_chunk
 
 PARTIAL_EVERY = 2.0
 PARTIAL_WINDOW = 15
@@ -304,6 +305,7 @@ class WinApp(QObject):
         self.ducker = AudioDucker()   # Musik/Ton beim Diktieren leise schalten
         self._capturing = False       # lief rec.start erfolgreich? (sonst Mikro-Fehler)
         self.enabled = True
+        self.wake = None              # WakeListener-Thread (nur wenn Wake-Word an)
 
         self.pill = Pill()
         self.sig_state.connect(self._apply_state)
@@ -438,6 +440,7 @@ class WinApp(QObject):
                 ga, gb, self.on_start, self.on_finish, self.on_cancel,
                 self.cfg.hold_min, self.cfg.double_window)
             self.machine.on_handsfree = self.enable_streaming
+        self._sync_wakeword()       # Wake-Word nach Konfig starten/stoppen
 
     def pump(self):
         while not self.hook.events.empty():
@@ -547,10 +550,19 @@ class WinApp(QObject):
             self.sig_state.emit("error", tr("nothing"))
             return
         if kind == "command":
-            undo = len(self.streamer.typed) if self.streamer is not None else self.last_paste_len
+            action = value
+            live_typed = len(self.streamer.typed) if self.streamer is not None else 0
             if self.streamer is not None:
                 streaming_restore(self._clip_backup)
                 self.streamer = None
+            if action == "enter":
+                if live_typed:
+                    send_backspaces(live_typed)
+                send_enter()
+                self.last_paste_len = 0
+                self.sig_state.emit("done", tr("pressed_enter"))
+                return
+            undo = live_typed if live_typed else self.last_paste_len
             if undo:
                 send_backspaces(undo)
                 self.last_paste_len = 0
@@ -558,6 +570,7 @@ class WinApp(QObject):
             else:
                 self.sig_state.emit("error", tr("nothing"))
             return
+        value = self._refine(value)
         t = time.monotonic()
         if self.streamer is not None:
             typed = self.streamer.finish(value)
@@ -570,12 +583,93 @@ class WinApp(QObject):
             dlog("transcribe: paste %.2fs (%d Zeichen)"
                  % (time.monotonic() - t, len(value)))
             self.last_paste_len = len(value)
+        self.sig_state.emit("done", value)
+        self._after_insert(value)
+
+    def _refine(self, text):
+        """Programmier-Diktat und Textersetzungen auf den Endtext anwenden."""
+        if self.cfg.programmer_mode:
+            text = progmode.apply(text)
+        if self.cfg.text_replace:
+            rules = config.replacement_rules()
+            if rules:
+                text = textreplace.apply_rules(text, rules)
+        return text
+
+    def _after_insert(self, value):
+        """Nach dem Einfügen: Verlauf, Statistik, Wörterbuch-Lernen."""
         if self.cfg.history_enabled:
             try:
                 config.history_append(value)
             except OSError:
                 pass
+        if self.cfg.stats_enabled:
+            try:
+                stats.record(value)
+            except Exception:    # noqa: BLE001
+                pass
+        if self.cfg.auto_learn:
+            try:
+                merged, added = learn.learn(value, config.dictionary_words())
+                if added:
+                    config.dictionary_save("\n".join(merged))
+            except Exception:    # noqa: BLE001
+                pass
+
+    # ----------------------------------------------------- Wake-Word (opt-in)
+    def _sync_wakeword(self):
+        """Listener nach Konfig starten/stoppen (idempotent)."""
+        if self.cfg.wakeword_enabled and self.wake is None:
+            self.wake = wakeword.WakeListener(
+                self.cfg, self._wake_record_utterance, self._wake_transcribe,
+                self._wake_insert, is_busy=lambda: self.rec.active or not self.enabled)
+            self.wake.start()
+        elif not self.cfg.wakeword_enabled and self.wake is not None:
+            self.wake.stop()
+            self.wake = None
+
+    def _wake_record_utterance(self):
+        rec = Recorder()
+        if not rec.start(self.cfg.mic):
+            return None
+        det = vad.SilenceDetector()
+        prev = 0
+        deadline = time.monotonic() + 12
+        try:
+            while time.monotonic() < deadline and self.wake is not None:
+                time.sleep(0.1)
+                data = rec.raw_bytes()
+                new = data[prev:]
+                prev = len(data)
+                if new:
+                    det.feed(new)
+                if det.stopped:
+                    break
+        finally:
+            rec.stop()
+        data = rec.raw_bytes()
+        if not det.speech_started or len(data) < 8000:
+            return None
+        return data
+
+    def _wake_transcribe(self, pcm):
+        if not pcm or not whisperclient.ensure_server():
+            return None
+        try:
+            wav_from_raw(pcm, WAV)
+        except OSError:
+            return None
+        return whisperclient.transcribe(WAV, self.cfg, timeout=30)
+
+    def _wake_insert(self, raw_text):
+        kind, value = textproc.postprocess(raw_text, self.cfg)
+        if kind != "text" or not value.strip():
+            return
+        value = self._refine(value)
+        paste(value)
+        self.last_paste_len = len(value)
         self.sig_state.emit("done", value)
+        self._after_insert(value)
 
     def _apply_state(self, state, text):
         self.pill.cfg.reload()

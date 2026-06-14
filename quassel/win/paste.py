@@ -33,7 +33,7 @@ CF_UNICODETEXT = 13
 GMEM_MOVEABLE = 0x0002
 KEYEVENTF_KEYUP = 0x0002
 INPUT_KEYBOARD = 1
-VK_CONTROL, VK_V, VK_BACK = 0x11, 0x56, 0x08
+VK_CONTROL, VK_V, VK_BACK, VK_RETURN = 0x11, 0x56, 0x08, 0x0D
 
 
 class KEYBDINPUT(ctypes.Structure):
@@ -144,3 +144,8 @@ def send_backspaces(n):
     while steps:
         _send_keys(steps[:200])
         steps = steps[200:]
+
+
+def send_enter():
+    """Eingabetaste drücken (Sprachkommando 'press enter')."""
+    _send_keys([(VK_RETURN, True), (VK_RETURN, False)])
