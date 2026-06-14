@@ -230,3 +230,5 @@ footer{border-top:1px solid var(--line);padding:48px 0 56px;color:var(--muted);f
 .foot-links a:hover{color:var(--pine)}
 .foot-note{margin-top:26px;max-width:640px;line-height:1.6}
 .foot-note .hl{color:var(--pine);font-weight:600}
+.oldver{color:#9a6b00;font-size:.82rem;font-weight:700;margin-top:8px}
+@media (prefers-color-scheme:dark){.oldver{color:#e6b34d}}
