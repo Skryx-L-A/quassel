@@ -111,7 +111,10 @@ def _restore_bluez_profiles(before):
 
 
 class Recorder:
-    def __init__(self):
+    def __init__(self, raw_path=RAW):
+        # raw_path: eigene Rohdatei (z.B. für den Wake-Listener), damit zwei
+        # Recorder sich nicht dieselbe Datei überschreiben.
+        self.raw_path = raw_path
         self.proc = None
         self.outfile = None
         self.started = 0.0
@@ -127,7 +130,7 @@ class Recorder:
         if cmd is None:
             return False
         self._bt_before = _bluez_profiles()
-        self.outfile = open(RAW, "wb")
+        self.outfile = open(self.raw_path, "wb")
         self.proc = subprocess.Popen(
             cmd, stdout=self.outfile, stderr=subprocess.DEVNULL)
         self.started = time.monotonic()
@@ -135,7 +138,7 @@ class Recorder:
 
     def raw_bytes(self):
         try:
-            with open(RAW, "rb") as f:
+            with open(self.raw_path, "rb") as f:
                 data = f.read()
             return data[:len(data) - (len(data) % SAMPLE_BYTES)]
         except OSError:

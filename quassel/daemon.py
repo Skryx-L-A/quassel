@@ -36,6 +36,10 @@ RESCAN_EVERY = 5       # s: /dev/input auf neue Tastaturen prüfen
 PARTIAL_EVERY = 2.0    # s: Abstand der Live-Vorschau-Transkripte
 PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
 
+# Eigene Roh-/WAV-Dateien für den Wake-Listener (getrennt vom Tastatur-Pfad)
+WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
+WAKE_WAV = os.path.join(os.path.dirname(WAV), "wake.wav")
+
 
 def log(msg):
     print(msg, file=sys.stderr, flush=True)
@@ -203,7 +207,8 @@ class Daemon:
             paste(value)
             self.last_paste_len = len(value)
         state_set("done", value)
-        self._after_insert(value)
+        secs = len(data) / (RATE * SAMPLE_BYTES)
+        self._after_insert(value, secs)
 
     def _refine(self, text):
         """Programmier-Diktat, Textersetzungen und lokale KI auf den Endtext anwenden."""
@@ -245,7 +250,7 @@ class Daemon:
                 return name, rest
         return None, text
 
-    def _after_insert(self, value):
+    def _after_insert(self, value, seconds=0.0):
         """Nach dem Einfügen: Verlauf, Statistik, Wörterbuch-Lernen."""
         if self.cfg.history_enabled:
             try:
@@ -254,7 +259,7 @@ class Daemon:
                 pass
         if self.cfg.stats_enabled:
             try:
-                stats.record(value)
+                stats.record(value, seconds=seconds)
             except Exception:    # noqa: BLE001 — Statistik darf nie stören
                 pass
         if self.cfg.auto_learn:
@@ -279,12 +284,15 @@ class Daemon:
 
     def _wake_record_utterance(self):
         """Eine Äußerung über VAD aufnehmen (für den Wake-Listener). Eigener
-        Recorder, damit der Tastatur-Pfad ungestört bleibt."""
-        rec = Recorder()
+        Recorder + eigene Rohdatei, damit der Tastatur-Pfad und die Pille
+        ungestört bleiben. Schwelle wird am Grundrauschen kalibriert."""
+        rec = Recorder(raw_path=WAKE_RAW)
         if not rec.start(self.cfg.mic):
             return None
-        det = vad.SilenceDetector()
         prev = 0
+        det = None
+        peak = 0.0
+        base_samples = []
         deadline = time.monotonic() + 12
         try:
             while time.monotonic() < deadline and self.wake is not None:
@@ -292,14 +300,29 @@ class Daemon:
                 data = rec.raw_bytes()
                 new = data[prev:]
                 prev = len(data)
-                if new:
+                if not new:
+                    continue
+                lvl = vad.frame_rms(new)
+                peak = max(peak, lvl)
+                if det is None:
+                    # erste ~0.4 s: Grundrauschen messen, dann Schwelle setzen
+                    base_samples.append(lvl)
+                    if len(base_samples) >= 4:
+                        noise = sorted(base_samples)[len(base_samples) // 2]
+                        thr = max(220.0, noise * 2.2)
+                        det = vad.SilenceDetector(silence_rms=thr,
+                                                  min_speech_sec=0.25, hang_sec=1.0)
+                        det.feed(new)   # Kalibrier-Frames nur als Rauschwert genutzt
+                else:
                     det.feed(new)
-                if det.stopped:
-                    break
+                    if det.stopped:
+                        break
         finally:
             rec.stop()
         data = rec.raw_bytes()
-        if not det.speech_started or len(data) < 8000:
+        started = det.speech_started if det is not None else False
+        log("wake: rec %d bytes, peak_rms=%.0f, speech=%s" % (len(data), peak, started))
+        if not started or len(data) < 8000:
             return None
         return data
 
@@ -307,10 +330,14 @@ class Daemon:
         if not pcm or not whisperclient.ensure_server():
             return None
         try:
-            wav_from_raw(pcm, WAV)
+            wav_from_raw(pcm, WAKE_WAV)
         except OSError:
             return None
-        return whisperclient.transcribe(WAV, self.cfg, timeout=30)
+        # Wake-Phrase als Bias mitgeben, damit Whisper das Kunstwort eher trifft.
+        text = whisperclient.transcribe(WAKE_WAV, self.cfg, timeout=30,
+                                        prompt_extra=self.cfg.wakeword_phrase)
+        log("wake: heard %r (phrase=%r)" % ((text or "").strip(), self.cfg.wakeword_phrase))
+        return text
 
     def _wake_insert(self, raw_text):
         kind, value = textproc.postprocess(raw_text, self.cfg)

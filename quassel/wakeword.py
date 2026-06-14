@@ -13,9 +13,15 @@ Audio, echte Threads oder Sleeps.
 
 Es wird bewusst nur die Standardbibliothek benutzt (re/unicodedata/threading).
 """
+import difflib
 import re
 import threading
 import unicodedata
+
+# Aehnlichkeitsschwelle fuer den unscharfen Phrasen-Abgleich. Whisper verhoert
+# sich beim Kunstwort "Quassel" oft ("Hey Kassel", "Hey Castle", ...); ein
+# strikter Wort-fuer-Wort-Vergleich wuerde das Wake-Word dann nie ausloesen.
+WAKE_FUZZY = 0.72
 
 # Erlaubte Zeichen in normalisiertem Text: Buchstaben (inkl. aeoeuess), Ziffern,
 # Leerzeichen. Alles andere (Satzzeichen) wird zu Leerzeichen.
@@ -39,20 +45,26 @@ def normalize(text):
     return t.strip()
 
 
-def match_wake(transcript, phrase):
-    """Prueft, ob ``transcript`` mit ``phrase`` (als ganze Woerter) beginnt.
+def _similar(a, b):
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def match_wake(transcript, phrase, fuzzy=WAKE_FUZZY):
+    """Prueft, ob ``transcript`` mit ``phrase`` beginnt (exakt ODER aehnlich).
 
     Rueckgabe ``(matched, remainder)``:
-      * ``matched`` ist True, wenn der normalisierte Transkript-Text mit der
-        normalisierten Phrase als vollstaendige Wortfolge beginnt. "hey quassel"
-        passt also auf "Hey Quassel, schreib das", aber NICHT auf "heyquasselfoo".
+      * ``matched`` ist True, wenn die ersten Woerter des Transkripts die Phrase
+        sind -- entweder exakt als Wortfolge, oder unscharf (Aehnlichkeit
+        >= ``fuzzy``), damit Whisper-Verhoerer des Kunstworts ("Hey Kassel" statt
+        "Hey Quassel") trotzdem ausloesen. "hey quassel" passt auf
+        "Hey Quassel, schreib das", aber nicht auf "heyquasselfoo".
       * ``remainder`` ist der nachgestellte Teil des URSPRUENGLICHEN Transkripts
         nach den Phrasen-Woertern, von fuehrenden Satzzeichen/Leerraum befreit.
         Ist der Transkript nur die Phrase, ist ``remainder`` == "".
       * Bei keinem Treffer: ``(False, "")``.
 
-    Tolerant gegenueber zusaetzlichen Leerzeichen, nachgestellten Satzzeichen
-    nach der Phrase und Gross-/Kleinschreibung.
+    Tolerant gegenueber Leerzeichen, nachgestellten Satzzeichen und Gross-/
+    Kleinschreibung.
     """
     norm_phrase = normalize(phrase)
     norm_tr = normalize(transcript)
@@ -62,15 +74,20 @@ def match_wake(transcript, phrase):
     phrase_words = norm_phrase.split(" ")
     tr_words = norm_tr.split(" ")
     n = len(phrase_words)
-    # Phrase muss am Anfang als vollstaendige Wortfolge stehen.
-    if tr_words[:n] != phrase_words:
+
+    if len(tr_words) < n:
+        # Kuerzer als die Phrase: ganzer Transkript vs. Phrase unscharf.
+        if _similar(" ".join(tr_words), norm_phrase) >= fuzzy:
+            return (True, "")
         return (False, "")
 
-    # Treffer. Den Rest aus dem ORIGINAL-Transkript schneiden, damit die echte
-    # Schreibweise/Interpunktion des Diktats erhalten bleibt. Dafuer ueber die
-    # Original-Woerter laufen und nach dem n-ten Wort abschneiden.
-    remainder = _original_remainder(transcript, n)
-    return (True, remainder)
+    head = " ".join(tr_words[:n])
+    if tr_words[:n] == phrase_words or _similar(head, norm_phrase) >= fuzzy:
+        # Treffer. Rest aus dem ORIGINAL-Transkript schneiden, damit echte
+        # Schreibweise/Interpunktion erhalten bleibt.
+        remainder = _original_remainder(transcript, n)
+        return (True, remainder)
+    return (False, "")
 
 
 # Wort = zusammenhaengende Folge erlaubter Zeichen (Buchstaben/Ziffern).

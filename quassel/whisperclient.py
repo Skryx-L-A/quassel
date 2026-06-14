@@ -42,11 +42,13 @@ def ensure_server():
 MIXED_PRIMER = "Das Meeting ist um 3 PM. Let's go - schick mir das Update."
 
 
-def build_inference_args(wavpath, cfg, words, timeout=120):
+def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
     """curl-Argumente für /inference bauen. Sprache:
       auto   -> automatische Erkennung (kein language-Feld)
       mixed  -> automatische Erkennung + zweisprachiger Prompt-Anstoß (#23)
-      de/en  -> feste Sprache."""
+      de/en  -> feste Sprache.
+    prompt_extra: zusätzlicher Bias-Text (z.B. das Wake-Word), wird dem Prompt
+    vorangestellt, damit Whisper z.B. das Kunstwort 'Quassel' eher ausgibt."""
     args = ["curl", "-fsS", "-m", str(timeout), SERVER + "/inference",
             "-F", f"file=@{wavpath}",
             "-F", "response_format=text", "-F", "temperature=0.0"]
@@ -54,6 +56,8 @@ def build_inference_args(wavpath, cfg, words, timeout=120):
     if lang not in ("auto", "mixed"):
         args += ["-F", f"language={lang}"]
     prompt_bits = []
+    if prompt_extra:
+        prompt_bits.append(prompt_extra)
     if lang == "mixed":
         prompt_bits.append(MIXED_PRIMER)
     if words:
@@ -63,9 +67,10 @@ def build_inference_args(wavpath, cfg, words, timeout=120):
     return args
 
 
-def transcribe(wavpath, cfg, timeout=120):
+def transcribe(wavpath, cfg, timeout=120, prompt_extra=None):
     """Transkribiert eine WAV-Datei; None bei Fehler."""
-    args = build_inference_args(wavpath, cfg, config.dictionary_words(), timeout)
+    args = build_inference_args(wavpath, cfg, config.dictionary_words(),
+                                timeout, prompt_extra)
     r = subprocess.run(args, capture_output=True, text=True, check=False,
                        encoding="utf-8", errors="replace", **NOWIN)
     return r.stdout if r.returncode == 0 else None

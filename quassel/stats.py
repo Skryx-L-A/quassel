@@ -7,8 +7,10 @@ niemals irgendwohin gesendet.
 Speicherort: <DATADIR>/stats.json (wie history.jsonl).
 Fuer Tests ueberschreibbar via Umgebungsvariable QUASSEL_STATS_PATH.
 """
+import datetime
 import json
 import os
+import time
 
 from quassel import config
 
@@ -34,9 +36,18 @@ _EMPTY = {
     "words": 0,
     "chars": 0,
     "seconds_saved": 0.0,
+    "seconds_spoken": 0.0,
     "first_ts": None,
     "last_ts": None,
+    # Tagesbuckets nach LOKALER Zeit: "YYYY-MM-DD" -> {"words","seconds","sessions"}
+    "daily": {},
 }
+
+
+def _empty():
+    d = dict(_EMPTY)
+    d["daily"] = {}
+    return d
 
 
 def _load():
@@ -45,14 +56,24 @@ def _load():
         with open(_stats_path(), encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
-        return dict(_EMPTY)
+        return _empty()
     if not isinstance(data, dict):
-        return dict(_EMPTY)
-    out = dict(_EMPTY)
+        return _empty()
+    out = _empty()
     for k in _EMPTY:
         if k in data:
             out[k] = data[k]
+    if not isinstance(out.get("daily"), dict):
+        out["daily"] = {}
     return out
+
+
+def _local_day(ts):
+    """Lokales Datum 'YYYY-MM-DD' eines Timestamps ueber die SYSTEM-Zeitzone.
+
+    time.localtime nutzt die lokale Zeitzone des Rechners (TZ/etc-localtime),
+    ganz ohne Internet; ist keine gesetzt, ist es effektiv die Systemuhr."""
+    return time.strftime("%Y-%m-%d", time.localtime(ts))
 
 
 def _save(data):
@@ -64,15 +85,15 @@ def _save(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def record(text, *, typing_wpm=40):
+def record(text, *, seconds=0.0, typing_wpm=40):
     """Verbucht ein abgeschlossenes Diktat.
 
     sessions += 1, words += Wortanzahl, chars += len(text).
     seconds_saved += words / typing_wpm * 60 (Zeit, um so viele Woerter
-    von Hand bei typing_wpm zu tippen). first_ts einmalig, last_ts immer.
+    von Hand bei typing_wpm zu tippen). seconds_spoken += ``seconds`` (echte
+    Sprechdauer, sofern bekannt). Zudem wird ein Tagesbucket der LOKALEN
+    Zeitzone fortgeschrieben. first_ts einmalig, last_ts immer.
     """
-    import time
-
     words = len(text.split())
     data = _load()
     now = time.time()
@@ -81,6 +102,16 @@ def record(text, *, typing_wpm=40):
     data["chars"] += len(text)
     if typing_wpm > 0:
         data["seconds_saved"] += words / typing_wpm * 60
+    try:
+        data["seconds_spoken"] = data.get("seconds_spoken", 0.0) + float(seconds or 0.0)
+    except (TypeError, ValueError):
+        pass
+    day = _local_day(now)
+    bucket = data["daily"].get(day) or {"words": 0, "seconds": 0.0, "sessions": 0}
+    bucket["words"] += words
+    bucket["seconds"] = bucket.get("seconds", 0.0) + float(seconds or 0.0)
+    bucket["sessions"] += 1
+    data["daily"][day] = bucket
     if data["first_ts"] is None:
         data["first_ts"] = now
     data["last_ts"] = now
@@ -90,6 +121,30 @@ def record(text, *, typing_wpm=40):
 def summary():
     """Aktuelle Zaehler als dict; Nullen/None ohne Datei."""
     return _load()
+
+
+def words_today(s=None):
+    """Heute (lokale Zeit) gesprochene Woerter."""
+    if s is None:
+        s = _load()
+    day = _local_day(time.time())
+    return (s.get("daily", {}).get(day) or {}).get("words", 0)
+
+
+def daily_series(days=14, s=None):
+    """Liste der letzten ``days`` Tage (lokal) als (datum, woerter), Nullen aufgefuellt.
+
+    Aeltester Tag zuerst, heute zuletzt — direkt fuer ein Balkendiagramm."""
+    if s is None:
+        s = _load()
+    daily = s.get("daily", {})
+    today = datetime.date.fromtimestamp(time.time())
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = today - datetime.timedelta(days=i)
+        key = d.isoformat()
+        out.append((key, (daily.get(key) or {}).get("words", 0)))
+    return out
 
 
 def format_summary(s=None):

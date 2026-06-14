@@ -204,6 +204,15 @@ STRINGS = {
     "ai_mode_paragraphs": ("Tidy paragraphs", "Saubere Absätze"),
     "ai_mode_formal": ("Make formal", "Förmlich machen"),
     "ai_mode_concise": ("Make concise", "Prägnant kürzen"),
+    # --- Statistik-Seite (visuell) ---
+    "nav_stats": ("Statistics", "Statistik"),
+    "stats_total_words": ("Words dictated", "Diktierte Wörter"),
+    "stats_time_spoken": ("Time spoken", "Gesprochene Zeit"),
+    "stats_words_today": ("Words today", "Wörter heute"),
+    "stats_saved": ("Typing time saved", "Gesparte Tippzeit"),
+    "stats_chart": ("Words per day (last 14 days)", "Wörter pro Tag (letzte 14 Tage)"),
+    "stats_chart_empty": ("Dictate something to see your daily activity here.",
+                          "Diktiere etwas, um hier deine tägliche Aktivität zu sehen."),
 }
 
 _lang = None

@@ -49,6 +49,19 @@ def test_format_summary():
     assert "1,234 words in 56 sessions" in out2
 
 
+def test_daily_and_spoken():
+    stats.reset()
+    stats.record("eins zwei drei", seconds=3.0)     # 3 Woerter, 3 s gesprochen
+    s = stats.summary()
+    assert s["seconds_spoken"] == 3.0, s["seconds_spoken"]
+    assert stats.words_today(s) == 3, stats.words_today(s)
+    series = stats.daily_series(7, s)
+    assert len(series) == 7
+    assert series[-1][1] == 3, series          # heute
+    assert series[0][1] == 0, series           # vor 6 Tagen
+    stats.reset()
+
+
 def test_reset_clears():
     stats.reset()
     assert not os.path.exists(_TMP)
@@ -64,7 +77,7 @@ def test_reset_clears():
 if __name__ == "__main__":
     try:
         for fn in [test_empty_summary_is_zero, test_record_accumulates,
-                   test_format_summary, test_reset_clears]:
+                   test_format_summary, test_daily_and_spoken, test_reset_clears]:
             fn()
     finally:
         try:

@@ -97,8 +97,8 @@ class Cfg:
         self.wakeword_enabled = p.getboolean("wakeword", "enabled", fallback=False)
         self.wakeword_phrase = g("wakeword", "phrase", fallback=WAKEWORD_DEFAULT).strip() \
             or WAKEWORD_DEFAULT
-        # Beim Start auf neue Version prüfen
-        self.update_check = p.getboolean("system", "update_check", fallback=True)
+        # Beim Start auf neue Version prüfen (Standard AUS)
+        self.update_check = p.getboolean("system", "update_check", fallback=False)
         # Erst-Einrichtung schon gesehen?
         self.onboarded = p.getboolean("system", "onboarded", fallback=False)
         # Lokale KI-Nachbearbeitung (Ollama, opt-in, Standard AUS — bleibt lokal)
@@ -108,7 +108,9 @@ class Cfg:
         self.ai_post_process = p.getboolean("ai", "post_process", fallback=False)
         self.ai_post_mode = g("ai", "post_mode", fallback="cleanup").strip() or "cleanup"
         self.ai_voice_modes = p.getboolean("ai", "voice_modes", fallback=True)
-        self.ai_timeout = p.getfloat("ai", "timeout", fallback=30.0)
+        # großzügiger Default: größere Modelle brauchen beim ersten Aufruf
+        # (Kaltstart/Laden in den Speicher) gut 20-30 s.
+        self.ai_timeout = p.getfloat("ai", "timeout", fallback=60.0)
         return True
 
 

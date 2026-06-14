@@ -584,7 +584,8 @@ class WinApp(QObject):
                  % (time.monotonic() - t, len(value)))
             self.last_paste_len = len(value)
         self.sig_state.emit("done", value)
-        self._after_insert(value)
+        secs = len(data) / (RATE * SAMPLE_BYTES)
+        self._after_insert(value, secs)
 
     def _refine(self, text):
         """Programmier-Diktat, Textersetzungen und lokale KI auf den Endtext anwenden."""
@@ -624,7 +625,7 @@ class WinApp(QObject):
                 return name, rest
         return None, text
 
-    def _after_insert(self, value):
+    def _after_insert(self, value, seconds=0.0):
         """Nach dem Einfügen: Verlauf, Statistik, Wörterbuch-Lernen."""
         if self.cfg.history_enabled:
             try:
@@ -633,7 +634,7 @@ class WinApp(QObject):
                 pass
         if self.cfg.stats_enabled:
             try:
-                stats.record(value)
+                stats.record(value, seconds=seconds)
             except Exception:    # noqa: BLE001
                 pass
         if self.cfg.auto_learn:

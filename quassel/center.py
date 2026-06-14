@@ -13,7 +13,7 @@ import time
 import wave
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QIcon, QPalette
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
@@ -313,6 +313,7 @@ class Center(QMainWindow):
                              ("nav_file", self.page_file),
                              ("nav_ai", self.page_ai),
                              ("nav_history", self.page_history),
+                             ("nav_stats", self.page_stats),
                              ("nav_system", self.page_system)]:
             QListWidgetItem(tr(key), self.sidebar)
             self.stack.addWidget(builder())
@@ -722,19 +723,6 @@ class Center(QMainWindow):
         self.update_status.setWordWrap(True)
         g.addWidget(self.update_status)
 
-        # --- Nutzungsstatistik (#22) ---
-        g = self.group(tr("sec_stats"), lay)
-        self.stats_on = QCheckBox(tr("stats_enable"))
-        self.stats_on.setChecked(self.cfg.stats_enabled)
-        self.stats_on.toggled.connect(self.save_settings)
-        g.addWidget(self.stats_on)
-        self.stats_label = QLabel(self._stats_text())
-        self.stats_label.setWordWrap(True)
-        g.addWidget(self.stats_label)
-        stats_reset = QPushButton(tr("stats_reset"))
-        stats_reset.clicked.connect(self.on_stats_reset)
-        g.addWidget(stats_reset)
-
         # --- Zurücksetzen (#31) ---
         g = self.group(tr("sec_reset"), lay)
         self.desc(tr("reset_hint"), g)
@@ -775,6 +763,7 @@ class Center(QMainWindow):
         self.status_dot.setStyleSheet(f"background: {color}; border-radius: 6px;")
         self.status_lbl.setText(tr("on") if on else tr("off"))
         self.toggle_btn.setText(tr("turn_off") if on else tr("turn_on"))
+        self._refresh_stats()       # Statistik-Seite live halten
 
     def on_toggle(self):
         if self.controller is not None:
@@ -848,16 +837,82 @@ class Center(QMainWindow):
     def _sync_streaming_enabled(self, on):
         self.stream_mode.setEnabled(on)
 
-    def _stats_text(self):
+    # ----------------------------------------------------- Seite: Statistik (#22)
+    def _metric_card(self, caption):
+        frame = QFrame()
+        frame.setObjectName("metric")
+        frame.setStyleSheet(
+            "QFrame#metric{border:1px solid palette(midlight);border-radius:12px;}")
+        v = QVBoxLayout(frame)
+        v.setContentsMargins(14, 12, 14, 12)
+        v.setSpacing(2)
+        val = QLabel("0")
+        val.setStyleSheet(f"font-size:26px;font-weight:800;color:{self._accent};")
+        cap = QLabel(caption)
+        cap.setObjectName("desc")
+        cap.setWordWrap(True)
+        v.addWidget(val)
+        v.addWidget(cap)
+        return val, frame
+
+    def page_stats(self):
+        scroll, lay = self.page()
+        g = self.group(tr("sec_stats"), lay)
+        self.stats_on = QCheckBox(tr("stats_enable"))
+        self.stats_on.setChecked(self.cfg.stats_enabled)
+        self.stats_on.toggled.connect(self.save_settings)
+        g.addWidget(self.stats_on)
+        cards = QHBoxLayout()
+        cards.setSpacing(10)
+        self.m_total, c1 = self._metric_card(tr("stats_total_words"))
+        self.m_spoken, c2 = self._metric_card(tr("stats_time_spoken"))
+        self.m_today, c3 = self._metric_card(tr("stats_words_today"))
+        for c in (c1, c2, c3):
+            cards.addWidget(c, 1)
+        g.addLayout(cards)
+
+        g2 = self.group(tr("stats_chart"), lay)
+        self.stats_chart = _StatsChart(self._accent)
+        g2.addWidget(self.stats_chart)
+        self.stats_empty = self.desc(tr("stats_chart_empty"), g2)
+        self.stats_saved_lbl = QLabel()
+        self.stats_saved_lbl.setObjectName("desc")
+        g2.addWidget(self.stats_saved_lbl)
+
+        reset = QPushButton(tr("stats_reset"))
+        reset.clicked.connect(self.on_stats_reset)
+        lay.addWidget(reset)
+        lay.addStretch(1)
+        self._refresh_stats()
+        return scroll
+
+    @staticmethod
+    def _fmt_duration(seconds):
+        seconds = int(seconds or 0)
+        if seconds < 60:
+            return f"{seconds} s"
+        m, s = divmod(seconds, 60)
+        if m < 60:
+            return f"{m} min"
+        h, m = divmod(m, 60)
+        return f"{h} h {m} min"
+
+    def _refresh_stats(self):
+        if not hasattr(self, "stats_chart"):
+            return
         s = stats.summary()
-        if not s.get("sessions"):
-            return tr("stats_none")
-        return tr("stats_line", words=f"{s['words']:,}", sessions=s["sessions"],
-                  minutes=round(s.get("seconds_saved", 0) / 60))
+        self.m_total.setText(f"{s.get('words', 0):,}")
+        self.m_spoken.setText(self._fmt_duration(s.get("seconds_spoken", 0.0)))
+        self.m_today.setText(f"{stats.words_today(s):,}")
+        series = stats.daily_series(14, s)
+        self.stats_chart.set_series(series)
+        self.stats_empty.setVisible(not any(v > 0 for _, v in series))
+        saved_min = int(round(s.get("seconds_saved", 0.0) / 60))
+        self.stats_saved_lbl.setText(f"{tr('stats_saved')}: ~{saved_min:,} min")
 
     def on_stats_reset(self):
         stats.reset()
-        self.stats_label.setText(self._stats_text())
+        self._refresh_stats()
 
     # ----------------------------------------------------- Erst-Einrichtung (#27)
     def _maybe_onboard(self):
@@ -1061,6 +1116,58 @@ class Center(QMainWindow):
         # nach dem Neuaufbau die Bestätigung in der System-Seite anzeigen
         if hasattr(self, "reset_status"):
             self.reset_status.setText("✓ " + tr("reset_done"))
+
+
+class _StatsChart(QWidget):
+    """Schlankes Balkendiagramm: Wörter pro Tag (letzte N Tage). Heutiger Tag
+    hervorgehoben in der Markenfarbe; passt sich hell/dunkel über die Palette an."""
+
+    def __init__(self, accent):
+        super().__init__()
+        self._series = []
+        self._accent = QColor(accent)
+        self.setMinimumHeight(170)
+
+    def set_series(self, series):
+        self._series = list(series or [])
+        self.update()
+
+    def paintEvent(self, _ev):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        pad_l, pad_r, pad_t, pad_b = 10, 10, 14, 22
+        plot_h = h - pad_t - pad_b
+        plot_w = w - pad_l - pad_r
+        series = self._series
+        if not series or plot_w <= 0 or plot_h <= 0:
+            return
+        mx = max((v for _, v in series), default=0)
+        base_y = pad_t + plot_h
+        axis = self.palette().color(QPalette.WindowText)
+        axis.setAlpha(60)
+        p.setPen(axis)
+        p.drawLine(pad_l, base_y, w - pad_r, base_y)
+        n = len(series)
+        gap = 4
+        bw = max(2.0, (plot_w - gap * (n - 1)) / n)
+        muted = QColor(self._accent)
+        muted.setAlpha(95)
+        p.setPen(Qt.NoPen)
+        for i, (_, v) in enumerate(series):
+            x = pad_l + i * (bw + gap)
+            bh = 0 if mx <= 0 else (v / mx) * plot_h
+            if bh < 2:
+                continue
+            p.setBrush(self._accent if i == n - 1 else muted)
+            p.drawRoundedRect(int(x), int(base_y - bh), int(bw), int(bh), 2, 2)
+        label = self.palette().color(QPalette.WindowText)
+        label.setAlpha(140)
+        p.setPen(label)
+        if mx > 0:
+            p.drawText(pad_l, pad_t - 1, f"{mx}")
+        p.drawText(pad_l, h - 5, series[0][0][5:])               # ältester Tag MM-DD
+        p.drawText(w - pad_r - 34, h - 5, series[-1][0][5:])     # heute MM-DD
 
 
 class OnboardingDialog(QDialog):

@@ -39,16 +39,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Audio-file transcription: drop in an audio file and get the text.
 - Local usage statistics: words dictated and time saved, computed and stored only on your machine.
 
+- Usage statistics now have their own page with a visual bar chart: total words dictated, time
+  spoken, and words dictated today (by your computer's local date — no internet needed).
+
 ### Changed
 - Streaming typing now appears word by word as you speak, instead of in larger multi-word
   chunks — words may still be refined afterwards as the recognizer hears more context.
 - Better handling of mixed-language dictation (e.g. German with English words in one sentence).
+- "Check for updates on start" is now OFF by default.
 
 ### Removed
 - (none)
 
 ### Fixed
-- (none)
+- Wake word is far more reliable: tolerant matching (so a misheard "Hey Quassel" still triggers),
+  the wake phrase now biases recognition, a dedicated audio buffer avoids clashing with normal
+  dictation, and the daemon logs what it heard for easy troubleshooting.
 
 ## [2.2.0] - 2026-06-13
 - Direction-B visual redesign across the app, pill, icon and website; AEO artifacts for the

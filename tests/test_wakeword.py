@@ -70,6 +70,15 @@ def test_match_no_match():
     assert match_wake("schreib das", "Hey Quassel") == (False, "")
 
 
+def test_match_fuzzy_mishearing():
+    # Whisper verhoert das Kunstwort oft ("Hey Kassel"): unscharfer Treffer.
+    matched, rem = match_wake("Hey Kassel, mach das", "Hey Quassel")
+    assert matched is True
+    assert rem == "mach das", rem
+    # klar Unaehnliches loest weiterhin NICHT aus.
+    assert match_wake("irgendwas anderes", "Hey Quassel")[0] is False
+
+
 def test_match_tolerant_spacing_and_case():
     # Extra Leerzeichen + andere Schreibweise + nachgestelltes Satzzeichen.
     matched, rem = match_wake("hey   quassel.  mach mal", "Hey Quassel")
@@ -158,6 +167,7 @@ if __name__ == "__main__":
         test_match_phrase_only_empty_remainder,
         test_match_whole_word_boundary,
         test_match_no_match,
+        test_match_fuzzy_mishearing,
         test_match_tolerant_spacing_and_case,
         test_run_once_disabled_no_insert,
         test_run_once_busy_no_insert,
