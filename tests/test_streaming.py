@@ -1,7 +1,7 @@
-"""Tests des Streaming-Tippens (stable / aggressive / finaler Abgleich)."""
+"""Tests des Streaming-Tippens (word / stable / aggressive / finaler Abgleich)."""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from quassel.streaming import StreamTyper
+from quassel.streaming import StreamTyper, split_words
 
 class Sink:
     def __init__(self):
@@ -62,8 +62,36 @@ def test_newlines_held_back():
     t.finish("Erste Zeile\nzweite Zeile")
     assert s.text == "Erste Zeile\nzweite Zeile"
 
+def test_split_words_units():
+    assert split_words("Hallo Welt wie") == ["Hallo", " Welt", " wie"]
+    for s in (" foo  bar ", "eins", "  ", "a b c d"):
+        assert "".join(split_words(s)) == s, s    # verlustfreier Round-Trip
+    assert split_words("") == []
+
+def test_word_mode_types_one_word_per_call():
+    # Kern der #10-Verbesserung: mehrere neue Wörter -> EIN type-Op pro Wort,
+    # nicht ein Block. (Default-Modus ist "word".)
+    s = Sink(); t = StreamTyper("word", s.type_chunk, s.delete)
+    t.update("Hallo Welt wie geht es")
+    types = [op for op in s.ops if op[0] == "type"]
+    assert len(types) == 5, types               # 5 Wörter = 5 Tipp-Ops
+    assert s.text == "Hallo Welt wie geht es", s.text
+    # jedes Tipp-Häppchen enthält höchstens ein Wort
+    assert all(len(op[1].split()) <= 1 for op in types), types
+
+def test_word_mode_rewrites_later():
+    # Wörter werden sofort gesetzt und dürfen später revidiert werden.
+    s = Sink(); t = StreamTyper("word", s.type_chunk, s.delete)
+    t.update("Hallo Welt")
+    assert s.text == "Hallo Welt"
+    t.update("Hallo Werte")                     # kleine Revision -> Backspaces
+    assert s.text == "Hallo Werte", s.text
+    assert any(op[0] == "del" for op in s.ops)
+
 if __name__ == "__main__":
     for fn in [test_stable_types_only_confirmed_prefix, test_stable_never_deletes_on_revision,
-               test_finish_reconciles, test_aggressive_corrects_with_cap, test_newlines_held_back]:
+               test_finish_reconciles, test_aggressive_corrects_with_cap, test_newlines_held_back,
+               test_split_words_units, test_word_mode_types_one_word_per_call,
+               test_word_mode_rewrites_later]:
         fn(); print("ok:", fn.__name__)
     print("ALL STREAMING TESTS PASSED")
