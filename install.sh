@@ -199,6 +199,17 @@ fi
 MODELFILE="ggml-${MODEL}.bin"
 ok "Modell: $MODELFILE  (Standard für diese Hardware)"
 
+# VAD-Modell (Silero, ~0.9 MB): überspringt Stille -> schneller + verhindert
+# Halluzinationen auf Stille. Optional — schlägt der Download fehl, läuft alles
+# ohne VAD weiter.
+VAD_PATH="$DATA/models/ggml-silero-v5.1.2.bin"
+if [[ ! -s "$VAD_PATH" ]]; then
+    curl -L --fail -s -o "$VAD_PATH" \
+        "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin" \
+        || { warn "VAD-Modell-Download fehlgeschlagen — VAD bleibt aus"; VAD_PATH=""; }
+fi
+[[ -n "$VAD_PATH" ]] && ok "VAD-Modell bereit (Stille wird übersprungen)"
+
 # ----------------------------------------------------------------------------
 say "5/8  Qt-Oberfläche einrichten (PySide6 in eigener venv, ~150 MB einmalig)"
 # ----------------------------------------------------------------------------
@@ -225,12 +236,15 @@ if [[ ! -s "$HOME/.config/quassel/server.env" ]]; then
 SERVER_BIN=$SERVER_BIN_PATH
 MODEL_PATH=$DATA/models/$MODELFILE
 WHISPER_THREADS=$THREADS
+VAD_MODEL=$VAD_PATH
 EOF
 else
-    # Bestehende server.env nicht überschreiben (Modellwahl bleibt), aber die
-    # Thread-Zahl bei Bedarf ergänzen.
-    grep -q '^WHISPER_THREADS=' "$HOME/.config/quassel/server.env" \
-        || echo "WHISPER_THREADS=$THREADS" >> "$HOME/.config/quassel/server.env"
+    # Bestehende server.env nicht überschreiben (Modellwahl bleibt), aber Thread-
+    # Zahl und VAD-Modell bei Bedarf ergänzen.
+    SENV="$HOME/.config/quassel/server.env"
+    grep -q '^WHISPER_THREADS=' "$SENV" || echo "WHISPER_THREADS=$THREADS" >> "$SENV"
+    [[ -n "$VAD_PATH" ]] && ! grep -q '^VAD_MODEL=' "$SENV" \
+        && echo "VAD_MODEL=$VAD_PATH" >> "$SENV"
 fi
 sed "s|@HOME@|$HOME|g" "$SRC/desktop/quassel.desktop.in" \
     > "$HOME/.local/share/applications/quassel.desktop"

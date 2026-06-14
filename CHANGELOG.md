@@ -15,13 +15,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Quantized Whisper models (q5) in the model picker — much faster on CPU at nearly the same
-  accuracy: `base-q5_1`, `small-q5_1`, `medium-q5_0`, `large-v3-turbo-q5_0`.
+- Quantized Whisper models (q5) in the model picker (`base-q5_1`, `small-q5_1`, `medium-q5_0`,
+  `large-v3-turbo-q5_0`) — mainly smaller downloads / less RAM (CPU speed gain is small).
+- Voice Activity Detection (Silero VAD): skips silence and stops phantom text on silence
+  (e.g. "Thank you" / "Untertitel der Amara.org-Community") — a reliability win, ~free.
 
 ### Changed
-- Better default model on machines without an NVIDIA GPU: a quantized model matched to the CPU
-  (`medium-q5_0` / `small-q5_1` / `base-q5_1`) instead of the slower full `small`/`medium`.
-- whisper-server now runs with a tuned thread count (up to 8).
+- Default model without an NVIDIA GPU is now `small-q5_1` (≥4 cores) or `base-q5_1` — `medium`
+  and larger are too slow for live dictation on CPU and are no longer auto-selected (still
+  pickable in settings).
+- whisper-server now uses a tuned thread count (up to 8 — measured ~1.45× faster) and
+  `--no-fallback` (caps the worst-case decode time on hard/noisy audio).
 
 ### Fixed
 - Performance on weaker hardware: the live-preview transcription that ran every 2 s during

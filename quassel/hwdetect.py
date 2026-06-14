@@ -79,19 +79,17 @@ def default_model_for_hardware():
     Mit NVIDIA-GPU laufen die vollen Modelle flott:
       VRAM >= 6144 MB -> large-v3-turbo
       VRAM <  6144 MB -> medium
-    Ohne GPU (reine CPU) werden QUANTISIERTE (q5) Modelle gewählt — auf CPU
-    deutlich schneller bei nahezu gleicher Genauigkeit ("balanced"):
-      Kerne >= 8 und RAM >= 16 GB -> medium-q5_0
-      Kerne >= 4                  -> small-q5_1
-      sonst                       -> base-q5_1
+    Ohne GPU (reine CPU): quantisierte (q5) Modelle, aber höchstens "small" —
+    medium/large sind auf CPU fürs Live-Diktat zu langsam (Benchmark: medium-q5
+    ~9 s schon auf schneller CPU, large noch mehr). "balanced" heißt hier:
+    das genaueste Modell, das live noch nutzbar ist.
+      Kerne >= 4 -> small-q5_1
+      sonst      -> base-q5_1
     """
     vram = nvidia_vram_mb()
     if vram is not None:
         return "large-v3-turbo" if vram >= 6144 else "medium"
     cores = cpu_core_count()
-    ram = total_ram_gb() or 0.0
-    if cores >= 8 and ram >= 16:
-        return "medium-q5_0"
     if cores >= 4:
         return "small-q5_1"
     return "base-q5_1"

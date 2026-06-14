@@ -29,11 +29,11 @@ def test_nvidia_low_vram_medium():
 
 
 def test_no_nvidia_strong_cpu_medium():
-    # Ohne GPU: quantisiert (CPU-schnell, balanced)
-    _mock(None, 8, 16)           # genau an den Schwellen
-    assert hwdetect.default_model_for_hardware() == "medium-q5_0"
+    # Ohne GPU: höchstens small-q5_1 (medium/large auf CPU zu langsam fürs Live-Diktat)
+    _mock(None, 8, 16)
+    assert hwdetect.default_model_for_hardware() == "small-q5_1"
     _mock(None, 12, 32)
-    assert hwdetect.default_model_for_hardware() == "medium-q5_0"
+    assert hwdetect.default_model_for_hardware() == "small-q5_1"
 
 
 def test_no_nvidia_enough_cores_small():

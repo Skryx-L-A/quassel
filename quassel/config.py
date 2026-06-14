@@ -41,6 +41,10 @@ CHORD_LABEL_KEYS = {"ctrl+meta": "chord_ctrl_meta", "alt+meta": "chord_alt_meta"
 MODELS = ["tiny", "base", "base-q5_1", "small", "small-q5_1",
           "medium", "medium-q5_0", "large-v3-turbo", "large-v3-turbo-q5_0"]
 MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin"
+# Silero-VAD-Modell (~0.9 MB): überspringt Stille -> schneller + verhindert
+# Halluzinationen auf Stille (z.B. "Untertitel der Amara.org-Community").
+VAD_MODEL_FILE = "ggml-silero-v5.1.2.bin"
+VAD_MODEL_URL = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/" + VAD_MODEL_FILE
 
 
 class Cfg:

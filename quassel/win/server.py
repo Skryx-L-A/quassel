@@ -139,6 +139,23 @@ def _provide_model(model, bundle, progress):
     return None
 
 
+def vad_model_path():
+    """Pfad zum Silero-VAD-Modell, falls vorhanden, sonst None."""
+    p = os.path.join(MODEL_DIR, config.VAD_MODEL_FILE)
+    return p if os.path.exists(p) and os.path.getsize(p) > 1024 else None
+
+
+def _provide_vad(bundle, progress):
+    """Silero-VAD-Modell (~0.9 MB) bereitstellen — optional, scheitert leise."""
+    target = os.path.join(MODEL_DIR, config.VAD_MODEL_FILE)
+    if os.path.exists(target) and os.path.getsize(target) > 1024:
+        return
+    if bundle and _copy_file(os.path.join(bundle, "models", config.VAD_MODEL_FILE),
+                             target, progress, config.VAD_MODEL_FILE):
+        return
+    download(config.VAD_MODEL_URL, target, lambda f: progress(f, config.VAD_MODEL_FILE))
+
+
 def _provide_engine_zip(kind, bundle, progress):
     zipname = ENGINE_ZIPS[kind]
     dest = os.path.join(ENGINES_DIR, kind, zipname)
@@ -191,6 +208,7 @@ def provision(progress=lambda frac, what: None, full=False):
 
     for model in models:
         _provide_model(model, bundle, progress)      # vorhandene werden uebersprungen
+    _provide_vad(bundle, progress)                   # Silero-VAD (klein, optional)
     for k in engines:
         _provide_engine_zip(k, bundle, progress)     # vorhandene werden uebersprungen
 
@@ -270,11 +288,15 @@ def start():
             p for p in env.get("PATH", "").split(os.pathsep)
             if p and not p.startswith(mei))
     # whisper-Threads: bis ~8 (mehr bringt kaum etwas; HT-Kerne wenig).
+    # -nf: keine Temperatur-Fallbacks (deckelt die Decode-Zeit auf schwacher CPU).
     threads = str(min(8, os.cpu_count() or 4))
+    args = [exe, "-m", model, "-t", threads, "-nf",
+            "--host", "127.0.0.1", "--port", "8765", "-l", "auto", "-nt"]
+    vad = vad_model_path()
+    if vad:                                   # Stille überspringen + keine Halluzinationen
+        args += ["--vad", "--vad-model", vad]
     _proc = subprocess.Popen(
-        [exe, "-m", model, "-t", threads, "--host", "127.0.0.1", "--port", "8765",
-         "-l", "auto", "-nt"],
-        cwd=os.path.dirname(exe), env=env,
+        args, cwd=os.path.dirname(exe), env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         creationflags=creationflags)
 
