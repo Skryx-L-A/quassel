@@ -19,6 +19,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `large-v3-turbo-q5_0`) — mainly smaller downloads / less RAM (CPU speed gain is small).
 - Voice Activity Detection (Silero VAD): skips silence and stops phantom text on silence
   (e.g. "Thank you" / "Untertitel der Amara.org-Community") — a reliability win, ~free.
+- Start/stop beeps (toggle in settings, on by default): a rising tone when it starts listening
+  and a falling tone when it stops — especially handy with headphones.
+- Beam search on machines with a GPU (more accurate, sub-second there); CPU stays greedy.
+- Full `large-v3` model option for maximum accuracy on strong GPUs (turbo stays the default).
+
+### Fixed (accuracy / Bluetooth)
+- Bluetooth headsets / earbuds (AirPods etc.): the start and end of sentences were getting
+  clipped (the A2DP→HFP profile switch). Quassel now pads the tail and trims the noisy
+  lead-in — more so when a Bluetooth mic is detected — so words aren't cut off.
+- Decoding is now hardware-aware: beam search on GPU (accuracy), greedy + no temperature
+  fallback on CPU (caps worst-case time). Spoken-language default stays auto-detect.
 
 ### Changed
 - Default model without an NVIDIA GPU is now `small-q5_1` (≥4 cores) or `base-q5_1` — `medium`

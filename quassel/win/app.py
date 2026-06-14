@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from .. import (__version__, aimodes, config, i18n, learn, progmode, stats,
+from .. import (__version__, aimodes, beep, config, i18n, learn, progmode, stats,
                 textproc, textreplace, vad, wakeword, whisperclient)
 from ..audio import RATE, SAMPLE_BYTES, wav_from_raw
 from ..config import CHORDS
@@ -31,6 +31,9 @@ from .machine import ChordMachine
 from .paste import paste, send_backspaces, send_enter, type_chunk
 
 PARTIAL_EVERY = 2.0
+# Anfang verwerfen (Einschwingen/Start-Ton) und Ende puffern (nicht abschneiden).
+LEAD_TRIM_MS = 120
+TAIL_PAD_MS = 250
 PARTIAL_WINDOW = 15
 
 
@@ -465,6 +468,8 @@ class WinApp(QObject):
             return
         dlog("on_start: rec.start %.2fs" % (time.monotonic() - t))
         self.ducker.apply(self.cfg.mute_mode)   # Musik pausieren / Ton stumm
+        if self.cfg.beep:
+            beep.start()                        # aufsteigender Ton: jetzt sprechen
         self._capturing = True
         self.streamer = None
         self._clip_backup = None
@@ -500,6 +505,8 @@ class WinApp(QObject):
             streaming_restore(self._clip_backup)
             self.streamer = None
         self.rec.stop()
+        if self.cfg.beep:
+            beep.stop()
         self.ducker.restore()                   # Musik/Ton wiederherstellen
         self.sig_state.emit("ready", "")
 
@@ -511,16 +518,25 @@ class WinApp(QObject):
         if self.partial:
             self.partial.stop()
             self.partial = None
-        t = time.monotonic()
+        self.sig_state.emit("transcribing", "")
+        # Nachlauf/Stopp/Trim laufen im Worker, damit die UI nicht kurz einfriert.
+        threading.Thread(target=self._finish_audio, daemon=True).start()
+
+    def _finish_audio(self):
+        time.sleep(TAIL_PAD_MS / 1000.0)        # Nachlauf: letztes Wort nicht abschneiden
         self.rec.stop()
+        if self.cfg.beep:
+            beep.stop()
         self.ducker.restore()                   # Musik/Ton wiederherstellen
-        dlog("on_finish: rec.stop %.2fs" % (time.monotonic() - t))
         data = self.rec.raw_bytes()
+        trim = int(RATE * SAMPLE_BYTES * LEAD_TRIM_MS / 1000)
+        trim -= trim % SAMPLE_BYTES
+        if len(data) > trim + 8000:             # Vorlauf (Einschwingen/Ton) verwerfen
+            data = data[trim:]
         if len(data) < 8000:
             self.sig_state.emit("ready", "")
             return
-        self.sig_state.emit("transcribing", "")
-        threading.Thread(target=self._transcribe, args=(data,), daemon=True).start()
+        self._transcribe(data)
 
     def _transcribe(self, data):
         # Fehler hier liefen früher ins Leere: der Daemon-Thread starb leise

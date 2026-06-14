@@ -224,6 +224,8 @@ say "6/8  Quassel installieren"
 # ----------------------------------------------------------------------------
 rm -rf "$LIB/quassel"
 cp -r "$SRC/quassel" "$LIB/quassel"
+rm -rf "$LIB/assets"
+cp -r "$SRC/assets" "$LIB/assets"        # Icon-Fallback + Ton-Dateien (beep)
 install -m 755 "$SRC/bin/quasseld" "$SRC/bin/quassel-type" "$SRC/bin/quassel-pill" \
                "$SRC/bin/quassel-ctl" "$BIN/"
 mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/share/applications" \

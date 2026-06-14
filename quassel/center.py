@@ -383,6 +383,11 @@ class Center(QMainWindow):
         self.mute_combo.currentIndexChanged.connect(self.save_settings)
         self.labeled_row(tr("mute_label"), self.mute_combo, g)
         self.desc(tr("mute_hint"), g)
+        self.beep_chk = QCheckBox(tr("beep_enable"))
+        self.beep_chk.setChecked(self.cfg.beep)
+        self.beep_chk.toggled.connect(self.save_settings)
+        g.addWidget(self.beep_chk)
+        self.desc(tr("beep_hint"), g)
 
         lay.addStretch(1)
         note = QLabel(tr("close_note"))
@@ -787,6 +792,7 @@ class Center(QMainWindow):
             ("pill", "show_preview"): str(self.pill_preview.isChecked()).lower(),
             ("hotkey", "chord"): self.chord.currentData(),
             ("behavior", "mute_while_dictating"): self.mute_combo.currentData(),
+            ("behavior", "beep"): str(self.beep_chk.isChecked()).lower(),
             ("behavior", "text_replace"): str(self.replace_on.isChecked()).lower(),
             ("behavior", "stats_enabled"): str(self.stats_on.isChecked()).lower(),
             ("speech", "language"): self.lang.currentData(),

@@ -104,6 +104,22 @@ def send_enter():
     subprocess.run(["ydotool", "key", f"{KEY_ENTER}:1", f"{KEY_ENTER}:0"], check=False)
 
 
+def mic_is_bluetooth(mic="default"):
+    """True, wenn die aktive Aufnahmequelle ein Bluetooth-Gerät ist (bluez).
+
+    BT-Headsets/Earbuds (AirPods etc.) schalten beim Mikrofonstart von A2DP auf
+    HFP — das kostet Zeit (Anfang wird abgeschnitten) und liefert mageren Ton.
+    Wird genutzt, um Vorlauf/Nachlauf großzügiger zu wählen."""
+    try:
+        if mic and mic != "default":
+            return "bluez" in mic.lower()
+        r = subprocess.run(["pactl", "get-default-source"], capture_output=True,
+                           text=True, timeout=2, check=False)
+        return "bluez" in r.stdout.lower()
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def notify(text, ms=4000):
     subprocess.run(
         ["notify-send", "-a", "Quassel", "-t", str(ms),

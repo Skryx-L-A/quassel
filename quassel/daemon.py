@@ -15,15 +15,15 @@ import sys
 import threading
 import time
 
-from . import (aimodes, config, i18n, learn, progmode, stats, textproc,
+from . import (aimodes, beep, config, i18n, learn, progmode, stats, textproc,
                textreplace, vad, wakeword, whisperclient)
 from .mediacontrol import AudioDucker
 from .streaming import StreamTyper
 from .audio import RATE, SAMPLE_BYTES, Recorder, wav_from_raw
 from .config import CHORDS
 from .i18n import tr
-from .platform_linux import (notify, paste, send_backspaces, send_enter,
-                             type_chunk, streaming_begin, streaming_restore)
+from .platform_linux import (mic_is_bluetooth, notify, paste, send_backspaces,
+                             send_enter, type_chunk, streaming_begin, streaming_restore)
 from .state import PARTWAV, WAV, state_set
 
 EVENT_FORMAT = "llHHi"
@@ -39,6 +39,11 @@ PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
 # Eigene Roh-/WAV-Dateien für den Wake-Listener (getrennt vom Tastatur-Pfad)
 WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
 WAKE_WAV = os.path.join(os.path.dirname(WAV), "wake.wav")
+
+# Anfang verwerfen (Mikro-Einschwingen / Start-Ton) und Ende puffern (nicht
+# abschneiden). Bei Bluetooth großzügiger — Profilwechsel frisst Anfang/Ende.
+LEAD_TRIM_MS, LEAD_TRIM_BT_MS = 80, 400
+TAIL_PAD_MS, TAIL_PAD_BT_MS = 200, 350
 
 
 def log(msg):
@@ -107,6 +112,7 @@ class Daemon:
         self._clip_backup = None
         self.ducker = AudioDucker()  # Musik pausieren / Ton stummschalten beim Diktieren
         self.wake = None             # WakeListener-Thread (nur wenn Wake-Word an)
+        self._bt = False             # ist die aktive Aufnahmequelle Bluetooth?
 
     # ------------------------------------------------------------- Aufnahme
     def start_recording(self):
@@ -115,7 +121,10 @@ class Daemon:
         if not self.rec.start(self.cfg.mic):
             notify("Fehler: pw-record/parecord fehlt")
             return False
+        self._bt = mic_is_bluetooth(self.cfg.mic)
         self.ducker.apply(self.cfg.mute_mode)
+        if self.cfg.beep:
+            beep.start()                 # aufsteigender Ton: jetzt sprechen
         self.streamer = None
         self.partial = PartialLoop(self.rec, self.cfg, self)
         self.partial.start()
@@ -144,6 +153,8 @@ class Daemon:
             streaming_restore(self._clip_backup)
             self.streamer = None
         self.rec.stop()
+        if self.cfg.beep:
+            beep.stop()
         self.ducker.restore()
         state_set("idle")
         notify("✖ " + tr(reason_key))
@@ -153,9 +164,20 @@ class Daemon:
         if self.partial:
             self.partial.stop()
             self.partial = None
+        # Nachlauf: kurz weiter aufnehmen, damit das letzte Wort nicht abschneidet
+        # (Bluetooth braucht mehr). Dann stoppen + Stopp-Ton.
+        time.sleep((TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS) / 1000.0)
         self.rec.stop()
+        if self.cfg.beep:
+            beep.stop()
         self.ducker.restore()
         data = self.rec.raw_bytes()
+        # Vorlauf verwerfen (Mikro-Einschwingen / Start-Ton / BT-Profilwechsel),
+        # aber nur wenn danach genug Audio übrig bleibt.
+        trim = int(RATE * SAMPLE_BYTES * (LEAD_TRIM_BT_MS if self._bt else LEAD_TRIM_MS) / 1000)
+        trim -= trim % SAMPLE_BYTES
+        if len(data) > trim + 8000:
+            data = data[trim:]
         if len(data) < 8000:  # < ~0,25 s Audio
             state_set("idle")
             notify(tr("too_short"))

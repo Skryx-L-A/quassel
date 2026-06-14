@@ -98,6 +98,8 @@ class Cfg:
         self.text_replace = p.getboolean("behavior", "text_replace", fallback=True)
         # Lokale Nutzungsstatistik sammeln (nur auf diesem PC)
         self.stats_enabled = p.getboolean("behavior", "stats_enabled", fallback=True)
+        # Kurzer Ton bei Aufnahme-Start/-Ende (Standard an)
+        self.beep = p.getboolean("behavior", "beep", fallback=True)
         # Programmier-Diktat: gesprochene Symbole/Bezeichner in Code wandeln
         self.programmer_mode = p.getboolean("speech", "programmer_mode", fallback=False)
         # Auffällige Fachwörter/Namen automatisch ins Wörterbuch lernen
