@@ -31,3 +31,19 @@ jobs:
         run: python3 tests/test_streaming.py
       - name: Hardware model-selection tests (shared Linux/Windows logic)
         run: python3 tests/test_hwdetect.py
+      - name: Media-control ducking tests
+        run: python3 tests/test_mediacontrol.py
+      - name: VAD / silence-detector tests
+        run: python3 tests/test_vad.py
+      - name: Text-replacement tests
+        run: python3 tests/test_textreplace.py
+      - name: Programmer-mode tests
+        run: python3 tests/test_progmode.py
+      - name: Usage-statistics tests
+        run: python3 tests/test_stats.py
+      - name: Update-check tests
+        run: python3 tests/test_updatecheck.py
+      - name: Audio-file transcription tests
+        run: python3 tests/test_transcribe_file.py
+      - name: Wake-word tests
+        run: python3 tests/test_wakeword.py
