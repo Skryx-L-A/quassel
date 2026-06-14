@@ -49,5 +49,7 @@ jobs:
         run: python3 tests/test_learn.py
       - name: Text post-processing tests (commands, punctuation)
         run: python3 tests/test_textproc.py
+      - name: Whisper-client argument tests (mixed language)
+        run: python3 tests/test_whisperclient.py
       - name: Wake-word tests
         run: python3 tests/test_wakeword.py

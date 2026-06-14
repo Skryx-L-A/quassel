@@ -37,16 +37,35 @@ def ensure_server():
     return False
 
 
-def transcribe(wavpath, cfg, timeout=120):
-    """Transkribiert eine WAV-Datei; None bei Fehler."""
+# Zweisprachiger Anstoß für den "mixed"-Modus: primt das Modell darauf,
+# englische Begriffe in deutscher Rede englisch zu lassen (Code-Switching).
+MIXED_PRIMER = "Das Meeting ist um 3 PM. Let's go - schick mir das Update."
+
+
+def build_inference_args(wavpath, cfg, words, timeout=120):
+    """curl-Argumente für /inference bauen. Sprache:
+      auto   -> automatische Erkennung (kein language-Feld)
+      mixed  -> automatische Erkennung + zweisprachiger Prompt-Anstoß (#23)
+      de/en  -> feste Sprache."""
     args = ["curl", "-fsS", "-m", str(timeout), SERVER + "/inference",
             "-F", f"file=@{wavpath}",
             "-F", "response_format=text", "-F", "temperature=0.0"]
-    if cfg.language != "auto":
-        args += ["-F", f"language={cfg.language}"]
-    words = config.dictionary_words()
+    lang = getattr(cfg, "language", "auto")
+    if lang not in ("auto", "mixed"):
+        args += ["-F", f"language={lang}"]
+    prompt_bits = []
+    if lang == "mixed":
+        prompt_bits.append(MIXED_PRIMER)
     if words:
-        args += ["-F", "prompt=" + ", ".join(words[:80])]
+        prompt_bits.append(", ".join(words[:80]))
+    if prompt_bits:
+        args += ["-F", "prompt=" + " ".join(prompt_bits)]
+    return args
+
+
+def transcribe(wavpath, cfg, timeout=120):
+    """Transkribiert eine WAV-Datei; None bei Fehler."""
+    args = build_inference_args(wavpath, cfg, config.dictionary_words(), timeout)
     r = subprocess.run(args, capture_output=True, text=True, check=False,
                        encoding="utf-8", errors="replace", **NOWIN)
     return r.stdout if r.returncode == 0 else None
