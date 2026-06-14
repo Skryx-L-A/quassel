@@ -40,10 +40,13 @@ PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
 WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
 WAKE_WAV = os.path.join(os.path.dirname(WAV), "wake.wav")
 
-# Anfang verwerfen (Mikro-Einschwingen / Start-Ton) und Ende puffern (nicht
-# abschneiden). Bei Bluetooth großzügiger — Profilwechsel frisst Anfang/Ende.
-LEAD_TRIM_MS, LEAD_TRIM_BT_MS = 80, 400
-TAIL_PAD_MS, TAIL_PAD_BT_MS = 200, 350
+# Vorlauf verwerfen + Ende puffern. WICHTIG: läuft VAD (serverseitig), entfernt
+# es Stille/BT-Ramp am Anfang selbst — dann NUR unseren eigenen Start-Ton
+# wegschneiden (sonst doppelt geschnitten -> erstes Wort weg). Ohne VAD den
+# BT-Profilwechsel-Müll am Anfang großzügig trimmen.
+LEAD_TRIM_MS = 160            # nur der Start-Ton (mit VAD)
+LEAD_TRIM_NOVAD_BT_MS = 400   # ohne VAD: BT-Ramp am Anfang
+TAIL_PAD_MS, TAIL_PAD_BT_MS = 250, 450
 
 
 def log(msg):
@@ -113,6 +116,7 @@ class Daemon:
         self.ducker = AudioDucker()  # Musik pausieren / Ton stummschalten beim Diktieren
         self.wake = None             # WakeListener-Thread (nur wenn Wake-Word an)
         self._bt = False             # ist die aktive Aufnahmequelle Bluetooth?
+        self._vad = False            # läuft serverseitig VAD? (dann Vorlauf nicht doppelt trimmen)
 
     # ------------------------------------------------------------- Aufnahme
     def start_recording(self):
@@ -122,6 +126,7 @@ class Daemon:
             notify("Fehler: pw-record/parecord fehlt")
             return False
         self._bt = mic_is_bluetooth(self.cfg.mic)
+        self._vad = bool(config.read_serverenv().get("VAD_MODEL"))
         self.ducker.apply(self.cfg.mute_mode)
         if self.cfg.beep:
             beep.start()                 # aufsteigender Ton: jetzt sprechen
@@ -172,12 +177,21 @@ class Daemon:
             beep.stop()
         self.ducker.restore()
         data = self.rec.raw_bytes()
-        # Vorlauf verwerfen (Mikro-Einschwingen / Start-Ton / BT-Profilwechsel),
-        # aber nur wenn danach genug Audio übrig bleibt.
-        trim = int(RATE * SAMPLE_BYTES * (LEAD_TRIM_BT_MS if self._bt else LEAD_TRIM_MS) / 1000)
+        raw_len = len(data)
+        # Vorlauf verwerfen: mit VAD nur den eigenen Start-Ton (VAD macht den Rest
+        # — sonst würde das erste Wort doppelt weggeschnitten); ohne VAD bei BT
+        # den Profilwechsel-Müll großzügig.
+        if self._vad:
+            trim_ms = LEAD_TRIM_MS
+        else:
+            trim_ms = LEAD_TRIM_NOVAD_BT_MS if self._bt else LEAD_TRIM_MS
+        trim = int(RATE * SAMPLE_BYTES * trim_ms / 1000)
         trim -= trim % SAMPLE_BYTES
         if len(data) > trim + 8000:
             data = data[trim:]
+        log("dict: bt=%s vad=%s rec=%.2fs trim=%dms pad=%dms" % (
+            self._bt, self._vad, raw_len / (RATE * SAMPLE_BYTES), trim_ms,
+            TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS))
         if len(data) < 8000:  # < ~0,25 s Audio
             state_set("idle")
             notify(tr("too_short"))
