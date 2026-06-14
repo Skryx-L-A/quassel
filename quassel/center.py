@@ -21,8 +21,8 @@ from PySide6.QtWidgets import (
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import (__version__, config, i18n, stats, transcribe_file, updatecheck,
-               whisperclient)
+from . import (__version__, ai, aimodes, config, i18n, stats, transcribe_file,
+               updatecheck, whisperclient)
 from .audio import RATE
 from .config import MODEL_URL, MODELS
 from .i18n import tr
@@ -174,6 +174,8 @@ class Bridge(QObject):
     model_done = Signal(str)
     file_done = Signal(str, str)      # (Statuszeile, Ergebnistext)
     update_done = Signal(dict)        # updatecheck.check()-Resultat
+    ai_models = Signal(dict)          # {"available":bool,"models":[...]}
+    ai_test_done = Signal(str)        # Ergebnis des KI-Tests
 
 
 class Center(QMainWindow):
@@ -190,6 +192,8 @@ class Center(QMainWindow):
         self.bridge.model_done.connect(self.on_model_done)
         self.bridge.file_done.connect(self.on_file_done)
         self.bridge.update_done.connect(self.on_update_done)
+        self.bridge.ai_models.connect(self.on_ai_models)
+        self.bridge.ai_test_done.connect(self.on_ai_test_done)
         self.nowheel = NoWheel(self)
         self._loading = True
         self.build()
@@ -307,6 +311,7 @@ class Center(QMainWindow):
                              ("nav_dict", self.page_dict),
                              ("nav_replace", self.page_replace),
                              ("nav_file", self.page_file),
+                             ("nav_ai", self.page_ai),
                              ("nav_history", self.page_history),
                              ("nav_system", self.page_system)]:
             QListWidgetItem(tr(key), self.sidebar)
@@ -531,6 +536,134 @@ class Center(QMainWindow):
         lay.addStretch(1)
         return scroll
 
+    # --------------------------------------------------------- Seite: KI (Ollama)
+    def _fill_ai_modes(self, combo):
+        combo.clear()
+        for key in aimodes.builtin_keys():
+            combo.addItem(tr("ai_mode_" + key), key)
+        for name in aimodes.parse_custom(config.ai_modes_text()):
+            combo.addItem(name, name)
+
+    def page_ai(self):
+        scroll, lay = self.page()
+        g = self.group(tr("sec_ai"), lay)
+        self.ai_on = QCheckBox(tr("ai_enable"))
+        self.ai_on.setChecked(self.cfg.ai_enabled)
+        self.ai_on.toggled.connect(self.save_settings)
+        g.addWidget(self.ai_on)
+        self.desc(tr("ai_hint"), g)
+        self.ai_endpoint = QLineEdit(self.cfg.ai_endpoint)
+        self.ai_endpoint.setPlaceholderText(config.OLLAMA_DEFAULT)
+        self.ai_endpoint.editingFinished.connect(self.save_settings)
+        self.labeled_row(tr("ai_endpoint"), self.ai_endpoint, g)
+        mrow = QHBoxLayout()
+        mrow.addWidget(QLabel(tr("ai_model")))
+        self.ai_model = self.guard(QComboBox())
+        self.ai_model.setEditable(True)
+        if self.cfg.ai_model:
+            self.ai_model.addItem(self.cfg.ai_model, self.cfg.ai_model)
+        self.ai_model.currentTextChanged.connect(self.save_settings)
+        mrow.addWidget(self.ai_model, 1)
+        refresh = QPushButton(tr("ai_refresh"))
+        refresh.clicked.connect(self.on_ai_refresh)
+        mrow.addWidget(refresh)
+        g.addLayout(mrow)
+        self.ai_status = QLabel()
+        self.ai_status.setObjectName("desc")
+        self.ai_status.setWordWrap(True)
+        g.addWidget(self.ai_status)
+        self.ai_post = QCheckBox(tr("ai_post_enable"))
+        self.ai_post.setChecked(self.cfg.ai_post_process)
+        self.ai_post.toggled.connect(self.save_settings)
+        g.addWidget(self.ai_post)
+        self.ai_mode = self.guard(QComboBox())
+        self._fill_ai_modes(self.ai_mode)
+        self.select_data(self.ai_mode, self.cfg.ai_post_mode)
+        self.ai_mode.currentIndexChanged.connect(self.save_settings)
+        self.labeled_row(tr("ai_post_mode"), self.ai_mode, g)
+        self.ai_voice = QCheckBox(tr("ai_voice_enable"))
+        self.ai_voice.setChecked(self.cfg.ai_voice_modes)
+        self.ai_voice.toggled.connect(self.save_settings)
+        g.addWidget(self.ai_voice)
+        self.desc(tr("ai_voice_hint"), g)
+        trow = QHBoxLayout()
+        testb = QPushButton(tr("ai_test"))
+        testb.clicked.connect(self.on_ai_test)
+        trow.addWidget(testb)
+        trow.addStretch(1)
+        g.addLayout(trow)
+        self.ai_test_lbl = QLabel()
+        self.ai_test_lbl.setObjectName("desc")
+        self.ai_test_lbl.setWordWrap(True)
+        g.addWidget(self.ai_test_lbl)
+
+        g = self.group(tr("sec_ai_modes"), lay)
+        self.desc(tr("ai_modes_hint"), g)
+        self.ai_modes_edit = QPlainTextEdit(config.ai_modes_text())
+        self.ai_modes_timer = QTimer(self)
+        self.ai_modes_timer.setSingleShot(True)
+        self.ai_modes_timer.timeout.connect(self._save_ai_modes)
+        self.ai_modes_edit.textChanged.connect(lambda: self.ai_modes_timer.start(800))
+        g.addWidget(self.ai_modes_edit)
+        lay.addStretch(1)
+        if self.cfg.ai_enabled:
+            QTimer.singleShot(200, self.on_ai_refresh)
+        return scroll
+
+    def _save_ai_modes(self):
+        config.ai_modes_save(self.ai_modes_edit.toPlainText())
+        cur = self.ai_mode.currentData()
+        self._fill_ai_modes(self.ai_mode)
+        self.select_data(self.ai_mode, cur)
+
+    def on_ai_refresh(self):
+        self.ai_status.setText(tr("ai_testing"))
+        ep = self.ai_endpoint.text().strip() or config.OLLAMA_DEFAULT
+
+        def run():
+            avail = ai.available(ep)
+            models = ai.list_models(ep) if avail else []
+            self.bridge.ai_models.emit({"available": avail, "models": models})
+        threading.Thread(target=run, daemon=True).start()
+
+    def on_ai_models(self, result):
+        models = result.get("models", [])
+        cur = self.ai_model.currentText().strip()
+        self.ai_model.blockSignals(True)
+        self.ai_model.clear()
+        for m in models:
+            self.ai_model.addItem(m, m)
+        if cur and cur not in models:
+            self.ai_model.insertItem(0, cur, cur)
+        idx = self.ai_model.findText(cur) if cur else -1
+        self.ai_model.setCurrentIndex(idx if idx >= 0 else 0)
+        self.ai_model.blockSignals(False)
+        if models:
+            self.ai_status.setText("")
+        else:
+            self.ai_status.setText(tr("ai_no_models") if result.get("available")
+                                   else tr("ai_unavailable"))
+
+    def on_ai_test(self):
+        self.ai_test_lbl.setText(tr("ai_testing"))
+        model = self.ai_model.currentText().strip()
+        ep = self.ai_endpoint.text().strip() or config.OLLAMA_DEFAULT
+        timeout = self.cfg.ai_timeout
+        sample = "um so like we should uh ship it on friday yeah"
+        system = aimodes.system_for("cleanup")
+
+        def run():
+            out = ai.generate(sample, model=model, system=system,
+                              endpoint=ep, timeout=timeout)
+            self.bridge.ai_test_done.emit(out or "")
+        threading.Thread(target=run, daemon=True).start()
+
+    def on_ai_test_done(self, out):
+        if out:
+            self.ai_test_lbl.setText("✓ " + tr("ai_test_ok", text=out[:120]))
+        else:
+            self.ai_test_lbl.setText("✕ " + tr("ai_test_fail"))
+
     # ----------------------------------------------------- Seite: Verlauf
     def page_history(self):
         scroll, lay = self.page()
@@ -677,6 +810,12 @@ class Center(QMainWindow):
             ("wakeword", "phrase"): self.wake_phrase.text().strip() or config.WAKEWORD_DEFAULT,
             ("history", "enabled"): str(self.hist_enable.isChecked()).lower(),
             ("system", "update_check"): str(self.update_startup.isChecked()).lower(),
+            ("ai", "enabled"): str(self.ai_on.isChecked()).lower(),
+            ("ai", "endpoint"): self.ai_endpoint.text().strip() or config.OLLAMA_DEFAULT,
+            ("ai", "model"): self.ai_model.currentText().strip(),
+            ("ai", "post_process"): str(self.ai_post.isChecked()).lower(),
+            ("ai", "post_mode"): self.ai_mode.currentData() or "cleanup",
+            ("ai", "voice_modes"): str(self.ai_voice.isChecked()).lower(),
             ("ui", "language"): self.uilang.currentData(),
         })
         self.cfg.reload(force=True)
