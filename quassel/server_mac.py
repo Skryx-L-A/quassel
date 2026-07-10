@@ -29,12 +29,27 @@ def _repo_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def bundled_server_bin():
+    """whisper-server im .app-Bundle (Contents/Resources/whisper/), wenn wir
+    als PyInstaller-App laufen — sonst None. sys.executable ist dann
+    .../Quassel.app/Contents/MacOS/Quassel."""
+    if not getattr(sys, "frozen", False):
+        return None
+    contents = os.path.dirname(os.path.dirname(os.path.abspath(sys.executable)))
+    cand = os.path.join(contents, "Resources", "whisper", "whisper-server")
+    return cand if os.access(cand, os.X_OK) else None
+
+
 def server_bin():
-    """Pfad zum whisper-server-Binary: server.env, sonst der vendor-Build."""
+    """Pfad zum whisper-server-Binary: server.env, sonst das Bundle (gefroren),
+    sonst der vendor-Build (Entwicklung aus dem Repo)."""
     env = config.read_serverenv()
     cand = env.get("SERVER_BIN", "")
     if cand and os.access(cand, os.X_OK):
         return cand
+    bundled = bundled_server_bin()
+    if bundled:
+        return bundled
     vendor = os.path.join(_repo_root(), "vendor", "whisper.cpp",
                           "build", "bin", "whisper-server")
     return vendor if os.access(vendor, os.X_OK) else None

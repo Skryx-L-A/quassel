@@ -10,6 +10,7 @@
 Beenden über das Menü oder SIGINT/SIGTERM räumt beide Kindprozesse auf.
 """
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -19,13 +20,50 @@ from .state import state_read
 
 DAEMON_STOP_TIMEOUT = 5
 
+# Finder startet Apps mit minimalem PATH (/usr/bin:/bin:...) — ohne die
+# Homebrew-Pfade findet shutil.which("ffmpeg") nichts (audio.py nimmt über
+# ffmpeg/AVFoundation auf). ffmpeg wird bewusst NICHT mitgebündelt.
+BREW_PATHS = ["/opt/homebrew/bin", "/usr/local/bin"]
+FFMPEG_HINT = ("ffmpeg fehlt — ohne ffmpeg keine Aufnahme.\n"
+               "Installieren: brew install ffmpeg")
+
+
+def frozen():
+    """True im PyInstaller-Bundle (dann ist sys.executable die App selbst)."""
+    return bool(getattr(sys, "frozen", False))
+
 
 def daemon_command():
+    if frozen():
+        return [sys.executable, "daemon"]
     return [sys.executable, "-m", "quassel.daemon"]
 
 
 def center_command():
+    if frozen():
+        return [sys.executable, "center"]
     return [sys.executable, "-m", "quassel.center"]
+
+
+def augment_path():
+    """Homebrew-Verzeichnisse an PATH anhängen (vor dem Start der Kinder,
+    damit Daemon/ffmpeg sie erben). Idempotent."""
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    extra = [p for p in BREW_PATHS if p not in parts and os.path.isdir(p)]
+    if extra:
+        os.environ["PATH"] = os.pathsep.join(parts + extra)
+
+
+def check_ffmpeg(tray):
+    """ffmpeg vorhanden? Sonst einmalig per Tray-Notification den
+    brew-Hinweis zeigen. Die App läuft weiter (Server + UI gehen auch ohne)."""
+    if shutil.which("ffmpeg"):
+        return True
+    if tray is not None:
+        tray.showMessage("Quassel", FFMPEG_HINT)
+    print("mac_app: " + FFMPEG_HINT.replace("\n", " "),
+          file=sys.stderr, flush=True)
+    return False
 
 
 class MacApp:
@@ -93,9 +131,11 @@ def main():
     # (das Linux-Wrapper-Skript "quassel-type" gibt es hier nicht).
     pill_qt.CENTER_CMD = center_command()
 
+    augment_path()
     mac = MacApp(app)
     mac.start()
     mac.tray = traymac.start_tray(app, mac.open_center, mac.quit)
+    check_ffmpeg(mac.tray)
     mac.pill = pill_qt.Pill()
     mac.pill.show()
 
