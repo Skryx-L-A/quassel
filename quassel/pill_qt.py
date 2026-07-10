@@ -69,6 +69,10 @@ class Pill(QWidget):
         super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
+        if sys.platform == "darwin":
+            # macOS versteckt Qt.Tool-Fenster, sobald die App inaktiv ist —
+            # eine Menüleisten-App ist nie aktiv, die Pille wäre unsichtbar.
+            self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.cfg = config.Cfg()
         self.text = ""
         self.last_ts = None

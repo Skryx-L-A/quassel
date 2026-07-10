@@ -91,8 +91,14 @@ class MacApp:
     def _start_daemon(self):
         # Eigene Prozessgruppe: beim Shutdown wird die ganze Gruppe beendet
         # (erwischt auch Kinder des Daemons wie ffmpeg).
-        self.daemon = subprocess.Popen(daemon_command(), cwd=self._repo,
-                                       start_new_session=True)
+        # stderr/stdout in Logdatei: bei Start über Finder/open ginge die
+        # Ausgabe (u.a. fehlende TCC-Freigaben) sonst verloren.
+        log_dir = os.path.expanduser("~/Library/Logs/Quassel")
+        os.makedirs(log_dir, exist_ok=True)
+        with open(os.path.join(log_dir, "daemon.log"), "ab") as log_f:
+            self.daemon = subprocess.Popen(daemon_command(), cwd=self._repo,
+                                           start_new_session=True,
+                                           stdout=log_f, stderr=log_f)
         self.enabled = True
 
     def _stop_daemon(self):
