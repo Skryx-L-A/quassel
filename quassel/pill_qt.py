@@ -89,6 +89,34 @@ class Pill(QWidget):
         self.resize_to_cfg()
         self.setVisible(self.cfg.pill_enabled)
 
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if sys.platform == "darwin":
+            self._mac_float_everywhere()
+
+    def _mac_float_everywhere(self):
+        """Pille auf JEDEM Space und über Vollbild-Apps zeigen. Qt setzt nur
+        das normale Floating-Level; erst CanJoinAllSpaces+FullScreenAuxiliary
+        am NSWindow lassen sie beim Space-/Fenster-Wechsel mitkommen."""
+        if QApplication.platformName() != "cocoa":
+            return          # z.B. offscreen in Tests: winId ist kein NSView
+        try:
+            import objc
+            from AppKit import (NSStatusWindowLevel,
+                                NSWindowCollectionBehaviorCanJoinAllSpaces,
+                                NSWindowCollectionBehaviorFullScreenAuxiliary,
+                                NSWindowCollectionBehaviorStationary)
+            view = objc.objc_object(c_void_p=int(self.winId()))
+            win = view.window()
+            win.setCollectionBehavior_(
+                NSWindowCollectionBehaviorCanJoinAllSpaces
+                | NSWindowCollectionBehaviorFullScreenAuxiliary
+                | NSWindowCollectionBehaviorStationary)
+            win.setLevel_(NSStatusWindowLevel)
+        except Exception as e:  # noqa: BLE001 — Pille darf nie am Overlay sterben
+            print(f"pill: NSWindow-Verhalten nicht setzbar: {e}",
+                  file=sys.stderr, flush=True)
+
     def _scale(self):
         return max(0.6, min(2.0, self.cfg.pill_scale))
 

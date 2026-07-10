@@ -54,7 +54,7 @@ coll = COLLECT(exe, a.binaries, a.datas, name="Quassel")
 app = BUNDLE(
     coll,
     name="Quassel.app",
-    icon=None,
+    icon=os.path.join(repo, "packaging", "macos", "quassel.icns"),
     bundle_identifier="de.skryx.quassel",
     info_plist={
         "CFBundleName": "Quassel",
