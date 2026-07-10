@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Native macOS support (Apple Silicon)**: menu-bar app with the familiar pill overlay
+  (visible on every Space and over fullscreen apps), `Ctrl+Cmd` chord dictation
+  (hold = push-to-talk, double-tap = hands-free), Metal-accelerated whisper.cpp,
+  settings window with on/off toggle, login-item autostart, media auto-pause.
+  Build from source via `scripts/build_mac_app.sh` (see README); no signed download yet.
 - Quantized Whisper models (q5) in the model picker (`base-q5_1`, `small-q5_1`, `medium-q5_0`,
   `large-v3-turbo-q5_0`) — mainly smaller downloads / less RAM (CPU speed gain is small).
 - Voice Activity Detection (Silero VAD): skips silence and stops phantom text on silence

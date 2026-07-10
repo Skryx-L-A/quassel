@@ -9,8 +9,9 @@ best commercial dictation apps, but **100 % offline and open source**: speech
 recognition runs locally via [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
 No cloud, no account, no subscription, no telemetry.
 
-**Linux** and **Windows** (Windows build is fresh — see
-[windows/build.md](windows/build.md)). Fully offline, no cloud, no account.
+**Linux**, **Windows** and **macOS** (Windows build is fresh — see
+[windows/build.md](windows/build.md); macOS is build-from-source for now).
+Fully offline, no cloud, no account.
 
 <p align="center"><img src="assets/screenshots/showcase.gif" alt="Quassel typing dictated text into an editor while the waveform pill listens" width="620"></p>
 
@@ -46,6 +47,11 @@ record → transcribe locally → paste.
 - **Windows 10/11** — single-exe app (tray + pill + global hotkey); first launch
   downloads whisper.cpp + model. Build the installer with
   [windows/build.md](windows/build.md).
+- **macOS (Apple Silicon)** — menu-bar app with pill overlay and Metal-accelerated
+  whisper.cpp; hold `Ctrl+Cmd` to dictate. Build from source:
+  `scripts/build_mac_app.sh` produces `dist/Quassel.app` (needs `brew install ffmpeg`;
+  grant Input Monitoring + Accessibility on first launch). No signed/notarized
+  download yet — build locally.
 
 ## Requirements
 

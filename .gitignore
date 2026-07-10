@@ -6,3 +6,8 @@ TASKS.md
 .claude/
 .netlify/
 vendor/
+.DS_Store
+build/
+dist/
+bench_samples*/
+MACOS-PORT-BRIEF.md
