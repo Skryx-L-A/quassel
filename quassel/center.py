@@ -7,7 +7,9 @@ Nur eine Fernbedienung: Fenster schließen beendet Quassel nicht.
 Einstellungen wirken sofort (der Daemon liest die Config live).
 """
 import os
+import plistlib
 import subprocess
+import sys
 import threading
 import time
 import wave
@@ -91,14 +93,19 @@ QLabel#desc {{ color: palette(placeholder-text); }}
 
 
 IS_WINDOWS = os.name == "nt"
+IS_MAC = sys.platform == "darwin"
 
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
+LAUNCH_AGENT_LABEL = "de.skryx.quassel"
+LAUNCH_AGENT_PLIST = os.path.expanduser(
+    "~/Library/LaunchAgents/" + LAUNCH_AGENT_LABEL + ".plist")
+
 
 def sysctl(*args):
-    if IS_WINDOWS:
-        class _R:  # auf Windows gibt es kein systemd; Tray-App steuert alles
+    if IS_WINDOWS or IS_MAC:
+        class _R:  # kein systemd auf Windows/macOS; Tray-/Menüleisten-App steuert alles
             returncode = 1
         return _R()
     return subprocess.run(["systemctl", "--user", *args], check=False,
@@ -106,8 +113,10 @@ def sysctl(*args):
 
 
 def daemon_active():
-    if IS_WINDOWS:
-        return True     # das Fenster läuft im Tray-App-Prozess selbst
+    if IS_WINDOWS or IS_MAC:
+        # Windows: Fenster läuft im Tray-App-Prozess selbst. macOS: das
+        # Zentrum wird von der laufenden Menüleisten-App geöffnet.
+        return True
     return sysctl("is-active", "--quiet", "quasseld").returncode == 0
 
 
@@ -120,12 +129,58 @@ def autostart_enabled():
             return True
         except OSError:
             return False
+    if IS_MAC:
+        return os.path.exists(LAUNCH_AGENT_PLIST)
     return sysctl("is-enabled", "--quiet", "quasseld").returncode == 0
+
+
+def mac_app_path():
+    """Pfad der laufenden .app (gefroren liegt sys.executable in
+    Contents/MacOS); None außerhalb eines Bundles."""
+    if not getattr(sys, "frozen", False):
+        return None
+    app = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(sys.executable))))
+    return app if app.endswith(".app") else None
+
+
+def mac_autostart_set(on):
+    """macOS: LaunchAgent unter ~/Library/LaunchAgents schreiben/entfernen
+    und sofort per launchctl bootstrap/bootout an-/abmelden. Gestartet wird
+    über 'open' — das aktiviert eine schon laufende Instanz statt eine
+    zweite zu spawnen."""
+    uid = os.getuid()
+    if on:
+        app = mac_app_path()
+        args = (["/usr/bin/open", app] if app
+                else ["/usr/bin/open", "-a", "Quassel"])
+        plist = {
+            "Label": LAUNCH_AGENT_LABEL,
+            "ProgramArguments": args,
+            "RunAtLoad": True,
+        }
+        os.makedirs(os.path.dirname(LAUNCH_AGENT_PLIST), exist_ok=True)
+        with open(LAUNCH_AGENT_PLIST, "wb") as f:
+            plistlib.dump(plist, f)
+        # Erst abmelden: bootstrap schlägt still fehl, wenn der Agent schon
+        # geladen ist (doppeltes Aktivieren) — bootout macht es idempotent.
+        subprocess.run(["launchctl", "bootout",
+                        f"gui/{uid}/{LAUNCH_AGENT_LABEL}"],
+                       check=False, capture_output=True)
+        subprocess.run(["launchctl", "bootstrap", f"gui/{uid}",
+                        LAUNCH_AGENT_PLIST], check=False, capture_output=True)
+    else:
+        subprocess.run(["launchctl", "bootout",
+                        f"gui/{uid}/{LAUNCH_AGENT_LABEL}"],
+                       check=False, capture_output=True)
+        try:
+            os.remove(LAUNCH_AGENT_PLIST)
+        except FileNotFoundError:
+            pass
 
 
 def autostart_set(on):
     """Windows: Run-Key in der Registry (gleicher Wert wie im Inno-Setup)."""
-    import sys
     import winreg
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
                         winreg.KEY_SET_VALUE) as k:
@@ -145,6 +200,20 @@ def restart_server():
         from .win import server
         server.stop()
         server.start()
+    elif IS_MAC:
+        # Server läuft im Menüleisten-App-Prozess: über kill_orphans (findet
+        # ihn per Binary+Port prozessübergreifend) beenden, kurz auf den
+        # freien Port warten, dann losgelöst neu starten.
+        from . import server_mac
+        server_mac.kill_orphans()
+        for _ in range(20):
+            if not server_mac.port_in_use():
+                break
+            time.sleep(0.15)
+        else:
+            print("restart_server: Port nach 3 s noch belegt — "
+                  "alter Server läuft weiter, kein Neustart", file=sys.stderr)
+        server_mac.start()
     else:
         sysctl("try-restart", "quassel-server")
 
@@ -936,6 +1005,8 @@ class Center(QMainWindow):
     def on_autostart(self, on):
         if IS_WINDOWS:
             autostart_set(on)
+        elif IS_MAC:
+            mac_autostart_set(on)
         else:
             sysctl("enable" if on else "disable", "quasseld")
 
