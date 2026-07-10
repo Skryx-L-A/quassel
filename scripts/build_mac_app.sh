@@ -29,11 +29,18 @@ if ! otool -l "$SERVER" | grep -q 'path @loader_path (offset'; then
     install_name_tool -add_rpath @loader_path "$SERVER"
 fi
 
-# Ad-hoc-Signatur (kein Developer-Account): TCC-Grants (Mikrofon,
-# Bedienungshilfen, Input Monitoring) überleben so Rebuilds besser als
-# komplett unsigniert. install_name_tool hat die Signatur des Servers
-# invalidiert; --force --deep signiert alles neu.
-codesign --force --deep -s - "$APP"
+# Mit stabiler Identität signieren, wenn vorhanden ("Quassel Dev",
+# selbstsigniert im Login-Keychain) — gleicher cdhash über Rebuilds hinweg,
+# TCC-Grants (Mikrofon, Bedienungshilfen, Input Monitoring) überleben so.
+# Fallback: Ad-hoc-Signatur (kein Developer-Account), invalidiert bei jedem
+# Rebuild. install_name_tool hat die Signatur des Servers invalidiert;
+# --force --deep signiert alles neu.
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "Quassel Dev"; then
+    SIGN_ID="Quassel Dev"
+else
+    SIGN_ID="-"
+fi
+codesign --force --deep -s "$SIGN_ID" "$APP"
 codesign --verify --deep "$APP"
 
 echo "OK: $APP"
