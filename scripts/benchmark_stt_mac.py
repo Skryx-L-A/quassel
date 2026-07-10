@@ -66,23 +66,19 @@ def wav_duration_seconds(path: Path) -> float:
 
 def run_timed(cmd: list[str], use_time: bool = True) -> tuple[float, str, int | None]:
     """Run cmd, return (wall_seconds, combined_output, peak_rss_kb_or_None)."""
+    import time
     if use_time and shutil.which("/usr/bin/time"):
+        # Wall time measured in Python: /usr/bin/time's "real" output is
+        # locale-formatted (e.g. "0,49 real" under de_DE) and unsafe to parse.
         full_cmd = ["/usr/bin/time", "-l"] + cmd
+        t0 = time.time()
         proc = subprocess.run(full_cmd, capture_output=True, text=True)
+        wall = time.time() - t0
         out = proc.stdout + proc.stderr
         m = re.search(r"(\d+)\s+maximum resident set size", out)
         peak_kb = int(m.group(1)) // 1024 if m else None
-        m2 = re.search(r"([\d.]+)\s+real", out)
-        wall = float(m2.group(1)) if m2 else None
-        if wall is None:
-            import time
-            t0 = time.time()
-            proc = subprocess.run(cmd, capture_output=True, text=True)
-            wall = time.time() - t0
-            out = proc.stdout + proc.stderr
         return wall, out, peak_kb
     else:
-        import time
         t0 = time.time()
         proc = subprocess.run(cmd, capture_output=True, text=True)
         wall = time.time() - t0
