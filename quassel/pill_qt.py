@@ -27,6 +27,10 @@ RESULT_SHOW_S = 3.0
 # Argv-Liste (kein String): Pfade mit Leerzeichen (z.B. ein Python in einem
 # .app-Bundle) dürfen den Start des Kontrollzentrums nicht brechen.
 CENTER_CMD = os.environ.get("QUASSEL_CENTER_CMD", "quassel-type").split()
+# In-Prozess-Hooks (macOS-Menüleisten-App): Kontrollzentrum/An-Aus laufen dort
+# über die MacApp statt über Kindprozess bzw. systemctl.
+OPEN_CENTER = None
+TOGGLE = None
 
 ICON_PATHS = [
     os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/quassel-voice.svg"),
@@ -199,11 +203,17 @@ class Pill(QWidget):
         # Rechtsklick — sonst beendet ein versehentlicher Klick neben dem Textfeld
         # unter der Pille mitten im Diktat ganz Quassel.
         if ev.button() == Qt.LeftButton:
-            subprocess.Popen(list(CENTER_CMD))
+            if OPEN_CENTER is not None:
+                OPEN_CENTER()
+            else:
+                subprocess.Popen(list(CENTER_CMD))
         elif ev.button() == Qt.RightButton:
             self._toggle()
 
     def _toggle(self):
+        if TOGGLE is not None:
+            TOGGLE()
+            return
         if os.name == "nt" or sys.platform == "darwin":
             return
         if daemon_active():

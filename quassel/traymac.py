@@ -58,7 +58,7 @@ def _create_mic_icon(size=22, dpr=2.0):
 class TrayMenu(QSystemTrayIcon):
     """macOS menu bar tray icon with Quassel status and controls."""
 
-    def __init__(self, app, on_open_center, on_quit):
+    def __init__(self, app, on_open_center, on_quit, on_toggle=None):
         super().__init__(app)
         self.app = app
         self.on_open_center = on_open_center
@@ -73,6 +73,11 @@ class TrayMenu(QSystemTrayIcon):
         self.status_action.setEnabled(False)
 
         self.menu.addSeparator()
+
+        # Toggle on/off (only when the app provides a controller callback)
+        self.toggle_action = None
+        if on_toggle is not None:
+            self.toggle_action = self.menu.addAction("Ausschalten", on_toggle)
 
         # Open control center
         self.menu.addAction("Kontrollzentrum öffnen", self.on_open_center)
@@ -114,20 +119,24 @@ class TrayMenu(QSystemTrayIcon):
             "off": "Aus",
         }
         self.status_action.setText(status_map.get(mode, "Bereit"))
+        if self.toggle_action is not None:
+            self.toggle_action.setText(
+                "Einschalten" if mode == "off" else "Ausschalten")
 
 
-def start_tray(app, on_open_center, on_quit):
+def start_tray(app, on_open_center, on_quit, on_toggle=None):
     """Initialize and show the macOS tray menu.
 
     Args:
         app: QApplication instance
         on_open_center: callable to open the control center
         on_quit: callable to quit the app
+        on_toggle: optional callable to switch dictation on/off
 
     Returns:
         TrayMenu instance (keep reference alive for menu to persist)
     """
-    tray = TrayMenu(app, on_open_center, on_quit)
+    tray = TrayMenu(app, on_open_center, on_quit, on_toggle=on_toggle)
     return tray
 
 

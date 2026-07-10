@@ -85,3 +85,28 @@ def test_mic_icon_is_retina_sharp(qapp):
 def test_icon_is_template_mask(tray):
     # Template-Icon: macOS invertiert es passend zur Menüleiste
     assert tray.icon().isMask() is True
+
+
+def test_without_toggle_callback_no_toggle_action(tray):
+    assert tray.toggle_action is None
+    labels = [a.text() for a in tray.menu.actions() if a.text()]
+    assert "Ausschalten" not in labels and "Einschalten" not in labels
+
+
+def test_toggle_action_fires_and_label_follows_mode(qapp):
+    calls = {"toggle": 0}
+    t = traymac.start_tray(qapp, lambda: None, lambda: None,
+                           on_toggle=lambda: calls.__setitem__(
+                               "toggle", calls["toggle"] + 1))
+    try:
+        assert t.toggle_action.text() == "Ausschalten"
+        t.toggle_action.trigger()
+        assert calls["toggle"] == 1
+        t.set_mode("off")
+        assert t.toggle_action.text() == "Einschalten"
+        t.set_mode("ready")
+        assert t.toggle_action.text() == "Ausschalten"
+        t.set_mode("recording")             # an bleibt an
+        assert t.toggle_action.text() == "Ausschalten"
+    finally:
+        t.hide()

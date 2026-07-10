@@ -249,8 +249,9 @@ class Bridge(QObject):
 
 class Center(QMainWindow):
     def __init__(self, controller=None):
-        """controller: unter Windows die Tray-App (WinApp) im selben Prozess —
-        An/Aus läuft dann über sie statt über systemd."""
+        """controller: unter Windows die Tray-App (WinApp), unter macOS die
+        Menüleisten-App (MacApp) im selben Prozess — An/Aus läuft dann über
+        sie statt über systemd."""
         super().__init__()
         self.controller = controller
         self.cfg = config.Cfg()
@@ -410,8 +411,8 @@ class Center(QMainWindow):
             f"font-weight:600;padding:7px 26px;border:none;border-radius:9px;}}"
             f"QPushButton:hover{{background:{self._accent_hover};}}")
         self.toggle_btn.clicked.connect(self.on_toggle)
-        if IS_WINDOWS and self.controller is None:
-            self.toggle_btn.hide()      # ohne Tray-App nichts zu schalten
+        if (IS_WINDOWS or IS_MAC) and self.controller is None:
+            self.toggle_btn.hide()      # ohne Tray-/Menüleisten-App nichts zu schalten
         row.addWidget(self.toggle_btn)
         g.addLayout(row)
         self.hint = self.desc(tr("hint", chord=self.chord_label()), g)

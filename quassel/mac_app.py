@@ -67,30 +67,84 @@ def check_ffmpeg(tray):
 
 
 class MacApp:
-    """Lebenszyklus der Kindprozesse + Tray/Pille (Qt-Objekte injizierbar)."""
+    """Lebenszyklus der Kindprozesse + Tray/Pille (Qt-Objekte injizierbar).
+
+    Dient dem Kontrollzentrum zugleich als controller (wie WinApp unter
+    Windows): `enabled` + `toggle()` schalten das Diktat an/aus, indem der
+    Daemon-Kindprozess gestoppt/gestartet wird; Tray und Pille laufen mit."""
 
     def __init__(self, app):
         self.app = app
         self.daemon = None
         self.tray = None
         self.pill = None
+        self.enabled = False
+        self._settings = None
         self._down = False
         self._repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def start(self):
         server_mac.kill_orphans()   # Reste aus abgestürzten früheren Läufen
         server_mac.start()
+        self._start_daemon()
+
+    def _start_daemon(self):
         # Eigene Prozessgruppe: beim Shutdown wird die ganze Gruppe beendet
         # (erwischt auch Kinder des Daemons wie ffmpeg).
         self.daemon = subprocess.Popen(daemon_command(), cwd=self._repo,
                                        start_new_session=True)
+        self.enabled = True
+
+    def _stop_daemon(self):
+        if self.daemon is not None:
+            if self.daemon.poll() is None:
+                server_mac.terminate_group(self.daemon,
+                                           timeout=DAEMON_STOP_TIMEOUT)
+            else:
+                self.daemon.wait()      # ernten, falls von selbst gestorben
+        self.daemon = None
+        self.enabled = False
+
+    def toggle(self):
+        """An/Aus für das Kontrollzentrum, Tray-Menü und die Pille: Daemon
+        stoppen bzw. neu starten (der Server läuft weiter — billig im
+        Leerlauf, dafür sofortiges Wiedereinschalten)."""
+        if self.enabled:
+            self._stop_daemon()
+        else:
+            self._start_daemon()
+        self._sync_ui()
+
+    def _sync_ui(self):
+        mode = "ready" if self.enabled else "off"
+        if self.tray is not None:
+            self.tray.set_mode(mode)
+        if self.pill is not None:
+            # pill.on unterdrückt das state.json-Polling, solange aus —
+            # sonst würde die letzte Daemon-Statuszeile "off" überschreiben.
+            self.pill.on = self.enabled
+            self.pill.set_mode(mode)
 
     def open_center(self):
-        subprocess.Popen(center_command(), cwd=self._repo)
+        """Kontrollzentrum IM Prozess öffnen (wie die Windows-Tray-App) —
+        nur so bekommt es den controller und kann an/aus schalten."""
+        try:
+            from .center import Center
+            if self._settings is None:
+                self._settings = Center(controller=self)
+            self._settings.show()
+            self._settings.raise_()
+            self._settings.activateWindow()
+        except Exception:  # noqa: BLE001 — sichtbar machen statt still scheitern
+            import traceback
+            traceback.print_exc()
 
     def sync_tray(self):
         """Tray-Statuszeile aus state.json nachführen (Daemon -> UI)."""
         if self.tray is None:
+            return
+        if not self.enabled:
+            self.tray.set_mode("off")
             return
         st = state_read()
         s = st.get("state", "idle")
@@ -102,13 +156,7 @@ class MacApp:
         if self._down:
             return
         self._down = True
-        if self.daemon is not None:
-            if self.daemon.poll() is None:
-                server_mac.terminate_group(self.daemon,
-                                           timeout=DAEMON_STOP_TIMEOUT)
-            else:
-                self.daemon.wait()      # ernten, falls von selbst gestorben
-        self.daemon = None
+        self._stop_daemon()
         server_mac.stop()
 
     def quit(self):
@@ -127,14 +175,15 @@ def main():
     app.setQuitOnLastWindowClosed(False)   # Menüleisten-App: kein Fenster nötig
     app.setWindowIcon(pill_qt.app_icon())
 
-    # Linksklick auf die Pille öffnet das Kontrollzentrum mit unserem Python
-    # (das Linux-Wrapper-Skript "quassel-type" gibt es hier nicht).
-    pill_qt.CENTER_CMD = center_command()
-
     augment_path()
     mac = MacApp(app)
     mac.start()
-    mac.tray = traymac.start_tray(app, mac.open_center, mac.quit)
+    # Pille: Linksklick öffnet das Kontrollzentrum IM Prozess (mit controller),
+    # Rechtsklick schaltet an/aus — wie das systemctl-Toggle unter Linux.
+    pill_qt.OPEN_CENTER = mac.open_center
+    pill_qt.TOGGLE = mac.toggle
+    mac.tray = traymac.start_tray(app, mac.open_center, mac.quit,
+                                  on_toggle=mac.toggle)
     check_ffmpeg(mac.tray)
     mac.pill = pill_qt.Pill()
     mac.pill.show()
