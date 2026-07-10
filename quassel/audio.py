@@ -8,6 +8,7 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import threading
 import time
 import wave
@@ -18,6 +19,16 @@ RATE, SAMPLE_BYTES = 16000, 2
 
 
 def record_command(mic="default"):
+    if sys.platform == "darwin":
+        # macOS: ffmpeg/AVFoundation liefert rohes PCM auf stdout (wie
+        # pw-record). mic: Gerätename oder -index aus list_mics(), sonst
+        # das Standard-Eingabegerät.
+        if not shutil.which("ffmpeg"):
+            return None
+        target = mic if mic and mic != "default" else "default"
+        return ["ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-f", "avfoundation", "-i", f":{target}",
+                "-ar", str(RATE), "-ac", "1", "-f", "s16le", "-"]
     if shutil.which("pw-record"):
         cmd = ["pw-record", "--rate", str(RATE), "--channels", "1",
                "--format", "s16"]
@@ -43,6 +54,8 @@ def wav_from_raw(raw_bytes, path):
 
 def list_mics():
     """[(name, beschreibung)] der verfügbaren Aufnahmequellen (ohne Monitore)."""
+    if sys.platform == "darwin":
+        return _list_mics_mac()
     out = []
     try:
         r = subprocess.run(["pactl", "list", "sources"], capture_output=True,
@@ -81,6 +94,31 @@ def rms_level(window_s=0.15):
         acc += s * s
     rms = (acc / len(samples)) ** 0.5
     return min(rms / 8000.0, 1.0)
+
+
+def _list_mics_mac():
+    """AVFoundation-Audiogeräte über ffmpeg auflisten: [(name, name)]."""
+    out = []
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-f", "avfoundation",
+             "-list_devices", "true", "-i", ""],
+            capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return out
+    in_audio = False
+    for line in r.stderr.splitlines():
+        if "AVFoundation audio devices" in line:
+            in_audio = True
+            continue
+        if "AVFoundation video devices" in line:
+            in_audio = False
+            continue
+        if in_audio and "] [" in line:
+            name = line.rsplit("]", 1)[1].strip()
+            if name:
+                out.append((name, name))
+    return out
 
 
 def _bluez_profiles():

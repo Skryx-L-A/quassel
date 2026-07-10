@@ -6,6 +6,7 @@ ist nicht-blockierend und schlägt leise fehl, wenn kein Player/Datei da ist —
 ein Ton darf das Diktat nie aufhalten.
 
 Linux: pw-play / paplay / aplay (das erste vorhandene). Windows: winsound.
+macOS: afplay.
 """
 import os
 import shutil
@@ -37,6 +38,10 @@ def _play(path):
         if os.name == "nt":
             import winsound
             winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            return
+        if sys.platform == "darwin":
+            subprocess.Popen(["afplay", path],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return
         for player in (["pw-play"], ["paplay"], ["aplay", "-q"]):
             if shutil.which(player[0]):

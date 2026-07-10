@@ -24,7 +24,9 @@ from . import config
 from .state import state_read
 
 RESULT_SHOW_S = 3.0
-CENTER_CMD = os.environ.get("QUASSEL_CENTER_CMD", "quassel-type")
+# Argv-Liste (kein String): Pfade mit Leerzeichen (z.B. ein Python in einem
+# .app-Bundle) dürfen den Start des Kontrollzentrums nicht brechen.
+CENTER_CMD = os.environ.get("QUASSEL_CENTER_CMD", "quassel-type").split()
 
 ICON_PATHS = [
     os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/quassel-voice.svg"),
@@ -36,7 +38,9 @@ def app_icon():
     for p in ICON_PATHS:
         if os.path.exists(p):
             return QIcon(p)
-    return QIcon.fromTheme("quassel-voice")
+    if sys.platform != "darwin":
+        return QIcon.fromTheme("quassel-voice")
+    return QIcon()
 
 # Direction B (Lokal): Pine-Akzent, gedämpftes Grau (aus), Bernstein (Fehler).
 WAVE_PINE = QColor("#34C18C")
@@ -49,6 +53,8 @@ C_TEXT = QColor("#BAC8C0")
 
 def daemon_active():
     if os.name == "nt":
+        return True
+    if sys.platform == "darwin":
         return True
     return subprocess.run(["systemctl", "--user", "is-active", "--quiet", "quasseld"],
                           check=False).returncode == 0
@@ -193,12 +199,12 @@ class Pill(QWidget):
         # Rechtsklick — sonst beendet ein versehentlicher Klick neben dem Textfeld
         # unter der Pille mitten im Diktat ganz Quassel.
         if ev.button() == Qt.LeftButton:
-            subprocess.Popen(CENTER_CMD.split())
+            subprocess.Popen(list(CENTER_CMD))
         elif ev.button() == Qt.RightButton:
             self._toggle()
 
     def _toggle(self):
-        if os.name == "nt":
+        if os.name == "nt" or sys.platform == "darwin":
             return
         if daemon_active():
             subprocess.run(["systemctl", "--user", "stop", "quasseld",

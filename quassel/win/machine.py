@@ -39,9 +39,12 @@ class ChordMachine:
             chord = self._chord_down()
             if chord and not before:
                 if self.state == "idle":
-                    self.state = "hold"
-                    self.t_chord = now
-                    self.on_start()
+                    # Nur armieren, wenn der Start gelang — sonst würde das
+                    # spätere finish() die alte Rohaufnahme erneut einfügen.
+                    # None (Callbacks ohne Rückgabewert, z.B. Windows) = Erfolg.
+                    if self.on_start() is not False:
+                        self.state = "hold"
+                        self.t_chord = now
                 elif self.state == "await2":
                     self.state = "toggle_armed"
                     if self.on_handsfree:

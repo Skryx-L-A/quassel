@@ -12,14 +12,18 @@ Das plattformspezifische Backend muss zwei Funktionen bereitstellen:
     duck_apply(mode) -> token        (token wird unverändert an restore gereicht)
     duck_restore(mode, token) -> None
 Linux-Backend: ``quassel.platform_linux``. Windows-Backend: ``quassel.win.audioctl``.
+macOS-Backend: ``quassel.platform_mac``.
 Fehlt das Backend oder ein Tool, sind alle Operationen wirkungslos (kein Fehler):
 Audio-Steuerung darf das Diktat niemals stören.
 """
 import os
+import sys
 
 try:
     if os.name == "nt":
         from .win import audioctl as _backend
+    elif sys.platform == "darwin":
+        from . import platform_mac as _backend
     else:
         from . import platform_linux as _backend
 except Exception:        # noqa: BLE001 — Backend ist optional

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Quassel für macOS: whisper-server + Hotkey-Daemon + Pille + Menüleisten-Icon
+# in einem Aufruf (Gegenstück zu den systemd-Units auf Linux).
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY="$HERE/.venv/bin/python3"
+[[ -x "$PY" ]] || PY=python3
+cd "$HERE"
+exec "$PY" -m quassel.mac_app "$@"

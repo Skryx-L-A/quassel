@@ -9,10 +9,14 @@ Dateien:
 import configparser
 import json
 import os
+import sys
 
 if os.name == "nt":
     CONFDIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Quassel")
     DATADIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Quassel")
+elif sys.platform == "darwin":
+    # macOS: Konfiguration + Daten (models/, history) unter Application Support
+    CONFDIR = DATADIR = os.path.expanduser("~/Library/Application Support/Quassel")
 else:
     CONFDIR = os.path.join(os.environ.get("XDG_CONFIG_HOME",
                                           os.path.expanduser("~/.config")), "quassel")

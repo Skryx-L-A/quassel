@@ -1,11 +1,17 @@
 """Laufzeit-Dateien + State-IPC Daemon → Pille (state.json, atomar)."""
 import json
 import os
+import sys
 import time
 
 if os.name == "nt":
     RUNDIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
                           "Quassel", "run")
+elif sys.platform == "darwin":
+    # macOS kennt kein XDG_RUNTIME_DIR. Nicht in ~/Library/Caches: das darf
+    # das System bei Plattenplatzdruck jederzeit leeren — auch mitten in
+    # einer laufenden Aufnahme (rec.raw).
+    RUNDIR = os.path.expanduser("~/Library/Application Support/Quassel/run")
 else:
     XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     RUNDIR = os.path.join(XDG_RUNTIME, "quassel")

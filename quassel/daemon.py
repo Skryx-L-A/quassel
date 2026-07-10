@@ -22,8 +22,8 @@ from .streaming import StreamTyper
 from .audio import RATE, SAMPLE_BYTES, Recorder, wav_from_raw
 from .config import CHORDS
 from .i18n import tr
-from .platform_linux import (mic_is_bluetooth, notify, paste, send_backspaces,
-                             send_enter, type_chunk, streaming_begin, streaming_restore)
+from .platform import (mic_is_bluetooth, notify, paste, send_backspaces,
+                       send_enter, type_chunk, streaming_begin, streaming_restore)
 from .state import PARTWAV, WAV, state_set
 
 EVENT_FORMAT = "llHHi"
@@ -123,7 +123,8 @@ class Daemon:
         self.cfg.reload()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
         if not self.rec.start(self.cfg.mic):
-            notify("Fehler: pw-record/parecord fehlt")
+            missing = "ffmpeg" if sys.platform == "darwin" else "pw-record/parecord"
+            notify("Fehler: %s fehlt" % missing)
             return False
         self._bt = mic_is_bluetooth(self.cfg.mic)
         self._vad = bool(config.read_serverenv().get("VAD_MODEL"))
@@ -413,6 +414,50 @@ class Daemon:
 
     # ------------------------------------------------------------- Hauptloop
     def run(self):
+        if sys.platform == "darwin":
+            self._run_mac()
+            return
+        self._run_linux()
+
+    def _run_mac(self):
+        """macOS: CGEventTap (hotkey_mac.py) statt evdev-Read-Loop. Nutzt
+        dieselbe ChordMachine wie der Windows-Hook -> identische Halten-/
+        Doppeltipp-/Abbruch-Semantik, nur die Event-Quelle unterscheidet sich."""
+        from .hotkey_mac import MacHotkeyListener, check_permissions
+        # Prüft Lesen (Eingabeüberwachung) UND Senden (Bedienungshilfen);
+        # benachrichtigt je fehlender Freigabe, degradiert nur, stürzt nie ab.
+        missing = check_permissions()
+        if missing:
+            log("mac: fehlende TCC-Freigaben: " + ", ".join(missing))
+        state_set("idle")
+        notify(tr("ready"), 2000)
+        self._sync_wakeword()
+        listener = MacHotkeyListener(
+            self.cfg.chord, self.cfg,
+            on_start=self.start_recording, on_finish=self.finish,
+            on_cancel=self.cancel_recording, on_handsfree=self.enable_streaming)
+        listener.start()
+        while True:
+            time.sleep(RESCAN_EVERY)
+            if self.cfg.reload():
+                i18n.set_language(None if self.cfg.ui_language == "auto"
+                                  else self.cfg.ui_language)
+                # Hotkey-/Timing-Änderungen aus den Einstellungen greifen
+                # ohne Neustart (wie im Linux-Loop)
+                listener.reconfigure(self.cfg.chord, self.cfg.hold_min,
+                                     self.cfg.double_window)
+            self._sync_wakeword()
+            self._mac_watchdog(listener)
+
+    def _mac_watchdog(self, listener, now=None):
+        """Sicherheitslimit im Freihand-Modus (Pendant zu MAX_RECORD im
+        Linux-Loop): zu lange Aufnahme hart beenden -> Text wird eingefügt."""
+        now = now if now is not None else time.monotonic()
+        if self.rec.active and now - self.rec.started > MAX_RECORD:
+            if listener.force_finish():
+                log("mac: MAX_RECORD erreicht -> Freihand-Aufnahme beendet")
+
+    def _run_linux(self):
         pressed = set()
         st = "idle"                 # idle|hold|await2|toggle_armed|toggle|drain
         # Einfügen erst, wenn ALLE Modifier losgelassen sind — sonst käme beim

@@ -1,6 +1,7 @@
 """Client für den lokalen whisper.cpp-Server (quassel-server.service)."""
 import os
 import subprocess
+import sys
 import time
 
 from . import config
@@ -13,6 +14,10 @@ SERVICE = "quassel-server.service"
 
 
 def _default_starter():
+    if sys.platform == "darwin":
+        from . import server_mac
+        server_mac.start()
+        return
     subprocess.run(["systemctl", "--user", "start", SERVICE], check=False)
 
 

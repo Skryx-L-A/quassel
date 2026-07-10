@@ -6,7 +6,9 @@ einen neutralen Wert, sodass die Modellwahl nie eine Exception wirft. Wird
 sowohl unter Windows als auch unter Linux beim Erstausstatten benutzt.
 """
 import os
+import platform
 import subprocess
+import sys
 
 # Kein Konsolenblitz unter Windows, wenn nvidia-smi aus der Fenster-exe läuft.
 _NOWIN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
@@ -29,6 +31,11 @@ def nvidia_vram_mb():
         except ValueError:
             continue
     return max(vals) if vals else None
+
+
+def is_apple_silicon():
+    """True auf Apple-Silicon-Macs (arm64) — dort rechnet whisper.cpp über Metal."""
+    return sys.platform == "darwin" and platform.machine() == "arm64"
 
 
 def cpu_core_count():
@@ -86,6 +93,11 @@ def default_model_for_hardware():
       Kerne >= 4 -> small-q5_1
       sonst      -> base-q5_1
     """
+    # Apple Silicon: whisper.cpp läuft über Metal auf der GPU — das große
+    # Turbo-Modell ist dort flott. q5_0 statt voll: praktisch gleiche
+    # Genauigkeit, kleinere Datei.
+    if is_apple_silicon():
+        return "large-v3-turbo-q5_0"
     vram = nvidia_vram_mb()
     if vram is not None:
         return "large-v3-turbo" if vram >= 6144 else "medium"

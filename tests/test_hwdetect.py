@@ -5,13 +5,46 @@ am Modul ersetzt, sodass kein echtes nvidia-smi/ctypes nötig ist und der Test
 auf jeder CI-Maschine identisch läuft."""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import pytest
 from quassel import hwdetect
 
+# Original-Sonden sichern; nach jedem Test zurücksetzen (kein Modul-Zustand
+# leakt in andere Testdateien)
+_ORIG_PROBES = (hwdetect.is_apple_silicon, hwdetect.nvidia_vram_mb,
+                hwdetect.cpu_core_count, hwdetect.total_ram_gb)
 
-def _mock(vram, cores, ram):
+
+@pytest.fixture(autouse=True)
+def _restore_probes():
+    yield
+    (hwdetect.is_apple_silicon, hwdetect.nvidia_vram_mb,
+     hwdetect.cpu_core_count, hwdetect.total_ram_gb) = _ORIG_PROBES
+
+
+def _mock(vram, cores, ram, apple=False):
+    hwdetect.is_apple_silicon = lambda: apple
     hwdetect.nvidia_vram_mb = lambda: vram
     hwdetect.cpu_core_count = lambda: cores
     hwdetect.total_ram_gb = lambda: ram
+
+
+def test_apple_silicon_turbo_q5():
+    # Apple Silicon (Metal-GPU): großes Turbo-Modell quantisiert, egal wie
+    # die (dort irrelevanten) NVIDIA-/Kern-Sonden aussehen.
+    _mock(None, 12, 48, apple=True)
+    assert hwdetect.default_model_for_hardware() == "large-v3-turbo-q5_0"
+    _mock(8192, 4, 16, apple=True)   # hypothetisches nvidia-smi darf nicht gewinnen
+    assert hwdetect.default_model_for_hardware() == "large-v3-turbo-q5_0"
+
+
+def test_is_apple_silicon_probe(monkeypatch):
+    import platform as _pl
+    probe = _ORIG_PROBES[0]      # echte Sonde, unabhängig von _mock-Stubs
+    monkeypatch.setattr(hwdetect.sys, "platform", "darwin")
+    monkeypatch.setattr(_pl, "machine", lambda: "arm64")
+    assert probe() is True
+    monkeypatch.setattr(hwdetect.sys, "platform", "linux")
+    assert probe() is False
 
 
 def test_nvidia_high_vram_turbo():
