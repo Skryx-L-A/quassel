@@ -85,6 +85,7 @@ def test_augment_path_idempotent(monkeypatch):
 
 
 def test_check_ffmpeg_notifies_when_missing(monkeypatch):
+    monkeypatch.setenv("QUASSEL_MAC_AUDIO", "ffmpeg")
     monkeypatch.setattr(mac_app.shutil, "which", lambda _: None)
     calls = []
 
@@ -96,3 +97,18 @@ def test_check_ffmpeg_notifies_when_missing(monkeypatch):
     assert calls and "brew install ffmpeg" in calls[0][1]
     monkeypatch.setattr(mac_app.shutil, "which", lambda _: "/opt/homebrew/bin/ffmpeg")
     assert mac_app.check_ffmpeg(None) is True
+
+
+def test_check_ffmpeg_silent_on_sounddevice_backend(monkeypatch):
+    """Der Auslieferungs-Default nimmt ohne ffmpeg auf — dann darf beim Start
+    keine Notification behaupten, ohne ffmpeg gehe die Aufnahme nicht."""
+    monkeypatch.delenv("QUASSEL_MAC_AUDIO", raising=False)
+    monkeypatch.setattr(mac_app.shutil, "which", lambda _: None)
+    calls = []
+
+    class Tray:
+        def showMessage(self, title, text):
+            calls.append((title, text))
+
+    assert mac_app.check_ffmpeg(Tray()) is True
+    assert calls == []

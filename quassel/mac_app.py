@@ -15,14 +15,15 @@ import signal
 import subprocess
 import sys
 
-from . import server_mac
+from . import audio, server_mac
 from .state import state_read
 
 DAEMON_STOP_TIMEOUT = 5
 
 # Finder startet Apps mit minimalem PATH (/usr/bin:/bin:...) — ohne die
-# Homebrew-Pfade findet shutil.which("ffmpeg") nichts (audio.py nimmt über
-# ffmpeg/AVFoundation auf). ffmpeg wird bewusst NICHT mitgebündelt.
+# Homebrew-Pfade findet shutil.which("ffmpeg") nichts. Die Aufnahme braucht
+# ffmpeg seit dem sounddevice-Backend nicht mehr; die Datei-Transkription
+# von Nicht-WAV-Formaten schon. ffmpeg wird bewusst NICHT mitgebündelt.
 BREW_PATHS = ["/opt/homebrew/bin", "/usr/local/bin"]
 FFMPEG_HINT = ("ffmpeg fehlt — ohne ffmpeg keine Aufnahme.\n"
                "Installieren: brew install ffmpeg")
@@ -56,7 +57,12 @@ def augment_path():
 
 def check_ffmpeg(tray):
     """ffmpeg vorhanden? Sonst einmalig per Tray-Notification den
-    brew-Hinweis zeigen. Die App läuft weiter (Server + UI gehen auch ohne)."""
+    brew-Hinweis zeigen. Die App läuft weiter (Server + UI gehen auch ohne).
+
+    Nur relevant, wenn das ffmpeg-Aufnahme-Backend aktiv ist — der Default
+    nimmt über sounddevice auf und braucht ffmpeg nicht."""
+    if audio.mac_backend() != "ffmpeg":
+        return True
     if shutil.which("ffmpeg"):
         return True
     if tray is not None:

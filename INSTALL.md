@@ -128,3 +128,61 @@ Nur nötig, wenn das Skript es am Ende sagt (Gruppen-Berechtigung).
 
 Bei Problemen: siehe Troubleshooting oben (englischer Abschnitt) oder ein
 GitHub-Issue aufmachen.
+
+---
+
+## macOS (Apple Silicon)
+
+### 1. Requirements
+
+- macOS on **Apple Silicon** (M1 or newer)
+- A working microphone
+- ~2 GB free disk space (whisper.cpp engine + speech model)
+- No Apple Developer account needed — installs are unsigned / not notarized
+
+### 2. Install — pick one
+
+**Homebrew (recommended)** — installs the app and clears the quarantine flag for
+you, so there is no Gatekeeper dialog:
+
+```bash
+brew install --cask skryx-l-a/quassel/quassel
+```
+
+**DMG** — download directly from the
+[releases page](https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-macOS-arm64.dmg)
+(~44 MB). Because it is not notarized, macOS blocks it on first launch — open
+**System Settings → Privacy & Security** and click **"Open Anyway"** next to the
+Quassel warning, then confirm in the dialog that appears.
+
+**Terminal — one line:**
+
+```bash
+curl -fsSL https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install-macos.sh | bash
+```
+
+### 3. First launch — grant permissions
+
+macOS asks once for **Microphone**, **Accessibility** and **Input Monitoring**.
+Grant all three, then **restart Quassel** so the permissions take effect.
+
+### 4. Start dictating
+
+1. Open **Quassel** from the menu bar and turn it **on**.
+2. Click into any text field, then:
+   - **Hold** `Ctrl+Cmd` → speak → **release** → text appears
+   - or **double-tap** `Ctrl+Cmd` → speak hands-free → **press once** → text appears
+
+### Troubleshooting
+
+- **Gatekeeper still blocks it** → System Settings → Privacy & Security → scroll
+  down to the warning → "Open Anyway", then confirm.
+- **Nothing happens when dictating** → check that Accessibility and Input
+  Monitoring are both granted for Quassel, then restart the app.
+- **Bad recognition quality** → pick a bigger model in the control center.
+
+### Uninstall
+
+Homebrew install: `brew uninstall --cask skryx-l-a/quassel/quassel`.
+DMG or Terminal-installer install: drag `Quassel.app` out of `/Applications` to
+the Trash.

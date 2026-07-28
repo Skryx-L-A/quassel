@@ -25,10 +25,11 @@ from PySide6.QtWidgets import (
 
 from . import (__version__, ai, aimodes, config, i18n, stats, transcribe_file,
                updatecheck, whisperclient)
-from .audio import RATE
+from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
 from .i18n import tr
 from .net import download as net_download
+from .state import RUNDIR
 if os.name == "nt":
     from .win.audio_win import list_mics
     from .win.paste import clip_copy
@@ -1078,6 +1079,16 @@ class Center(QMainWindow):
         if IS_WINDOWS:
             from .win.audio_win import Recorder
             rec = Recorder()
+            if not rec.start(self.cfg.mic):
+                return None
+            time.sleep(2.5)
+            rec.stop()
+            return rec.raw_bytes()
+        if sys.platform == "darwin" and mac_backend() != "ffmpeg":
+            # In-process über sounddevice (kein ffmpeg nötig). Eigene Rohdatei,
+            # damit der Test eine laufende Aufnahme des Daemons nicht überschreibt.
+            from .audio import Recorder
+            rec = Recorder(raw_path=os.path.join(RUNDIR, "mictest.raw"))
             if not rec.start(self.cfg.mic):
                 return None
             time.sleep(2.5)

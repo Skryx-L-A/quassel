@@ -589,7 +589,10 @@ def test_osa_quote_hardened():
     assert q("a\x07b\tc") == '"ab\tc"'
 
 
-def test_start_recording_failure_names_ffmpeg_on_mac(monkeypatch):
+def test_start_recording_failure_names_missing_piece(monkeypatch):
+    """Die Fehlermeldung nennt, was tatsächlich fehlt — auf dem Mac hängt das
+    am Aufnahmebackend: beim sounddevice-Pfad fehlt kein Programm, sondern ein
+    nutzbares Eingabegerät bzw. die Mikrofon-Freigabe."""
     from quassel import daemon as daemon_mod
     d = daemon_mod.Daemon.__new__(daemon_mod.Daemon)
     d.cfg = SimpleNamespace(reload=lambda: False, ui_language="auto", mic="default")
@@ -597,6 +600,11 @@ def test_start_recording_failure_names_ffmpeg_on_mac(monkeypatch):
     notes = []
     monkeypatch.setattr(daemon_mod, "notify", lambda text, ms=0: notes.append(text))
     monkeypatch.setattr(daemon_mod.sys, "platform", "darwin")
+    monkeypatch.delenv("QUASSEL_MAC_AUDIO", raising=False)
+    assert d.start_recording() is False
+    assert notes == ["Fehler: Mikrofonzugriff fehlt"]
+    notes.clear()
+    monkeypatch.setenv("QUASSEL_MAC_AUDIO", "ffmpeg")
     assert d.start_recording() is False
     assert notes == ["Fehler: ffmpeg fehlt"]
     notes.clear()

@@ -11,3 +11,4 @@ build/
 dist/
 bench_samples*/
 MACOS-PORT-BRIEF.md
+.playwright-mcp/

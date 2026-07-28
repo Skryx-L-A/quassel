@@ -14,12 +14,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-28
+
 ### Added
 - **Native macOS support (Apple Silicon)**: menu-bar app with the familiar pill overlay
   (visible on every Space and over fullscreen apps), `Ctrl+Cmd` chord dictation
   (hold = push-to-talk, double-tap = hands-free), Metal-accelerated whisper.cpp,
   settings window with on/off toggle, login-item autostart, media auto-pause.
-  Build from source via `scripts/build_mac_app.sh` (see README); no signed download yet.
+  Install via Homebrew (`brew install --cask skryx-l-a/quassel/quassel`), a DMG,
+  or a one-line Terminal installer — not notarized yet (no Apple Developer
+  account), so first launch needs one Gatekeeper approval. Build from source via
+  `scripts/build_mac_app.sh` (see README) remains available too.
 - Quantized Whisper models (q5) in the model picker (`base-q5_1`, `small-q5_1`, `medium-q5_0`,
   `large-v3-turbo-q5_0`) — mainly smaller downloads / less RAM (CPU speed gain is small).
 - Voice Activity Detection (Silero VAD): skips silence and stops phantom text on silence
@@ -47,6 +52,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Performance on weaker hardware: the live-preview transcription that ran every 2 s during
   dictation is now skipped when the preview bubble is off and streaming is off — it was pure
   wasted CPU that competed with and slowed the final transcription.
+- **macOS recording dropped about 11 % of the audio.** Recording went through
+  `ffmpeg`/AVFoundation, which discarded material continuously (measured: 3128 of 3520
+  periods of an 8-second reference tone; 2.3 s missing from a 20 s recording) and lost a
+  further 0.73 s at the start of every take. Recording now runs in-process through
+  sounddevice/CoreAudio: 100 % of the audio, correct pitch, 0.002 s start loss, and better
+  anti-aliasing. As a side effect macOS no longer needs `ffmpeg` installed to dictate — it
+  is only used to transcribe existing non-WAV audio files.
 
 ## [2.4.0] - 2026-06-14
 

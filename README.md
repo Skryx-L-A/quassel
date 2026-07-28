@@ -9,9 +9,10 @@ best commercial dictation apps, but **100 % offline and open source**: speech
 recognition runs locally via [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
 No cloud, no account, no subscription, no telemetry.
 
-**Linux**, **Windows** and **macOS** (Windows build is fresh — see
-[windows/build.md](windows/build.md); macOS is build-from-source for now).
-Fully offline, no cloud, no account.
+**Linux**, **Windows** and **macOS** (Apple Silicon) — Windows build is fresh, see
+[windows/build.md](windows/build.md); macOS ships as a DMG, Homebrew cask or
+one-line installer (unsigned — building from source is still available too, see
+[Install → macOS](#macos-apple-silicon) below). Fully offline, no cloud, no account.
 
 <p align="center"><img src="assets/screenshots/showcase.gif" alt="Quassel typing dictated text into an editor while the waveform pill listens" width="620"></p>
 
@@ -48,10 +49,11 @@ record → transcribe locally → paste.
   downloads whisper.cpp + model. Build the installer with
   [windows/build.md](windows/build.md).
 - **macOS (Apple Silicon)** — menu-bar app with pill overlay and Metal-accelerated
-  whisper.cpp; hold `Ctrl+Cmd` to dictate. Build from source:
-  `scripts/build_mac_app.sh` produces `dist/Quassel.app` (needs `brew install ffmpeg`;
-  grant Input Monitoring + Accessibility on first launch). No signed/notarized
-  download yet — build locally.
+  whisper.cpp; hold `Ctrl+Cmd` to dictate. Install via Homebrew, DMG or a one-line
+  installer — see [Install → macOS](#macos-apple-silicon) below (not notarized:
+  one Gatekeeper approval on first launch). Prefer to build it yourself?
+  `scripts/build_mac_app.sh` produces `dist/Quassel.app` (grant Input Monitoring +
+  Accessibility on first launch).
 
 ## Requirements
 
@@ -136,6 +138,42 @@ models — nothing is ever downloaded. Runs on x86_64 with glibc ≥ 2.28.
 > containers, but no full install has run on real systems yet. Feedback is
 > very welcome: please [open an issue](https://github.com/Skryx-L-A/quassel/issues)
 > with the exact error output if something fails.
+
+### macOS (Apple Silicon)
+
+**Easiest — [download from quassel-voice.netlify.app](https://quassel-voice.netlify.app):**
+one click, it picks the right file for your system.
+
+Or install with Homebrew — this clears the quarantine flag automatically, so
+there is no Gatekeeper dialog:
+
+```bash
+brew install --cask skryx-l-a/quassel/quassel
+```
+
+Or grab the DMG directly (~44 MB) from the
+[releases page](https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-macOS-arm64.dmg),
+or paste this into Terminal:
+
+```bash
+curl -fsSL https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install-macos.sh | bash
+```
+
+The DMG and the Terminal installer are **not notarized** yet (no Apple Developer
+account) — on first launch, macOS will block the app. Open **System Settings →
+Privacy & Security** and click **"Open Anyway"** next to the Quassel warning. The
+Homebrew cask skips this step for you.
+
+On first launch macOS also asks once for **Microphone**, **Accessibility** and
+**Input Monitoring** — grant all three, then restart Quassel.
+
+> **Status:** same disclaimer as Windows above — young and unsigned. Please
+> [open an issue](https://github.com/Skryx-L-A/quassel/issues) if anything misbehaves.
+
+Prefer to build it yourself? `scripts/build_mac_app.sh` produces `dist/Quassel.app`
+from source (grant Input Monitoring + Accessibility on first launch). Recording is
+self-contained — no Homebrew packages required; `ffmpeg` is only needed to transcribe
+existing audio files that are not WAV.
 
 ## Use
 

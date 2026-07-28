@@ -19,7 +19,7 @@ from . import (aimodes, beep, config, i18n, learn, progmode, stats, textproc,
                textreplace, vad, wakeword, whisperclient)
 from .mediacontrol import AudioDucker
 from .streaming import StreamTyper
-from .audio import RATE, SAMPLE_BYTES, Recorder, wav_from_raw
+from .audio import RATE, SAMPLE_BYTES, Recorder, mac_backend, wav_from_raw
 from .config import CHORDS
 from .i18n import tr
 from .platform import (mic_is_bluetooth, notify, paste, send_backspaces,
@@ -123,7 +123,13 @@ class Daemon:
         self.cfg.reload()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
         if not self.rec.start(self.cfg.mic):
-            missing = "ffmpeg" if sys.platform == "darwin" else "pw-record/parecord"
+            if sys.platform == "darwin":
+                # sounddevice-Pfad: es fehlt kein Programm, sondern ein
+                # nutzbares Eingabegerät (oder die Mikrofon-Freigabe).
+                missing = ("ffmpeg" if mac_backend() == "ffmpeg"
+                           else "Mikrofonzugriff")
+            else:
+                missing = "pw-record/parecord"
             notify("Fehler: %s fehlt" % missing)
             return False
         self._bt = mic_is_bluetooth(self.cfg.mic)

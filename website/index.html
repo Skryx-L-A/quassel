@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quassel — private voice typing for Linux &amp; Windows</title>
-<meta name="description" content="Quassel turns your voice into text anywhere on your screen — fully offline. Hold a key, speak, release. Free, open source, and nothing ever leaves your computer.">
+<title>Quassel — private voice typing for Linux, Windows &amp; macOS</title>
+<meta name="description" content="Quassel turns your voice into text anywhere on your screen — fully offline. Hold a key, speak, release. Free, open source, and nothing ever leaves your computer. Linux, Windows and macOS (Apple Silicon).">
 <meta name="theme-color" content="#0F6B4F">
 <link rel="icon" href="quassel.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta property="og:title" content="Quassel — private voice typing">
-<meta property="og:description" content="Type with your voice, anywhere, fully offline. Free &amp; open source for Linux and Windows.">
+<meta property="og:description" content="Type with your voice, anywhere, fully offline. Free &amp; open source for Linux, Windows and macOS.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="apple-touch-icon.png">
 <link rel="stylesheet" href="styles.css">
@@ -22,7 +22,7 @@
       "@type": "SoftwareApplication",
       "name": "Quassel",
       "applicationCategory": "UtilitiesApplication",
-      "operatingSystem": "Linux, Windows 10, Windows 11",
+      "operatingSystem": "Linux, Windows 10, Windows 11, macOS (Apple Silicon)",
       "url": "https://quassel-voice.netlify.app",
       "downloadUrl": "https://github.com/Skryx-L-A/quassel/releases/latest",
       "softwareHelp": "https://github.com/Skryx-L-A/quassel#readme",
@@ -30,14 +30,14 @@
       "license": "https://opensource.org/licenses/MIT",
       "isAccessibleForFree": true,
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "description": "Quassel is a free, open-source, 100% offline voice-to-text dictation app for Linux and Windows. Hold a key, speak, release, and your words are typed wherever your cursor is. Speech recognition runs locally via OpenAI's Whisper (whisper.cpp) — no cloud, no account, and no audio ever leaves your computer.",
+      "description": "Quassel is a free, open-source, 100% offline voice-to-text dictation app for Linux, Windows and macOS. Hold a key, speak, release, and your words are typed wherever your cursor is. Speech recognition runs locally via OpenAI's Whisper (whisper.cpp) — no cloud, no account, and no audio ever leaves your computer.",
       "featureList": [
         "Fully offline, local speech-to-text (no cloud, no account, no telemetry)",
         "Open source (MIT), free forever",
         "Types into any text field, including terminals",
         "~100 languages via OpenAI Whisper models",
         "Hold-to-talk hotkey or hands-free double-tap",
-        "Linux (Wayland or X11) and Windows 10/11"
+        "Linux (Wayland or X11), Windows 10/11 and macOS (Apple Silicon)"
       ],
       "author": { "@type": "Organization", "name": "Skryx-L-A", "url": "https://github.com/Skryx-L-A" }
     },
@@ -53,7 +53,7 @@
         { "@type": "Question", "name": "Do I need an internet connection?",
           "acceptedAnswer": { "@type": "Answer", "text": "Only to download. The quick installer fetches an engine and model that fit your hardware; after that Quassel runs fully offline. Offline all-in-one packages need no internet at all." } },
         { "@type": "Question", "name": "Does it work on Wayland and X11?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Quassel runs on modern Linux desktops on both Wayland and X11, as well as Windows 10 and 11." } },
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Quassel runs on modern Linux desktops on both Wayland and X11, as well as Windows 10, Windows 11 and macOS on Apple Silicon." } },
         { "@type": "Question", "name": "Can it type into a terminal?",
           "acceptedAnswer": { "@type": "Answer", "text": "Yes. Unlike most dictation tools, Quassel types directly into a terminal, as well as any other text field — editors, browsers, and chat apps." } }
       ]
@@ -97,6 +97,10 @@
           <a class="dl-os secondary" id="heroLin" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install.run">
             <span class="os-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3 2.5-3 2.5"/><path d="M12.5 15h4.5"/></svg></span>
             <span class="os-txt"><b>Download for Linux<span class="det-tag" id="heroLinTag" hidden>your system</span></b><small>Fedora · Ubuntu · Arch · openSUSE · .run</small></span>
+          </a>
+          <a class="dl-os secondary" id="heroMac" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-macOS-arm64.dmg">
+            <span class="os-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="11" rx="1.5"/><path d="M2 18h20l-2 2H4z"/></svg></span>
+            <span class="os-txt"><b>Download for macOS<span class="det-tag" id="heroMacTag" hidden>your system</span></b><small>Apple Silicon · DMG</small></span>
           </a>
         </div>
         <a class="btn btn-ghost dl-advanced" href="#allinstalls">Advanced installs &darr;</a>
@@ -232,7 +236,7 @@
       <p class="lead">The quick installer is the easiest start — a small download that fetches only the engine and model
         matching <em>your</em> hardware. Want one big file, or no internet on the target machine? Grab an offline package.</p>
     </div>
-    <div class="grid2">
+    <div class="grid3">
 
       <!-- Windows -->
       <div class="card" id="cardWin">
@@ -250,13 +254,13 @@
         <div class="opt">
           <b>Offline all-in-one — single file</b>
           <p>~3.75 GiB. Everything bundled, no internet ever needed.</p>
-          <a class="btn btn-soft" id="winSingle" href="https://github.com/Skryx-L-A/quassel/releases/latest">Single-file download</a>
+          <a class="btn btn-soft" id="winSingle" href="https://github.com/Skryx-L-A/quassel/releases/tag/v2.2.0">Single-file download</a>
           <p class="oldver">Currently v2.2.0 (older build). The quick installer above is the latest, v2.4.0.</p>
         </div>
         <div class="opt">
           <b>Offline all-in-one — split parts</b>
           <p>Same package as 4 parts (each &lt; 2 GB). Put them in one folder, double-click part 1.</p>
-          <a class="btn btn-ghost" href="https://github.com/Skryx-L-A/quassel/releases/latest">Parts on GitHub</a>
+          <a class="btn btn-ghost" href="https://github.com/Skryx-L-A/quassel/releases/tag/v2.2.0">Parts on GitHub</a>
           <p class="oldver">Currently v2.2.0 (older build). The quick installer above is the latest, v2.4.0.</p>
         </div>
       </div>
@@ -283,7 +287,7 @@
         <div class="opt">
           <b>Offline all-in-one — single file</b>
           <p>4.6 GB. Portable Python+Qt, CPU &amp; CUDA engines, all models. x86_64, glibc &ge; 2.28.</p>
-          <a class="btn btn-soft" id="linSingle" href="https://github.com/Skryx-L-A/quassel/releases/latest">Single-file download</a>
+          <a class="btn btn-soft" id="linSingle" href="https://github.com/Skryx-L-A/quassel/releases/tag/v2.2.0">Single-file download</a>
           <p class="oldver">Currently v2.2.0 (older build). The quick installer above is the latest, v2.4.0.</p>
         </div>
         <div class="opt">
@@ -292,6 +296,34 @@
           <pre>git clone https://github.com/Skryx-L-A/quassel.git \
   &amp;&amp; cd quassel &amp;&amp; ./install.sh</pre>
           <p class="oldver">The offline all-in-one is currently v2.2.0 (older). The quick installer and build-from-source above are the latest, v2.4.0.</p>
+        </div>
+      </div>
+
+      <!-- macOS -->
+      <div class="card" id="cardMac">
+        <span class="badge" id="macBadge" hidden>your system</span>
+        <div class="os-head">
+          <span class="os-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="11" rx="1.5"/><path d="M2 18h20l-2 2H4z"/></svg></span>
+          <h3>macOS</h3>
+        </div>
+        <p class="osnote">Apple Silicon — menu-bar app with a floating pill and Metal-accelerated whisper.cpp.</p>
+        <div class="opt">
+          <b>Homebrew <span class="rec">(recommended)</span></b>
+          <p>Installs the app and clears the quarantine flag automatically — no Gatekeeper dialog.</p>
+          <pre class="pre-wrap">brew install --cask skryx-l-a/quassel/quassel</pre>
+        </div>
+        <div class="opt">
+          <b>DMG — direct download</b>
+          <p>~44 MB. Not notarized (no Apple Developer account yet) — on first launch, open
+            <span class="inl">System Settings → Privacy &amp; Security</span> and click
+            <span class="inl">"Open Anyway"</span> next to the Quassel warning.</p>
+          <a class="btn btn-primary" href="https://github.com/Skryx-L-A/quassel/releases/latest/download/Quassel-macOS-arm64.dmg">Download Quassel-macOS-arm64.dmg</a>
+        </div>
+        <div class="opt">
+          <b>Terminal — one line</b>
+          <p>Downloads and installs the app for you:</p>
+          <pre>curl -fsSL https://github.com/Skryx-L-A/quassel/releases/latest/download/quassel-install-macos.sh | bash</pre>
+          <p style="margin-top:8px;font-size:.84rem">Tip: macOS asks once for Microphone, Accessibility and Input Monitoring on first launch — grant all three, then restart Quassel.</p>
         </div>
       </div>
 
@@ -330,7 +362,7 @@
       <details>
         <summary>Does it work on Wayland and X11?</summary>
         <div class="ans">Yes. Quassel runs on modern Linux desktops on both Wayland and X11, with systemd integration, as well as on
-          Windows 10 and 11.</div>
+          Windows 10, Windows 11 and macOS on Apple Silicon.</div>
       </details>
       <details>
         <summary>How accurate is it?</summary>
@@ -372,8 +404,11 @@
   var ua = navigator.userAgent.toLowerCase();
   function add(id, cls){ var e = document.getElementById(id); if (e) e.classList.add(cls); }
   function show(id){ var e = document.getElementById(id); if (e) e.hidden = false; }
+  var isIos = ua.indexOf("iphone") !== -1 || ua.indexOf("ipad") !== -1 || ua.indexOf("ipod") !== -1;
   if (ua.indexOf("windows") !== -1){
     add("heroWin","detected"); show("heroWinTag"); add("cardWin","active"); show("winBadge");
+  } else if (ua.indexOf("mac") !== -1 && !isIos){
+    add("heroMac","detected"); show("heroMacTag"); add("cardMac","active"); show("macBadge");
   } else if (ua.indexOf("linux") !== -1 && ua.indexOf("android") === -1){
     add("heroLin","detected"); show("heroLinTag"); add("cardLin","active"); show("linBadge");
   }
