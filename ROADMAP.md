@@ -29,6 +29,10 @@ GitHub `Skryx-L-A/quassel`. Effort: **S** = hours, **M** = a day, **L** = multi-
   (now unblocked by the AI modes/languages above)
 
 ## Trust & distribution (parallel track)
+- macOS notarization — needs an Apple Developer account ($99/yr). Without it the DMG
+  costs every user one trip through System Settings → "Open Anyway"; the Homebrew cask
+  and the Terminal installer clear the quarantine flag themselves, which is why they
+  are the recommended paths — **S once the account exists**
 - Windows code signing — removes SmartScreen "unknown publisher" — **M**
 - "Copy diagnostics" button (bundles crash.log / debug.log / config) — **S**
 - Settings redesign round 2: per-setting hints + live previews (#28) — **M**
@@ -38,5 +42,11 @@ GitHub `Skryx-L-A/quassel`. Effort: **S** = hours, **M** = a day, **L** = multi-
 ## Dropped
 - #24 Privacy "0 bytes sent" indicator — dropped.
 
+## Done
+- macOS port (Apple Silicon) — shipped in v2.5.0: menu-bar app, pill, `Ctrl+Cmd`
+  dictation, Metal whisper.cpp, recording via sounddevice/CoreAudio. Distributed as a
+  Homebrew cask (tap `Skryx-L-A/homebrew-quassel`), a DMG and a one-line installer.
+
 ## Someday / maybe
-- macOS port (whisper.cpp runs; paste via CGEvent) — **XL**
+- macOS: measure the Bluetooth microphone path (24 kHz) and word-error rate on a real
+  voice — both were left unmeasured because acoustic tests need explicit consent — **S**
