@@ -1,9 +1,9 @@
 cask "quassel" do
   version "2.5.0"
-  # SHA256 des von scripts/build_mac_dmg.sh gebauten dist/Quassel-macOS-arm64.dmg.
-  # Platzhalter aus einem lokalen Entwickler-Build — der Orchestrator ersetzt ihn
-  # beim Release durch die SHA256 des tatsächlich veröffentlichten DMG-Assets.
-  sha256 "6cd67de3c9915b121e12774d374144ac16a24fb4bd1c843228fe0619fcbe7b82"
+  # SHA256 des veröffentlichten Release-Assets (nicht eines lokalen Builds).
+  # Bei jedem Release neu setzen: scripts/build_mac_dmg.sh gibt sie aus, und sie
+  # liegt als Quassel-macOS-arm64.dmg.sha256 am Release.
+  sha256 "50cdc0325534b018243d3b3da34fceee7301cc9a25f6c00c66408ed092d00d95"
 
   url "https://github.com/Skryx-L-A/quassel/releases/download/v#{version}/Quassel-macOS-arm64.dmg"
   name "Quassel"
