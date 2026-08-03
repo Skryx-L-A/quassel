@@ -129,6 +129,31 @@ def test_drag_below_threshold_does_not_move(pill):
     assert pill._dragging is False
 
 
+def test_click_opens_center_by_default(pill, monkeypatch):
+    calls = []
+    monkeypatch.setattr(pill_qt.subprocess, "Popen", lambda *a, **kw: calls.append(a))
+    pill.mousePressEvent(FakeMouseEvent(Qt.LeftButton, 200, 200))
+    pill.mouseReleaseEvent(FakeMouseEvent(Qt.LeftButton, 200, 200))
+    assert len(calls) == 1
+
+
+def test_click_does_not_open_center_when_disabled(pill, monkeypatch):
+    pill.cfg.pill_click_opens_center = False
+    calls = []
+    monkeypatch.setattr(pill_qt.subprocess, "Popen", lambda *a, **kw: calls.append(a))
+    pill.mousePressEvent(FakeMouseEvent(Qt.LeftButton, 200, 200))
+    pill.mouseReleaseEvent(FakeMouseEvent(Qt.LeftButton, 200, 200))
+    assert calls == []
+
+
+def test_right_click_still_toggles_when_click_center_disabled(pill, monkeypatch):
+    pill.cfg.pill_click_opens_center = False
+    toggled = []
+    monkeypatch.setattr(pill, "_toggle", lambda: toggled.append(1))
+    pill.mouseReleaseEvent(FakeMouseEvent(Qt.RightButton, 200, 200))
+    assert toggled == [1]
+
+
 def test_drag_does_nothing_when_not_movable(pill, monkeypatch):
     pill.cfg.pill_movable = False
     pill.move(50, 50)

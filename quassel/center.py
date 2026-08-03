@@ -443,6 +443,10 @@ class Center(QMainWindow):
         self.pill_reset_pos.clicked.connect(self.reset_pill_position)
         row.addWidget(self.pill_reset_pos)
         g.addLayout(row)
+        self.pill_click_center = QCheckBox(tr("pill_click_center"))
+        self.pill_click_center.setChecked(self.cfg.pill_click_opens_center)
+        self.pill_click_center.toggled.connect(self.save_settings)
+        g.addWidget(self.pill_click_center)
         self.pill_preview = QCheckBox(tr("pill_preview"))
         self.pill_preview.setChecked(self.cfg.pill_preview)
         self.pill_preview.toggled.connect(self.save_settings)
@@ -877,6 +881,7 @@ class Center(QMainWindow):
             ("pill", "scale"): self.pill_size.value() / 100,
             ("pill", "opacity"): self.pill_opacity.value() / 100,
             ("pill", "movable"): str(self.pill_movable.isChecked()).lower(),
+            ("pill", "click_opens_center"): str(self.pill_click_center.isChecked()).lower(),
             ("pill", "show_preview"): str(self.pill_preview.isChecked()).lower(),
             ("hotkey", "chord"): self.chord.currentData(),
             ("behavior", "mute_while_dictating"): self.mute_combo.currentData(),

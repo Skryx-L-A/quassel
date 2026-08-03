@@ -41,6 +41,18 @@ def test_pill_movable_checkbox_saves_value(qapp, isolated_cfg):
         c.close()
 
 
+def test_pill_click_center_checkbox_saves_value(qapp, isolated_cfg):
+    c = center.Center()
+    try:
+        assert c.pill_click_center.isChecked() is True   # Vorgabe
+        c.pill_click_center.setChecked(False)
+        saved = configparser.ConfigParser()
+        saved.read(config.CONFIG)
+        assert saved.getboolean("pill", "click_opens_center") is False
+    finally:
+        c.close()
+
+
 def test_reset_pos_button_writes_minus_one(qapp, isolated_cfg):
     c = center.Center()
     try:

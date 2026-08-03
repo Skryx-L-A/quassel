@@ -296,7 +296,7 @@ class Pill(QWidget):
             self._drag_start = None
             self._dragging = False
             self._update_cursor()
-            if not was_dragging:
+            if not was_dragging and self.cfg.pill_click_opens_center:
                 if OPEN_CENTER is not None:
                     OPEN_CENTER()
                 else:

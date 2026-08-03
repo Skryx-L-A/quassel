@@ -88,6 +88,8 @@ class Cfg:
         self.pill_preview = p.getboolean("pill", "show_preview", fallback=True)
         # Freies Verschieben per Ziehen; Position -1/-1 = automatisch (unten mittig)
         self.pill_movable = p.getboolean("pill", "movable", fallback=False)
+        # Linksklick auf die Pille öffnet das Kontrollzentrum (Standard an)
+        self.pill_click_opens_center = p.getboolean("pill", "click_opens_center", fallback=True)
         self.pill_pos_x = p.getint("pill", "pos_x", fallback=-1)
         self.pill_pos_y = p.getint("pill", "pos_y", fallback=-1)
         self.history_enabled = p.getboolean("history", "enabled", fallback=True)
