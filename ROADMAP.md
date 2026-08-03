@@ -43,6 +43,11 @@ GitHub `Skryx-L-A/quassel`. Effort: **S** = hours, **M** = a day, **L** = multi-
 - #24 Privacy "0 bytes sent" indicator — dropped.
 
 ## Done
+- Decoding measured instead of assumed — shipped in v2.6.0: greedy search on every
+  platform (beam search was never more accurate over 36 files and 938 reference words,
+  and cost 6 % more time), and a smaller audio window for dictations under twelve
+  seconds (38–44 % less time in the speech server at an unchanged word error rate).
+  Data and scripts: `docs/measurements/2026-08-03-audio-ctx-und-beam-size/`.
 - macOS port (Apple Silicon) — shipped in v2.5.0: menu-bar app, pill, `Ctrl+Cmd`
   dictation, Metal whisper.cpp, recording via sounddevice/CoreAudio. Distributed as a
   Homebrew cask (tap `Skryx-L-A/homebrew-quassel`), a DMG and a one-line installer.
@@ -50,3 +55,9 @@ GitHub `Skryx-L-A/quassel`. Effort: **S** = hours, **M** = a day, **L** = multi-
 ## Someday / maybe
 - macOS: measure the Bluetooth microphone path (24 kHz) and word-error rate on a real
   voice — both were left unmeasured because acoustic tests need explicit consent — **S**
+- Measure the shorter audio window on Linux and Windows. The threshold applies there
+  too, because the code is shared, but it was measured on Apple Silicon with
+  `large-v3-turbo-q5_0`; without an NVIDIA card those platforms run `small-q5_1` or
+  `base-q5_1`, and nobody knows whether a smaller model reacts the same way — **S**
+- Refresh the Windows installer. `Quassel-Setup.exe` has been carried over unchanged
+  since 2.4.0 and needs a Windows machine to rebuild — **M**
