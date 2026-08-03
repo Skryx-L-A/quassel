@@ -88,8 +88,10 @@ def ensure_server(deadline=600):
 # englische Begriffe in deutscher Rede englisch zu lassen (Code-Switching).
 MIXED_PRIMER = "Das Meeting ist um 3 PM. Let's go - schick mir das Update."
 
-# Eigene Messung mit ggml-large-v3-turbo-q5_0, elf Längen, fünf Läufe je Punkt
-# (Median-Serverzeit / Wortfehlerrate; Rohdaten ac_sweep_result.json):
+# Eigene Messung mit ggml-large-v3-turbo-q5_0 auf Apple Silicon (Metal), elf
+# Längen, fünf Läufe je Punkt (Median-Serverzeit / Wortfehlerrate). Rohdaten,
+# Skripte und Grenzen der Messung liegen im Repo unter
+# docs/measurements/2026-08-03-audio-ctx-und-beam-size/:
 #
 #   Länge   ohne Feld        audio_ctx=768    audio_ctx=1000
 #    5,80s  0,484 / 0,000    0,270 / 0,000    0,339 / 0,071
@@ -115,6 +117,13 @@ MIXED_PRIMER = "Das Meeting ist um 3 PM. Let's go - schick mir das Update."
 # bekommt, ist damit höchstens so lang wie eine sauber gemessene. Abstand nach
 # oben: 2,3s bis zur ersten Verschlechterung, 3,4s bis zum rechnerischen
 # Kipppunkt (768/1500 * 30s = 15,36s). NICHT ohne neue Messreihe anheben.
+#
+# GRENZE DER MESSUNG: gemessen wurde EIN Modell auf EINER Plattform. Diese
+# Datei ist plattformübergreifend, Linux und Windows bekommen das Feld also
+# mit — dort läuft ohne NVIDIA aber small-q5_1 oder base-q5_1
+# (hwdetect.default_model_for_hardware), und ob ein kleineres Modell auf ein
+# verkürztes Encoder-Fenster gleich reagiert, weiß niemand. Wer die Schwelle
+# für eine andere Plattform anpassen will, misst dort zuerst.
 AUDIO_CTX_SHORT = 768
 AUDIO_CTX_MAX_SECONDS = 12.0
 

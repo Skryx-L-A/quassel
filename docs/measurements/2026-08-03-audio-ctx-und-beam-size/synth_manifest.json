@@ -1,0 +1,110 @@
+[
+ {
+  "path": "<messdaten>/synth_noisy/bench_samples_01.wav",
+  "ref": "Können Sie mir bitte sagen, wie spät es ist? Es ist ungefähr halb drei.",
+  "duration_s": 5.805,
+  "source": "synthetisch: <repo>/bench_samples/01.wav + weisses Rauschen amplitude=0.05, gemischt weights=1:0.35 (ffmpeg anoisesrc+amix)"
+ },
+ {
+  "path": "<messdaten>/synth_quiet/bench_samples_01.wav",
+  "ref": "Können Sie mir bitte sagen, wie spät es ist? Es ist ungefähr halb drei.",
+  "duration_s": 5.805,
+  "source": "synthetisch: <repo>/bench_samples/01.wav um -18dB abgesenkt (ffmpeg volume=-18dB)"
+ },
+ {
+  "path": "<messdaten>/synth_noisy/bench_samples_02.wav",
+  "ref": "Die Rechnung beläuft sich auf 42 Euro und 17 Cent für drei Artikel.",
+  "duration_s": 6.015,
+  "source": "synthetisch: <repo>/bench_samples/02.wav + weisses Rauschen amplitude=0.05, gemischt weights=1:0.35 (ffmpeg anoisesrc+amix)"
+ },
+ {
+  "path": "<messdaten>/synth_quiet/bench_samples_02.wav",
+  "ref": "Die Rechnung beläuft sich auf 42 Euro und 17 Cent für drei Artikel.",
+  "duration_s": 6.015,
+  "source": "synthetisch: <repo>/bench_samples/02.wav um -18dB abgesenkt (ffmpeg volume=-18dB)"
+ },
+ {
+  "path": "<messdaten>/synth_noisy/bench_samples_03.wav",
+  "ref": "Wir haben heute Milch, Brot, Käse, Äpfel und, wenn möglich, auch Marmelade gekauft.",
+  "duration_s": 7.335,
+  "source": "synthetisch: <repo>/bench_samples/03.wav + weisses Rauschen amplitude=0.05, gemischt weights=1:0.35 (ffmpeg anoisesrc+amix)"
+ },
+ {
+  "path": "<messdaten>/synth_quiet/bench_samples_03.wav",
+  "ref": "Wir haben heute Milch, Brot, Käse, Äpfel und, wenn möglich, auch Marmelade gekauft.",
+  "duration_s": 7.335,
+  "source": "synthetisch: <repo>/bench_samples/03.wav um -18dB abgesenkt (ffmpeg volume=-18dB)"
+ },
+ {
+  "path": "<messdaten>/synth_noisy/bench_samples_04.wav",
+  "ref": "The quick brown fox jumps over the lazy dog near the riverbank.",
+  "duration_s": 5.265,
+  "source": "synthetisch: <repo>/bench_samples/04.wav + weisses Rauschen amplitude=0.05, gemischt weights=1:0.35 (ffmpeg anoisesrc+amix)"
+ },
+ {
+  "path": "<messdaten>/synth_quiet/bench_samples_04.wav",
+  "ref": "The quick brown fox jumps over the lazy dog near the riverbank.",
+  "duration_s": 5.265,
+  "source": "synthetisch: <repo>/bench_samples/04.wav um -18dB abgesenkt (ffmpeg volume=-18dB)"
+ },
+ {
+  "path": "<messdaten>/synth_noisy/bench_samples_05.wav",
+  "ref": "Please schedule the meeting for next Tuesday at 3:30 in the afternoon.",
+  "duration_s": 6.495,
+  "source": "synthetisch: <repo>/bench_samples/05.wav + weisses Rauschen amplitude=0.05, gemischt weights=1:0.35 (ffmpeg anoisesrc+amix)"
+ },
+ {
+  "path": "<messdaten>/synth_quiet/bench_samples_05.wav",
+  "ref": "Please schedule the meeting for next Tuesday at 3:30 in the afternoon.",
+  "duration_s": 6.495,
+  "source": "synthetisch: <repo>/bench_samples/05.wav um -18dB abgesenkt (ffmpeg volume=-18dB)"
+ },
+ {
+  "path": "<messdaten>/synth_noisy/bench_samples_06.wav",
+  "ref": "I would like to order two coffees and one croissant, thank you very much.",
+  "duration_s": 6.51,
+  "source": "synthetisch: <repo>/bench_samples/06.wav + weisses Rauschen amplitude=0.05, gemischt weights=1:0.35 (ffmpeg anoisesrc+amix)"
+ },
+ {
+  "path": "<messdaten>/synth_quiet/bench_samples_06.wav",
+  "ref": "I would like to order two coffees and one croissant, thank you very much.",
+  "duration_s": 6.51,
+  "source": "synthetisch: <repo>/bench_samples/06.wav um -18dB abgesenkt (ffmpeg volume=-18dB)"
+ },
+ {
+  "path": "<messdaten>/synth_noisy/bench_samples_07.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des trockenen Sommers um fast fünfzehn Prozent gestiegen sind. Anschließend traf ich meine Schwester in einem kleinen Café am Marktplatz, wo wir über ihre geplante Reise nach Österreich sprachen. Sie will im Oktober für zehn Tage nach Wien und Salzburg, obwohl sie eigentlich lieber ans Meer fährt. Auf dem Rückweg begann es plötzlich zu regnen, und ich war völlig durchnässt, als ich endlich zu Hause ankam.",
+  "duration_s": 48.405,
+  "source": "synthetisch: <repo>/bench_samples/07.wav + weisses Rauschen amplitude=0.05, gemischt weights=1:0.35 (ffmpeg anoisesrc+amix)"
+ },
+ {
+  "path": "<messdaten>/synth_quiet/bench_samples_07.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des trockenen Sommers um fast fünfzehn Prozent gestiegen sind. Anschließend traf ich meine Schwester in einem kleinen Café am Marktplatz, wo wir über ihre geplante Reise nach Österreich sprachen. Sie will im Oktober für zehn Tage nach Wien und Salzburg, obwohl sie eigentlich lieber ans Meer fährt. Auf dem Rückweg begann es plötzlich zu regnen, und ich war völlig durchnässt, als ich endlich zu Hause ankam.",
+  "duration_s": 48.405,
+  "source": "synthetisch: <repo>/bench_samples/07.wav um -18dB abgesenkt (ffmpeg volume=-18dB)"
+ },
+ {
+  "path": "<messdaten>/synth_noisy/bench_samples_synth_01.wav",
+  "ref": "Guten Morgen, ich möchte heute über künstliche Intelligenz sprechen, insbesondere über Spracherkennung.",
+  "duration_s": 6.3973125,
+  "source": "synthetisch: <repo>/bench_samples_synth/01.wav + weisses Rauschen amplitude=0.05, gemischt weights=1:0.35 (ffmpeg anoisesrc+amix)"
+ },
+ {
+  "path": "<messdaten>/synth_quiet/bench_samples_synth_01.wav",
+  "ref": "Guten Morgen, ich möchte heute über künstliche Intelligenz sprechen, insbesondere über Spracherkennung.",
+  "duration_s": 6.3973125,
+  "source": "synthetisch: <repo>/bench_samples_synth/01.wav um -18dB abgesenkt (ffmpeg volume=-18dB)"
+ },
+ {
+  "path": "<messdaten>/synth_noisy/bench_samples_synth_02.wav",
+  "ref": "Good morning, I would like to talk about artificial intelligence today, especially speech recognition.",
+  "duration_s": 5.831875,
+  "source": "synthetisch: <repo>/bench_samples_synth/02.wav + weisses Rauschen amplitude=0.05, gemischt weights=1:0.35 (ffmpeg anoisesrc+amix)"
+ },
+ {
+  "path": "<messdaten>/synth_quiet/bench_samples_synth_02.wav",
+  "ref": "Good morning, I would like to talk about artificial intelligence today, especially speech recognition.",
+  "duration_s": 5.831875,
+  "source": "synthetisch: <repo>/bench_samples_synth/02.wav um -18dB abgesenkt (ffmpeg volume=-18dB)"
+ }
+]

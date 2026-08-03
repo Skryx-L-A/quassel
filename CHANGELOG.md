@@ -21,11 +21,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   0.557 s). An installation that still carries the old default is moved over on the next
   start. A decode setting you picked yourself stays untouched.
 - Short dictations are transcribed faster: anything under twelve seconds runs with a smaller
-  audio window in the speech engine. Measured with `large-v3-turbo-q5_0`, that cut the time in
-  the speech server by 38 to 44 % at a word error rate identical to the full window — 0.484 s
-  to 0.270 s on a 5.8-second recording, 0.560 s to 0.349 s on a 12.6-second one. Longer
-  recordings keep the full window: from about 14 seconds the shorter one starts costing
-  accuracy, and past 18 seconds the decoder runs into a repetition loop.
+  audio window in the speech engine. That cut the time in the speech server by 38 to 44 % at a
+  word error rate identical to the full window — 0.484 s to 0.270 s on a 5.8-second recording,
+  0.560 s to 0.349 s on a 12.6-second one. Longer recordings keep the full window: from about
+  14 seconds the shorter one starts costing accuracy, and past 18 seconds the decoder runs into
+  a repetition loop. Measured on Apple Silicon with `large-v3-turbo-q5_0`; the change applies on
+  every platform, but no other model or platform has been measured yet. Data and scripts are in
+  `docs/measurements/2026-08-03-audio-ctx-und-beam-size/`.
 
 ### Added
 - macOS/Windows: **"Click on the pill opens the control center"** in the control center. It is

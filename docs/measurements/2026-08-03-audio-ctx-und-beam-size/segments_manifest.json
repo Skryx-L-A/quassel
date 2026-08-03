@@ -1,0 +1,65 @@
+[
+ {
+  "path": "<messdaten>/segments/seg_22_09.91s.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und",
+  "duration_s": 9.91,
+  "word_idx": 22,
+  "source": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)"
+ },
+ {
+  "path": "<messdaten>/segments/seg_26_12.62s.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft.",
+  "duration_s": 12.62,
+  "word_idx": 26,
+  "source": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)"
+ },
+ {
+  "path": "<messdaten>/segments/seg_29_14.34s.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte",
+  "duration_s": 14.34,
+  "word_idx": 29,
+  "source": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)"
+ },
+ {
+  "path": "<messdaten>/segments/seg_33_16.08s.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte mir, dass die Preise",
+  "duration_s": 16.0799375,
+  "word_idx": 33,
+  "source": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)"
+ },
+ {
+  "path": "<messdaten>/segments/seg_36_18.03s.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des trockenen",
+  "duration_s": 18.03,
+  "word_idx": 36,
+  "source": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)"
+ },
+ {
+  "path": "<messdaten>/segments/seg_40_20.33s.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des trockenen Sommers um fast fünfzehn",
+  "duration_s": 20.33,
+  "word_idx": 40,
+  "source": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)"
+ },
+ {
+  "path": "<messdaten>/segments/seg_43_21.84s.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des trockenen Sommers um fast fünfzehn Prozent gestiegen sind.",
+  "duration_s": 21.84,
+  "word_idx": 43,
+  "source": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)"
+ },
+ {
+  "path": "<messdaten>/segments/seg_46_23.98s.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des trockenen Sommers um fast fünfzehn Prozent gestiegen sind. Anschließend traf ich",
+  "duration_s": 23.98,
+  "word_idx": 46,
+  "source": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)"
+ },
+ {
+  "path": "<messdaten>/segments/seg_51_26.22s.wav",
+  "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des trockenen Sommers um fast fünfzehn Prozent gestiegen sind. Anschließend traf ich meine Schwester in einem kleinen",
+  "duration_s": 26.22,
+  "word_idx": 51,
+  "source": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)"
+ }
+]

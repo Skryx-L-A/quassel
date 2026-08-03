@@ -41,8 +41,17 @@ def isolated_cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
     monkeypatch.setattr(pill_qt, "RUNDIR", str(tmp_path / "run"))
-    monkeypatch.setattr(state, "RUNDIR", str(tmp_path / "run"))
-    monkeypatch.setattr(state, "STATE", str(tmp_path / "run" / "state.json"))
+    run = tmp_path / "run"
+    monkeypatch.setattr(state, "RUNDIR", str(run))
+    monkeypatch.setattr(state, "STATE", str(run / "state.json"))
+    # Die drei übrigen Pfade zeigen heute niemanden an, weil pill_qt nur
+    # state_read und RUNDIR importiert. Sie werden trotzdem mit umgeleitet:
+    # greift die Pille eines Tages auf eine davon zu, zeigt die Fixture sonst
+    # still auf die Aufnahmedateien der laufenden Instanz -- und dann wäre es
+    # ein SCHREIBzugriff, nicht bloß ein Lesefehler wie oben.
+    monkeypatch.setattr(state, "RAW", str(run / "rec.raw"))
+    monkeypatch.setattr(state, "WAV", str(run / "rec.wav"))
+    monkeypatch.setattr(state, "PARTWAV", str(run / "partial.wav"))
 
 
 @pytest.fixture
