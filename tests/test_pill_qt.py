@@ -18,7 +18,7 @@ PySide6 = pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt, QPoint, QPointF         # noqa: E402
 from PySide6.QtWidgets import QApplication             # noqa: E402
 
-from quassel import config, pill_qt                    # noqa: E402
+from quassel import config, pill_qt, state             # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -30,10 +30,19 @@ def qapp():
 def isolated_cfg(tmp_path, monkeypatch):
     """Jeder Test bekommt eine eigene config.ini und ein eigenes RUNDIR — nie
     die echte Konfiguration oder das RUNDIR der laufenden Instanz anfassen
-    (dort schreibt state.py, unter anderem der auf Port 8765 laufende Daemon)."""
+    (dort schreibt state.py, unter anderem der auf Port 8765 laufende Daemon).
+
+    `pill_qt.RUNDIR` allein reicht dafür nicht: die Pille liest den Zustand
+    über `state_read()`, und das öffnet `state.STATE` — eine eigene
+    Modulkonstante, die von `pill_qt.RUNDIR` nichts weiß. Ohne diese zweite
+    Umleitung liest jeder Test die state.json der laufenden Instanz mit, und
+    ein dort stehendes „done" versetzt die Pille mitten im Test in den
+    Ergebnismodus (Timer-Test schlug genau dann fehl, wenn Quassel lief)."""
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
     monkeypatch.setattr(pill_qt, "RUNDIR", str(tmp_path / "run"))
+    monkeypatch.setattr(state, "RUNDIR", str(tmp_path / "run"))
+    monkeypatch.setattr(state, "STATE", str(tmp_path / "run" / "state.json"))
 
 
 @pytest.fixture
@@ -342,3 +351,20 @@ def test_timer_keeps_running_alongside_the_watcher(pill):
     """Der Timer bleibt Sicherheitsnetz -- der Watcher ersetzt ihn nicht."""
     assert pill.timer.isActive() is True
     assert pill_qt.RUNDIR in pill._fs_watcher.directories()
+
+
+def test_tick_reads_the_isolated_state_file_not_the_running_instance(pill, tmp_path):
+    """Regression zur Testisolation: tick() muss die state.json aus dem
+    umgeleiteten RUNDIR lesen. Fehlt die Umleitung von `state.STATE` in
+    isolated_cfg, liest der Test stattdessen die Datei der laufenden Instanz
+    -- dann steht hier ein fremder Text und andere Tests kippen je nachdem,
+    ob Quassel gerade läuft und was zuletzt diktiert wurde."""
+    rundir = tmp_path / "run"
+    rundir.mkdir(exist_ok=True)
+    (rundir / "state.json").write_text(
+        '{"state": "done", "text": "isolierter Testtext", "ts": 12345.0}',
+        encoding="utf-8")
+    pill.on = True
+    pill.tick()
+    assert pill.mode == "done"
+    assert pill.text == "isolierter Testtext"
