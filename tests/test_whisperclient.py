@@ -108,6 +108,17 @@ def test_wav_duration_s_reads_real_duration(tmp_path):
     assert wc.wav_duration_s(wavpath) == 5.0
 
 
+def test_threshold_stays_within_the_measured_range():
+    """Die Schwelle darf den letzten Messpunkt mit unveränderter
+    Wortfehlerrate (12,62s) nicht überschreiten: jede Aufnahme, die
+    audio_ctx bekommt, soll höchstens so lang sein wie eine, die sauber
+    gemessen wurde. Bei 14,34s war die Wortfehlerrate bereits doppelt so
+    hoch, ab 18,03s kippt die Dekodierung ganz. Wer die Schwelle anhebt,
+    braucht dafür eine neue Messreihe -- nicht nur ein grünes Gefühl."""
+    assert wc.AUDIO_CTX_MAX_SECONDS <= 12.62
+    assert wc.AUDIO_CTX_SHORT == 768
+
+
 def test_ensure_server_returns_at_once_when_up(monkeypatch):
     started = []
     monkeypatch.setattr(wc, "server_up", lambda timeout=2: True)

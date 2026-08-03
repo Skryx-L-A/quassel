@@ -88,17 +88,35 @@ def ensure_server(deadline=600):
 # englische Begriffe in deutscher Rede englisch zu lassen (Code-Switching).
 MIXED_PRIMER = "Das Meeting ist um 3 PM. Let's go - schick mir das Update."
 
-# Eigene Messung mit ggml-large-v3-turbo-q5_0 (Zeit / Wortfehlerrate, ohne
-# Feld gegen audio_ctx=768):
-#   5,80s: 0,484/0,000 gegen 0,270/0,000   9,91s: 0,533/0,045 gegen 0,308/0,045
-#  12,62s: 0,560/0,000 gegen 0,349/0,000  14,34s: 0,581/0,034 gegen 0,377/0,069 <- ab hier schlechter
-#  16,08s: 0,609/0,061 gegen 0,428/0,091  18,03s: 0,619/0,028 gegen 2,368/0,667 <- kippt komplett
-# Bis 12,6s ist die Wortfehlerrate IDENTISCH bei ~44% weniger Serverzeit.
-# Rechnerischer Kipppunkt: 768/1500 * 30s = 15,36s. AUDIO_CTX_MAX_SECONDS=10.0
-# ist der bewusste Sicherheitsabstand zu BEIDEM (12,6s letzter sauberer
-# Messpunkt, 15,4s rechnerischer Kipppunkt) — NICHT ohne neue Messreihe anheben.
+# Eigene Messung mit ggml-large-v3-turbo-q5_0, elf Längen, fünf Läufe je Punkt
+# (Median-Serverzeit / Wortfehlerrate; Rohdaten ac_sweep_result.json):
+#
+#   Länge   ohne Feld        audio_ctx=768    audio_ctx=1000
+#    5,80s  0,484 / 0,000    0,270 / 0,000    0,339 / 0,071
+#    9,91s  0,533 / 0,045    0,308 / 0,045    0,391 / 0,091
+#   12,62s  0,560 / 0,000    0,349 / 0,000    0,423 / 0,038
+#   14,34s  0,581 / 0,034    0,377 / 0,069    0,453 / 0,069
+#   16,08s  0,609 / 0,061    0,428 / 0,091    0,491 / 0,121
+#   18,03s  0,619 / 0,028    2,368 / 0,667    0,520 / 0,056
+#
+# Zwei Befunde bestimmen die beiden Konstanten:
+#
+# 768 hält die Wortfehlerrate bis 12,62s EXAKT auf dem Wert ohne Feld, bei
+# 38-44% weniger Serverzeit; ab 14,34s wird sie schlechter, ab 18,03s gerät die
+# Dekodierung in eine Wiederholungsschleife und braucht dann sogar länger.
+#
+# 1000 (rechnerische Reichweite 20s statt 15,4s) würde längere Diktate mit
+# abdecken, verschlechtert die Wortfehlerrate aber an JEDEM gemessenen Punkt,
+# meist auf das Doppelte — für ~0,1s Zeitgewinn. Genauigkeit vor Geschwindigkeit,
+# also nicht genommen.
+#
+# AUDIO_CTX_MAX_SECONDS liegt deshalb unter 12,62s, dem letzten Punkt mit
+# nachweislich unveränderter Wortfehlerrate. Jede Aufnahme, die das Feld
+# bekommt, ist damit höchstens so lang wie eine sauber gemessene. Abstand nach
+# oben: 2,3s bis zur ersten Verschlechterung, 3,4s bis zum rechnerischen
+# Kipppunkt (768/1500 * 30s = 15,36s). NICHT ohne neue Messreihe anheben.
 AUDIO_CTX_SHORT = 768
-AUDIO_CTX_MAX_SECONDS = 10.0
+AUDIO_CTX_MAX_SECONDS = 12.0
 
 
 def wav_duration_s(wavpath):
