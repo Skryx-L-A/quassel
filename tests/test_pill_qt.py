@@ -6,6 +6,7 @@ und ohne die echte Konfigurationsdatei anzufassen (isolated_cfg)."""
 import configparser
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -229,3 +230,69 @@ def test_disabling_movable_restores_auto_position_on_reload(pill, monkeypatch):
     pill.reload_cfg()
     expected_x = g.x() + (g.width() - pill.width()) // 2
     assert pill.pos().x() == expected_x
+
+
+# ------------------------------------------------------------ Timer-Taktstufen
+def test_timer_runs_slow_when_idle(pill):
+    pill.set_mode("ready")
+    assert pill.timer.interval() == pill_qt.TICK_SLOW_MS
+
+
+def test_timer_speeds_up_while_recording(pill):
+    pill.set_mode("recording")
+    assert pill.timer.interval() == pill_qt.TICK_FAST_MS
+
+
+def test_timer_stays_fast_during_result_window(pill):
+    pill.set_mode("done", "hallo")
+    assert pill.timer.interval() == pill_qt.TICK_FAST_MS
+
+
+def test_timer_slows_down_once_result_window_expires(pill):
+    pill.set_mode("done", "hallo")
+    pill.result_until = time.monotonic() - 0.1   # Fenster bereits abgelaufen
+    pill.tick()
+    assert pill.timer.interval() == pill_qt.TICK_SLOW_MS
+
+
+def test_timer_stops_while_pill_disabled(pill):
+    pill.cfg.pill_enabled = False
+    pill.reload_cfg()
+    assert pill.timer.isActive() is False
+
+
+def test_timer_restarts_when_pill_reenabled(pill, monkeypatch):
+    pill.cfg.pill_enabled = False
+    pill.reload_cfg()
+    assert pill.timer.isActive() is False
+    monkeypatch.setattr(pill.cfg, "reload", lambda: True)
+    pill.cfg.pill_enabled = True
+    pill.reload_cfg()
+    assert pill.timer.isActive() is True
+
+
+def test_cfg_timer_keeps_running_while_pill_disabled(pill):
+    pill.cfg.pill_enabled = False
+    pill.reload_cfg()
+    assert pill.cfg_timer.isActive() is True
+
+
+# ---------------------------------------------------------- daemon_active-Cache
+def test_daemon_active_caches_systemctl_result(monkeypatch):
+    monkeypatch.setattr(pill_qt.sys, "platform", "linux")
+    monkeypatch.setattr(pill_qt, "_daemon_active_cache",
+                        {"ts": float("-inf"), "val": None})
+    calls = []
+
+    def fake_run(*a, **kw):
+        calls.append(1)
+        return type("R", (), {"returncode": 0})()
+    monkeypatch.setattr(pill_qt.subprocess, "run", fake_run)
+    t = [1000.0]
+    monkeypatch.setattr(pill_qt.time, "monotonic", lambda: t[0])
+    assert pill_qt.daemon_active() is True
+    assert pill_qt.daemon_active() is True     # aus dem Cache, kein neuer Aufruf
+    assert len(calls) == 1
+    t[0] += pill_qt.DAEMON_ACTIVE_CACHE_S + 1   # Cache abgelaufen
+    assert pill_qt.daemon_active() is True
+    assert len(calls) == 2

@@ -24,6 +24,16 @@ from . import config
 from .state import state_read
 
 RESULT_SHOW_S = 3.0
+# Taktstufen des Timers: schnell nur, solange etwas animiert (Aufnahme,
+# Ergebnisfenster) — der Rest der Zeit reicht der langsame Takt, die Pille
+# zeigt sonst nur einen ruhenden Zustand. Nicht langsamer als 250 ms: die
+# Pille ist die Rückmeldung "Aufnahme läuft", mehr Verzug wäre spürbar.
+TICK_FAST_MS = 80
+TICK_SLOW_MS = 250
+# daemon_active() zwischenspeichern: unter Linux startet jeder Aufruf einen
+# systemctl-Prozess, bei 80ms-Takt sonst 43.200 Prozesse pro Tag.
+DAEMON_ACTIVE_CACHE_S = 10.0
+_daemon_active_cache = {"ts": float("-inf"), "val": None}
 # Argv-Liste (kein String): Pfade mit Leerzeichen (z.B. ein Python in einem
 # .app-Bundle) dürfen den Start des Kontrollzentrums nicht brechen.
 CENTER_CMD = os.environ.get("QUASSEL_CENTER_CMD", "quassel-type").split()
@@ -60,8 +70,14 @@ def daemon_active():
         return True
     if sys.platform == "darwin":
         return True
-    return subprocess.run(["systemctl", "--user", "is-active", "--quiet", "quasseld"],
-                          check=False).returncode == 0
+    now = time.monotonic()
+    if now - _daemon_active_cache["ts"] < DAEMON_ACTIVE_CACHE_S:
+        return _daemon_active_cache["val"]
+    val = subprocess.run(["systemctl", "--user", "is-active", "--quiet", "quasseld"],
+                         check=False).returncode == 0
+    _daemon_active_cache["ts"] = now
+    _daemon_active_cache["val"] = val
+    return val
 
 
 class Pill(QWidget):
@@ -87,13 +103,15 @@ class Pill(QWidget):
         self._dragging = False
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
-        self.timer.start(80)
+        self.timer.start(self._tick_interval())
         self.cfg_timer = QTimer(self)
         self.cfg_timer.timeout.connect(self.reload_cfg)
         self.cfg_timer.start(1000)
         self.resize_to_cfg()
         self._update_cursor()
         self.setVisible(self.cfg.pill_enabled)
+        if not self.cfg.pill_enabled:
+            self.timer.stop()
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -178,12 +196,30 @@ class Pill(QWidget):
             self._update_cursor()
             self.update()  # sonst wirkt z.B. der Transparenz-Regler erst beim nächsten Statuswechsel
         self.setVisible(self.cfg.pill_enabled)
+        if self.cfg.pill_enabled:
+            if not self.timer.isActive():
+                self.timer.start(self._tick_interval())
+        else:
+            self.timer.stop()
+
+    def _tick_interval(self):
+        """80ms nur, solange sich etwas bewegt (Aufnahme oder ein noch
+        laufendes Ergebnisfenster) — sonst reicht der langsame Takt."""
+        if self.mode == "recording" or time.monotonic() < self.result_until:
+            return TICK_FAST_MS
+        return TICK_SLOW_MS
+
+    def _apply_tick_interval(self):
+        wanted = self._tick_interval()
+        if self.timer.interval() != wanted:
+            self.timer.setInterval(wanted)
 
     def set_mode(self, mode, text=""):
         self.mode = mode
         self.text = text
         if mode in ("done", "error"):
             self.result_until = time.monotonic() + RESULT_SHOW_S
+        self._apply_tick_interval()
         self.update()
 
     def tick(self):
@@ -202,6 +238,7 @@ class Pill(QWidget):
             self.set_mode("ready" if s == "idle" else s, st.get("text", ""))
         if self.mode in ("done", "error") and now > self.result_until:
             self.set_mode("ready" if self.on else "off")
+        self._apply_tick_interval()
         if self.mode == "recording":
             self.update()   # Atmungs-Animation
 

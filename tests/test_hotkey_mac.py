@@ -446,6 +446,29 @@ def test_h3_blocking_rest_does_not_block_events():
                      "rest-end", "rest-begin", "rest-end"], order
 
 
+def test_action_worker_uses_action_idle_poll_not_poll_interval(monkeypatch):
+    """Der Aktions-Thread wacht bei leerer Queue nur an ACTION_IDLE_POLL auf
+    (Watchdog misst gegen 60s/30s, ein Sekundentakt reicht) — POLL_INTERVAL
+    (0,05s) bleibt dem zeitkritischen _worker vorbehalten. Eine deutlich
+    größere Frist als POLL_INTERVAL beweist, dass wirklich ACTION_IDLE_POLL
+    gilt und nicht versehentlich weiter POLL_INTERVAL."""
+    assert hotkey_mac.ACTION_IDLE_POLL == 1.0
+    assert hotkey_mac.ACTION_IDLE_POLL != hotkey_mac.POLL_INTERVAL
+    monkeypatch.setattr(hotkey_mac, "ACTION_IDLE_POLL", 0.3)
+    listener, _ = make_listener()
+    listener.start_workers()
+    try:
+        listener.last_action_tick = 0.0
+        t0 = time.monotonic()
+        while listener.last_action_tick < t0:
+            time.sleep(0.01)
+        elapsed = time.monotonic() - t0
+        assert elapsed >= 0.2, "wachte zu früh auf -- benutzt POLL_INTERVAL statt ACTION_IDLE_POLL?"
+        assert elapsed < 1.0
+    finally:
+        listener._stop_poll.set()
+
+
 def test_force_finish_returns_false_when_lock_is_held(monkeypatch):
     """Hängt ein Callback unter dem Maschinen-Lock (on_start läuft synchron),
     darf force_finish nicht mitwarten — sonst hängt auch der Watchdog."""

@@ -86,6 +86,11 @@ MAC_CHORDS = {
 }
 
 POLL_INTERVAL = 0.05   # s: await2-Timeout + pending_finish abwickeln (wie daemon.py)
+# Aktions-Thread wacht nur auf, um bei leerer Queue last_action_tick zu
+# aktualisieren (Watchdog misst gegen ACTION_STALL=60s/DEAD_STALL=30s) — dafür
+# reicht ein Sekundentakt, POLL_INTERVAL bleibt dem zeitkritischen _worker
+# vorbehalten (dort wickelt machine.poll(now) pending_finish ab).
+ACTION_IDLE_POLL = 1.0
 LOCK_WAIT = 1.0        # s: so lange wartet force_finish auf den Maschinen-Lock
 
 
@@ -402,7 +407,7 @@ class MacHotkeyListener(threading.Thread):
         current_action + last_action_tick — der Ereignis-Thread merkt nichts."""
         while not self._stop_poll.is_set():
             try:
-                name, cb = self._actions.get(timeout=POLL_INTERVAL)
+                name, cb = self._actions.get(timeout=ACTION_IDLE_POLL)
             except queue.Empty:
                 self.last_action_tick = time.monotonic()
                 continue

@@ -3,6 +3,8 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 
 from . import config
 
@@ -26,13 +28,24 @@ STARTER = _default_starter
 
 
 _server_seen = False       # war der Server in dieser Sitzung schon erreichbar?
+# Eigener Opener OHNE Proxy: der Server läuft auf 127.0.0.1, und urllib würde
+# sonst die Proxy-Einstellungen aus den macOS-Systemeinstellungen anwenden (curl
+# las die nie). Mit einem Systemproxy liefe die Probe ins Leere, Quassel hielte
+# den laufenden Server für tot und startete ihn neu.
+_probe = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def server_up(timeout=2):
+    # urllib statt curl-Subprozess: gemessen 0,17ms gegen 5,75ms. Der
+    # Multipart-Upload in transcribe() bleibt bei curl (Unterschied dort nur
+    # 0,8ms, Umbau riskanter).
     global _server_seen
-    ok = subprocess.run(
-        ["curl", "-fsS", "-m", str(timeout), "-o", os.devnull, SERVER + "/"],
-        check=False, **NOWIN).returncode == 0
+    try:
+        with _probe.open(SERVER + "/", timeout=timeout):
+            pass            # Verbindung sofort schließen, nur Erreichbarkeit zählt
+        ok = True
+    except Exception:  # noqa: BLE001 — jede Ausnahme (Timeout, Refused, HTTP-Fehler) = nicht erreichbar
+        ok = False
     if ok:
         _server_seen = True
     return ok

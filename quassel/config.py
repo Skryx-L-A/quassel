@@ -179,18 +179,36 @@ def write_serverenv(env):
 
 
 # ----------------------------------------------------------------- Wörterbuch
+# mtime+size als Schlüssel statt jedes Teiltranskript neu von der Platte zu
+# lesen. dictionary_save() wirft den Schlüssel trotzdem weg (nicht nur auf die
+# mtime-Prüfung verlassen) — ein Schreiben derselben Länge innerhalb derselben
+# Dateisystem-Auflösung der mtime könnte sonst als "unverändert" durchgehen.
+_dictionary_cache = {"key": None, "words": []}
+
+
 def dictionary_words():
     try:
-        with open(DICTIONARY, encoding="utf-8") as f:
-            return [w.strip() for w in f if w.strip()]
+        st = os.stat(DICTIONARY)
     except OSError:
+        _dictionary_cache["key"] = None
+        _dictionary_cache["words"] = []
         return []
+    key = (DICTIONARY, st.st_mtime, st.st_size)
+    if _dictionary_cache["key"] != key:
+        try:
+            with open(DICTIONARY, encoding="utf-8") as f:
+                _dictionary_cache["words"] = [w.strip() for w in f if w.strip()]
+        except OSError:
+            _dictionary_cache["words"] = []
+        _dictionary_cache["key"] = key
+    return _dictionary_cache["words"]
 
 
 def dictionary_save(text):
     os.makedirs(CONFDIR, exist_ok=True)
     with open(DICTIONARY, "w", encoding="utf-8") as f:
         f.write(text.strip() + "\n" if text.strip() else "")
+    _dictionary_cache["key"] = None
 
 
 # ------------------------------------------------------------- Textersetzungen

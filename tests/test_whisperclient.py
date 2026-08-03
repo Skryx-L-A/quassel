@@ -1,4 +1,5 @@
 """Tests des curl-Argumentbaus für /inference (Sprache auto/mixed/fest, Prompt)."""
+import contextlib
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from quassel import whisperclient as wc
@@ -50,6 +51,59 @@ def test_ensure_server_returns_at_once_when_up(monkeypatch):
     monkeypatch.setattr(wc, "STARTER", lambda: started.append(1))
     assert wc.ensure_server(deadline=0.1) is True
     assert started == []                       # läuft schon -> nichts starten
+
+
+class _FakeProbe:
+    """Ersatz für wc._probe. open() gibt einen Kontextmanager zurück — genau
+    das, was server_up erwartet; ein blankes object() würde durchrutschen und
+    die Probe stillschweigend an den echten Server auf 8765 schicken."""
+
+    def __init__(self, calls=None, exc=None):
+        self.calls, self.exc = calls if calls is not None else [], exc
+
+    def open(self, url, timeout=None):
+        self.calls.append((url, timeout))
+        if self.exc:
+            raise self.exc
+        return contextlib.nullcontext()
+
+
+def test_server_up_true_when_probe_succeeds(monkeypatch):
+    probe = _FakeProbe()
+    monkeypatch.setattr(wc, "_probe", probe)
+    assert wc.server_up(timeout=3) is True
+    assert probe.calls == [(wc.SERVER + "/", 3)]
+    assert wc.server_was_up() is True
+
+
+def test_server_up_false_on_any_exception(monkeypatch):
+    monkeypatch.setattr(wc, "_probe", _FakeProbe(exc=OSError("connection refused")))
+    wc._server_seen = False
+    assert wc.server_up() is False
+    assert wc.server_was_up() is False
+
+
+def test_server_up_does_not_shell_out_to_curl(monkeypatch):
+    def boom(*a, **kw):
+        raise AssertionError("server_up hat curl aufgerufen statt urllib")
+    monkeypatch.setattr(wc.subprocess, "run", boom)
+    monkeypatch.setattr(wc, "_probe", _FakeProbe())
+    assert wc.server_up() is True
+
+
+def test_server_up_probe_ignores_system_proxies(monkeypatch):
+    """Der Server läuft auf 127.0.0.1: ein Systemproxy darf die Probe nicht
+    umleiten, sonst gilt ein laufender Server als tot und wird neu gestartet.
+    Ein ProxyHandler({}) registriert keine *_open-Methoden und wird von
+    build_opener deshalb gar nicht eingehängt — genau das ist die Garantie."""
+    import urllib.request
+    assert not any(isinstance(h, urllib.request.ProxyHandler)
+                   for h in wc._probe.handlers)
+    # Gegenprobe, damit der Test nicht leer läuft: der Standard-Opener, den
+    # urlopen benutzt, würde unter einem Proxy sehr wohl einen einhängen.
+    monkeypatch.setenv("http_proxy", "http://192.0.2.1:9")
+    assert any(isinstance(h, urllib.request.ProxyHandler)
+               for h in urllib.request.build_opener().handlers)
 
 
 def test_ensure_server_gives_up_after_the_deadline(monkeypatch):
