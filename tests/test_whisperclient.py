@@ -1,8 +1,22 @@
-"""Tests des curl-Argumentbaus für /inference (Sprache auto/mixed/fest, Prompt)."""
+"""Tests des curl-Argumentbaus für /inference (Sprache auto/mixed/fest, Prompt,
+audio_ctx-Feld für kurze Diktate)."""
 import contextlib
 import sys, os
+import wave
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from quassel import whisperclient as wc
+
+
+def _make_wav(path, duration_s, rate=16000):
+    """Stille WAV-Datei fester Dauer (16-bit mono) für die audio_ctx-Tests --
+    keine echte Aufnahme nötig, nur eine gültige Header+Frames-Struktur."""
+    nframes = int(duration_s * rate)
+    with wave.open(str(path), "wb") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(rate)
+        f.writeframes(b"\x00\x00" * nframes)
+    return str(path)
 
 
 class Cfg:
@@ -43,6 +57,55 @@ def test_mixed_combines_primer_and_words():
     args = wc.build_inference_args("a.wav", Cfg("mixed"), ["Kubernetes"])
     prompt = next(a for a in args if a.startswith("prompt="))
     assert wc.MIXED_PRIMER in prompt and "Kubernetes" in prompt
+
+
+# ------------------------------------------------------------- audio_ctx
+def test_short_wav_gets_audio_ctx_field(tmp_path):
+    wavpath = _make_wav(tmp_path / "short.wav", 3.0)
+    args = wc.build_inference_args(wavpath, Cfg("auto"), [])
+    assert f"audio_ctx={wc.AUDIO_CTX_SHORT}" in args
+
+
+def test_long_wav_has_no_audio_ctx_field(tmp_path):
+    wavpath = _make_wav(tmp_path / "long.wav", 15.0)
+    args = wc.build_inference_args(wavpath, Cfg("auto"), [])
+    assert not any(a.startswith("audio_ctx=") for a in args)
+
+
+def test_wav_at_exactly_the_threshold_has_no_audio_ctx_field(tmp_path):
+    """Definiertes Verhalten an der Grenze: die Bedingung ist "< 10.0s",
+    exakt 10.0s zählt schon als nicht mehr kurz genug (Sicherheitsabstand
+    zum letzten sauber gemessenen Punkt bleibt so auf der sicheren Seite)."""
+    wavpath = _make_wav(tmp_path / "boundary.wav", wc.AUDIO_CTX_MAX_SECONDS)
+    args = wc.build_inference_args(wavpath, Cfg("auto"), [])
+    assert not any(a.startswith("audio_ctx=") for a in args)
+
+
+def test_just_under_the_threshold_gets_the_field(tmp_path):
+    wavpath = _make_wav(tmp_path / "just_under.wav", wc.AUDIO_CTX_MAX_SECONDS - 0.1)
+    args = wc.build_inference_args(wavpath, Cfg("auto"), [])
+    assert f"audio_ctx={wc.AUDIO_CTX_SHORT}" in args
+
+
+def test_missing_wav_omits_the_field_without_raising():
+    args = wc.build_inference_args("/nope/does-not-exist.wav", Cfg("auto"), [])
+    assert not any(a.startswith("audio_ctx=") for a in args)
+
+
+def test_corrupt_wav_omits_the_field_without_raising(tmp_path):
+    wavpath = tmp_path / "garbage.wav"
+    wavpath.write_bytes(b"not actually a wav file")
+    args = wc.build_inference_args(str(wavpath), Cfg("auto"), [])
+    assert not any(a.startswith("audio_ctx=") for a in args)
+
+
+def test_wav_duration_s_returns_none_for_missing_file():
+    assert wc.wav_duration_s("/nope/does-not-exist.wav") is None
+
+
+def test_wav_duration_s_reads_real_duration(tmp_path):
+    wavpath = _make_wav(tmp_path / "five.wav", 5.0)
+    assert wc.wav_duration_s(wavpath) == 5.0
 
 
 def test_ensure_server_returns_at_once_when_up(monkeypatch):

@@ -5,6 +5,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import wave
 
 from . import config
 
@@ -87,6 +88,32 @@ def ensure_server(deadline=600):
 # englische Begriffe in deutscher Rede englisch zu lassen (Code-Switching).
 MIXED_PRIMER = "Das Meeting ist um 3 PM. Let's go - schick mir das Update."
 
+# Eigene Messung mit ggml-large-v3-turbo-q5_0 (Zeit / Wortfehlerrate, ohne
+# Feld gegen audio_ctx=768):
+#   5,80s: 0,484/0,000 gegen 0,270/0,000   9,91s: 0,533/0,045 gegen 0,308/0,045
+#  12,62s: 0,560/0,000 gegen 0,349/0,000  14,34s: 0,581/0,034 gegen 0,377/0,069 <- ab hier schlechter
+#  16,08s: 0,609/0,061 gegen 0,428/0,091  18,03s: 0,619/0,028 gegen 2,368/0,667 <- kippt komplett
+# Bis 12,6s ist die Wortfehlerrate IDENTISCH bei ~44% weniger Serverzeit.
+# Rechnerischer Kipppunkt: 768/1500 * 30s = 15,36s. AUDIO_CTX_MAX_SECONDS=10.0
+# ist der bewusste Sicherheitsabstand zu BEIDEM (12,6s letzter sauberer
+# Messpunkt, 15,4s rechnerischer Kipppunkt) — NICHT ohne neue Messreihe anheben.
+AUDIO_CTX_SHORT = 768
+AUDIO_CTX_MAX_SECONDS = 10.0
+
+
+def wav_duration_s(wavpath):
+    """Dauer einer WAV-Datei in Sekunden, None wenn nicht bestimmbar (Datei
+    fehlt/kaputt/kein WAV) — der sichere Zweig für den Aufrufer: kein
+    audio_ctx-Feld statt einer geworfenen Ausnahme."""
+    try:
+        with wave.open(wavpath, "rb") as f:
+            rate = f.getframerate()
+            if not rate:
+                return None
+            return f.getnframes() / rate
+    except (OSError, wave.Error, EOFError):
+        return None
+
 
 def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
     """curl-Argumente für /inference bauen. Sprache:
@@ -94,10 +121,16 @@ def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
       mixed  -> automatische Erkennung + zweisprachiger Prompt-Anstoß (#23)
       de/en  -> feste Sprache.
     prompt_extra: zusätzlicher Bias-Text (z.B. das Wake-Word), wird dem Prompt
-    vorangestellt, damit Whisper z.B. das Kunstwort 'Quassel' eher ausgibt."""
+    vorangestellt, damit Whisper z.B. das Kunstwort 'Quassel' eher ausgibt.
+    Kurze Aufnahmen (< AUDIO_CTX_MAX_SECONDS) bekommen audio_ctx=AUDIO_CTX_SHORT
+    mit -- gilt auch für Teiltranskript-Fenster (PartialLoop), dieselbe
+    Längenregel dort ist gewollt und billiger."""
     args = ["curl", "-fsS", "-m", str(timeout), SERVER + "/inference",
             "-F", f"file=@{wavpath}",
             "-F", "response_format=text", "-F", "temperature=0.0"]
+    duration = wav_duration_s(wavpath)
+    if duration is not None and duration < AUDIO_CTX_MAX_SECONDS:
+        args += ["-F", f"audio_ctx={AUDIO_CTX_SHORT}"]
     lang = getattr(cfg, "language", "auto")
     if lang not in ("auto", "mixed"):
         args += ["-F", f"language={lang}"]

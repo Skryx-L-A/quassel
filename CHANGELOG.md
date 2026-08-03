@@ -20,6 +20,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   more accurate, on one noisy take worse, and about 6 % slower (median 0.595 s against
   0.557 s). An installation that still carries the old default is moved over on the next
   start. A decode setting you picked yourself stays untouched.
+- Short dictations are transcribed faster: anything under ten seconds runs with a smaller
+  audio window in the speech engine. On a 5.8-second recording that cut the time in the
+  speech server from 0.484 s to 0.270 s at an identical word error rate, and the saving holds
+  up to about 12 seconds (measured with `large-v3-turbo-q5_0`). Longer recordings keep the
+  full window, because that is where accuracy starts to fall off.
+
 ### Added
 - macOS/Windows: **"Click on the pill opens the control center"** in the control center. It is
   on by default; switch it off when opening the settings window by accident gets in the way.
