@@ -14,6 +14,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-08-04
+
+> macOS and Linux are new in this release. The Windows installer
+> (`Quassel-Setup.exe`) is carried over unchanged from 2.5.0 — it is built on
+> Windows and none was available; the changes below reach Windows with the next
+> build from source.
+
 ### Changed
 - Dictation decodes with greedy search on every platform now. Beam search was the default
   wherever a GPU was found; measured over 36 recordings and 938 reference words it was never

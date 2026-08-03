@@ -90,7 +90,8 @@ Keep all parts in one folder, double-click the `.exe` to extract, then run
 `Quassel.exe`. Nothing is ever downloaded.
 
 > **Note:** the offline all-in-one packages are currently **v2.2.0** (an older
-> build); the quick installer above is the latest (**v2.4.0**).
+> build); the quick installer above is **v2.4.0** — the Windows build has not
+> caught up with 2.6.0 yet, because it is built on Windows.
 
 > **Status:** the Windows build passed full hands-on testing (dictation,
 > hands-free mode, settings, autostart) on Windows 11 with an NVIDIA GPU —
@@ -131,7 +132,7 @@ models — nothing is ever downloaded. Runs on x86_64 with glibc ≥ 2.28.
 
 > **Note:** the offline all-in-one package is currently **v2.2.0** (an older
 > build); the quick installer / `git clone … && ./install.sh` above give the
-> latest (**v2.4.0**).
+> latest (**v2.6.0**).
 
 > **Tested:** Fedora / Nobara (daily driver). **Untested but prepared:**
 > Ubuntu/Debian/Mint, Arch and openSUSE — the package lists are verified in
