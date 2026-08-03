@@ -436,7 +436,13 @@ class Center(QMainWindow):
         self.pill_movable = QCheckBox(tr("pill_movable"))
         self.pill_movable.setChecked(self.cfg.pill_movable)
         self.pill_movable.toggled.connect(self.save_settings)
-        g.addWidget(self.pill_movable)
+        row = QHBoxLayout()
+        row.addWidget(self.pill_movable)
+        row.addStretch(1)
+        self.pill_reset_pos = QPushButton(tr("pill_reset_pos"))
+        self.pill_reset_pos.clicked.connect(self.reset_pill_position)
+        row.addWidget(self.pill_reset_pos)
+        g.addLayout(row)
         self.pill_preview = QCheckBox(tr("pill_preview"))
         self.pill_preview.setChecked(self.cfg.pill_preview)
         self.pill_preview.toggled.connect(self.save_settings)
@@ -855,6 +861,12 @@ class Center(QMainWindow):
         else:
             sysctl("start", *UNITS_START)
         self.refresh_status()
+
+    def reset_pill_position(self):
+        """Verwirft eine gespeicherte Ziehposition; die Pille springt über
+        ihren eigenen 1-Sekunden-Konfig-Timer zurück auf unten mittig — auch
+        wenn 'frei verschiebbar' gerade aus ist."""
+        config.save({("pill", "pos_x"): -1, ("pill", "pos_y"): -1})
 
     # ----------------------------------------------------------- Speichern
     def save_settings(self, *_a):

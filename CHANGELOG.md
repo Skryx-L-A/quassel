@@ -18,7 +18,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - macOS/Windows: the pill can now be dragged to any position on screen. Turn it on with
   **"Pill can be moved"** in the control center (off by default); a plain click still opens the
   control center, and a drag of at least a few pixels moves the pill instead. Turning the
-  setting back off snaps the pill back to its usual spot at the bottom of the screen.
+  setting back off snaps the pill back to its usual spot at the bottom of the screen. A new
+  **"Reset position"** button next to the setting snaps the pill back to that default spot
+  right away, whether or not "Pill can be moved" is currently on.
 
 - macOS: the menu-bar icon has a new entry **"Diktat sofort beenden"** that stops a running
   dictation at once — for the rare case where the hotkey no longer responds. The same
@@ -37,10 +39,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stopped.
 
 ### Fixed
-- macOS/Windows: the pill's opacity slider in the control center had no visible effect — it only
-  faded a thin background plate, while the waveform and the live-preview text (the parts you
-  actually see) stayed fully opaque. The setting now controls the whole pill window, changes
-  apply immediately, and dragging the slider all the way down no longer makes the pill invisible.
+- macOS/Windows: moving the pill's opacity slider in the control center had no visible effect
+  until the pill's mode changed next (e.g. starting a recording) — a config reload only resized
+  the pill window, it never repainted it. The oval background and the live-preview bubble now
+  update immediately when the slider moves; the waveform bars are unaffected by the setting and
+  stay fully visible at every opacity level, as intended.
 - macOS: dictation could wedge for good — the recording kept running and pressing the chord
   no longer ended it, until Quassel was restarted. A slow or faulty audio device blocked the
   thread that handles the keyboard. Stopping a recording, every AppleScript call and the wait

@@ -92,7 +92,6 @@ class Pill(QWidget):
         self.cfg_timer.timeout.connect(self.reload_cfg)
         self.cfg_timer.start(1000)
         self.resize_to_cfg()
-        self.setWindowOpacity(self._op())
         self._update_cursor()
         self.setVisible(self.cfg.pill_enabled)
 
@@ -129,6 +128,13 @@ class Pill(QWidget):
 
     def _op(self):
         return max(0.15, min(1.0, self.cfg.pill_opacity))
+
+    def _bg_color(self):
+        """Ovalhintergrund mit dem Transparenz-Regler als Alpha — die Balken
+        (siehe _wave_color) bleiben davon unberührt, immer voll deckend."""
+        bg = QColor(PILL_BG)
+        bg.setAlphaF(self._op())
+        return bg
 
     def resize_to_cfg(self):
         s = self._scale()
@@ -169,9 +175,8 @@ class Pill(QWidget):
     def reload_cfg(self):
         if self.cfg.reload():
             self.resize_to_cfg()
-            self.setWindowOpacity(self._op())
             self._update_cursor()
-            self.update()
+            self.update()  # sonst wirkt z.B. der Transparenz-Regler erst beim nächsten Statuswechsel
         self.setVisible(self.cfg.pill_enabled)
 
     def set_mode(self, mode, text=""):
@@ -213,7 +218,8 @@ class Pill(QWidget):
         pill = QRectF(cx - pill_w / 2, self.height() - pill_h - 2, pill_w, pill_h)
         path = QPainterPath()
         path.addRoundedRect(pill, pill_h / 2, pill_h / 2)
-        p.fillPath(path, PILL_BG)
+        p.fillPath(path, self._bg_color())
+        # Balken bleiben immer voll deckend — nur der Ovalhintergrund wird transparent
         self._draw_wave(p, pill.left() + pad, pill.center().y(), wave_w, 14 * s)
         if self.cfg.pill_preview and self.text and self.mode in ("recording", "done", "error"):
             self._draw_bubble(p, pill, s)
@@ -256,7 +262,7 @@ class Pill(QWidget):
         box = br.adjusted(-2 * pad, -pad, 2 * pad, pad)
         path = QPainterPath()
         path.addRoundedRect(box, 10, 10)
-        p.fillPath(path, PILL_BG)
+        p.fillPath(path, self._bg_color())
         p.setPen(C_TEXT)
         p.drawText(avail, flags, txt)
 

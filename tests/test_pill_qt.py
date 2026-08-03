@@ -1,7 +1,8 @@
-"""Qt-Pille (macOS/Windows): Fenster-Deckkraft folgt dem Transparenz-Regler
-(auch nach einer Konfigänderung zur Laufzeit), und die Pille lässt sich per
-Ziehen verschieben, wenn `pill.movable` an ist — offscreen, ohne echten
-Bildschirm und ohne die echte Konfigurationsdatei anzufassen (isolated_cfg)."""
+"""Qt-Pille (macOS/Windows): der Transparenz-Regler färbt nur den ovalen
+Hintergrund (auch nach einer Konfigänderung zur Laufzeit) — die Sprachbalken
+bleiben immer voll deckend. Außerdem lässt sich die Pille per Ziehen
+verschieben, wenn `pill.movable` an ist — offscreen, ohne echten Bildschirm
+und ohne die echte Konfigurationsdatei anzufassen (isolated_cfg)."""
 import configparser
 import os
 import sys
@@ -59,10 +60,23 @@ def test_op_clamps_to_valid_range(pill, raw, expected):
     assert pill._op() == pytest.approx(expected)
 
 
-def test_window_opacity_set_on_construction(pill):
-    # Die offscreen-QPA-Plattform quantisiert Fenster-Deckkraft auf 1/255 —
-    # daher eine großzügigere absolute statt der relativen Standardtoleranz.
-    assert pill.windowOpacity() == pytest.approx(pill._op(), abs=0.01)
+def test_window_stays_fully_opaque(pill):
+    # Nur das Oval wird transparent — das Fenster selbst (und damit alles,
+    # was ohne eigene Alpha darauf gezeichnet wird) bleibt bei 1.0.
+    pill.cfg.pill_opacity = 0.3
+    assert pill.windowOpacity() == pytest.approx(1.0)
+
+
+def test_bg_color_alpha_follows_opacity_setting(pill):
+    pill.cfg.pill_opacity = 0.3
+    # QColor quantisiert Alpha auf 1/255 — daher eine absolute statt der
+    # relativen Standardtoleranz.
+    assert pill._bg_color().alphaF() == pytest.approx(0.3, abs=0.01)
+
+
+def test_wave_color_has_no_alpha_regardless_of_opacity(pill):
+    pill.cfg.pill_opacity = 0.15
+    assert pill._wave_color().alphaF() == pytest.approx(1.0)
 
 
 def test_reload_cfg_applies_new_opacity_and_repaints(pill, monkeypatch):
@@ -71,7 +85,9 @@ def test_reload_cfg_applies_new_opacity_and_repaints(pill, monkeypatch):
     updated = []
     monkeypatch.setattr(pill, "update", lambda: updated.append(1))
     pill.reload_cfg()
-    assert pill.windowOpacity() == pytest.approx(0.3, abs=0.01)
+    # QColor quantisiert Alpha auf 1/255 — daher eine absolute statt der
+    # relativen Standardtoleranz.
+    assert pill._bg_color().alphaF() == pytest.approx(0.3, abs=0.01)
     assert updated == [1]
 
 
