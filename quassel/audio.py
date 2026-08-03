@@ -23,6 +23,11 @@ from .state import RAW, RUNDIR
 
 RATE, SAMPLE_BYTES = 16000, 2
 
+# Zweite Rohdatei für den Diktat-Pfad. Die Aufnahmen wechseln sich zwischen
+# beiden ab, damit ein neues Diktat die Datei des vorigen nicht überschreibt,
+# solange dessen finish() sie noch ausliest.
+RAW_B = os.path.join(os.path.dirname(RAW), "rec-b.raw")
+
 # macOS-Aufnahmebackend. ffmpeg ist auf dem Mac nicht mitgebündelt (gegen 35
 # dylibs gelinkt), deshalb nimmt die App über sounddevice/CoreAudio auf.
 #   "sd16"      Stream direkt auf 16 kHz öffnen — CoreAudio konvertiert
@@ -31,6 +36,15 @@ RATE, SAMPLE_BYTES = 16000, 2
 # Umschaltbar zur Laufzeit über QUASSEL_MAC_AUDIO (siehe mac_backend()).
 MAC_BACKEND_DEFAULT = "sd16"
 MAC_BACKENDS = ("sd16", "sdnative", "ffmpeg")
+
+# Harte Frist beim Beenden des macOS-Aufnahme-Streams. Auf einem defekten
+# CoreAudio-Gerät kehrt PortAudio nie zurück (es wartet auf ein Callback-
+# Signal, das nicht mehr kommt) — danach wird der Stream aufgegeben.
+MAC_STOP_TIMEOUT = 2.0
+
+
+def _log(msg):
+    print("%s %s" % (time.strftime("%H:%M:%S"), msg), file=sys.stderr, flush=True)
 
 
 def mac_backend():
@@ -96,12 +110,28 @@ def list_mics():
     return out
 
 
+def newest_raw():
+    """Zuletzt beschriebene der beiden Diktat-Rohdateien. Wer den Pegel liest,
+    läuft in einem anderen Prozess als der Recorder und kann ihn nicht fragen,
+    welche Datei gerade dran ist — die Änderungszeit sagt es."""
+    best, newest = RAW, -1.0
+    for path in (RAW, RAW_B):
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime > newest:
+            best, newest = path, mtime
+    return best
+
+
 def rms_level(window_s=0.15):
     """Pegel 0.0–1.0 aus dem Ende der laufenden Roh-Aufnahme (für die Pille)."""
+    raw = newest_raw()
     try:
-        size = os.path.getsize(RAW)
+        size = os.path.getsize(raw)
         n = int(RATE * SAMPLE_BYTES * window_s)
-        with open(RAW, "rb") as f:
+        with open(raw, "rb") as f:
             f.seek(max(0, size - n))
             data = f.read()
     except OSError:
@@ -281,6 +311,19 @@ class _Polyphase:
         return np.clip(np.rint(y), -32768, 32767).astype("<i2").tobytes()
 
 
+def _close_stream_quiet(stream):
+    """Aufnahme-Stream beenden: abort() (Pa_AbortStream) statt stop(), denn
+    stop() wartet auf die Drainage der Callbacks — bei einem reinen
+    EINGABE-Stream gibt es nichts zu leeren, wohl aber ein Gerät, das nie
+    antwortet. Ältere sounddevice-Versionen ohne abort() nutzen stop()."""
+    try:
+        halt = getattr(stream, "abort", None) or stream.stop
+        halt()
+        stream.close()
+    except Exception:  # noqa: BLE001 — Stream schon tot
+        pass
+
+
 class _MacStream:
     """macOS-Aufnahme über sounddevice/CoreAudio in dieselbe Rohdatei, die
     sonst der Aufnahme-Subprozess füllt.
@@ -301,6 +344,7 @@ class _MacStream:
         self.in_rate = RATE
         self.overflows = 0         # von PortAudio gemeldete Input-Overflows
         self.first_block = None    # monotonic-Zeit des ersten Audioblocks
+        self._abandoned = False    # Stream aufgegeben -> Callback liefert nichts mehr
 
     @property
     def active(self):
@@ -323,6 +367,11 @@ class _MacStream:
             return False
 
         def callback(indata, _frames, _time, status):
+            # Aufgegebener Stream: sein Callback kann weiterlaufen, obwohl der
+            # Writer-Thread längst beendet ist — was er einreiht, holt niemand
+            # mehr ab, die Queue würde also unbegrenzt wachsen.
+            if self._abandoned:
+                return
             if status and getattr(status, "input_overflow", False):
                 self.overflows += 1
             if self.first_block is None:
@@ -356,14 +405,27 @@ class _MacStream:
                 self.outfile.write(block)
                 self.outfile.flush()
 
+    def _halt_stream(self, stream):
+        """Stream anhalten und schließen, aber mit harter Frist: kehrt
+        CoreAudio nicht zurück, wird der Stream aufgegeben (Referenz fallen
+        lassen, nie wieder anfassen) statt den Aufrufer zu blockieren. Die
+        Rohdatei liegt vollständig auf der Platte — die Aufnahme ist also
+        nicht verloren, nur der Stream bleibt liegen."""
+        t = threading.Thread(target=_close_stream_quiet, args=(stream,),
+                             daemon=True, name="mac-stream-stop")
+        t.start()
+        t.join(timeout=MAC_STOP_TIMEOUT)
+        if t.is_alive():
+            # Der Callback darf ab jetzt nichts mehr einreihen; was schon in der
+            # Queue liegt, schreibt der Writer-Thread noch zu Ende.
+            self._abandoned = True
+            _log("audio: CoreAudio-Stream reagiert nicht (>%.1fs) -> aufgegeben"
+                 % MAC_STOP_TIMEOUT)
+
     def stop(self):
-        if self.stream is not None:
-            try:
-                self.stream.stop()
-                self.stream.close()
-            except Exception:  # noqa: BLE001 — Stream schon tot
-                pass
-            self.stream = None
+        stream, self.stream = self.stream, None
+        if stream is not None:
+            self._halt_stream(stream)
         if self.thread is not None:
             self.queue.put(None)
             self.thread.join(timeout=5)
@@ -376,13 +438,33 @@ class _MacStream:
 class Recorder:
     def __init__(self, raw_path=RAW):
         # raw_path: eigene Rohdatei (z.B. für den Wake-Listener), damit zwei
-        # Recorder sich nicht dieselbe Datei überschreiben.
-        self.raw_path = raw_path
+        # Recorder sich nicht dieselbe Datei überschreiben. Der Diktat-Pfad
+        # nutzt zwei Dateien im Wechsel (siehe RAW_B), ein eigener Pfad bleibt
+        # bei genau dieser einen.
+        self._paths = [raw_path, RAW_B] if raw_path == RAW else [raw_path]
+        self._slot = -1          # erster start() nimmt wieder die vorderste
+        self.raw_path = raw_path  # gerade bzw. zuletzt beschriebene Datei
+        self.last_path = raw_path  # von stop() zuletzt geschlossene Datei
+        self.running_path = None  # Datei der LAUFENDEN Aufnahme (None = keine)
         self.proc = None
         self.mac = None          # _MacStream, wenn macOS ohne ffmpeg aufnimmt
         self.outfile = None
         self.started = 0.0
         self._bt_before = {}
+        self._abandoned = False  # macOS: ein Stream musste aufgegeben werden
+        # Schützt NUR den Zustandswechsel (wer besitzt Stream/Prozess), nicht das
+        # eigentliche Beenden: der Not-Aus kann aus einem anderen Thread in ein
+        # laufendes stop() fallen und darf dabei weder warten noch auf ein
+        # bereits abgeräumtes self.mac zugreifen.
+        self._lock = threading.Lock()
+
+    @property
+    def stream_abandoned(self):
+        """macOS: Musste ein Aufnahme-Stream aufgegeben werden? Dann steckt ein
+        CoreAudio-Mutex fest, und der nächste Start liefe mit hoher
+        Wahrscheinlichkeit in dieselbe Verklemmung — der Daemon startet sich
+        deshalb neu. Auf Linux und Windows immer False."""
+        return self._abandoned
 
     @property
     def active(self):
@@ -392,47 +474,86 @@ class Recorder:
 
     def start(self, mic="default"):
         os.makedirs(RUNDIR, exist_ok=True)
+        # Ein Vorgänger, den niemand beendet hat (verlorenes stop(), Not-Aus
+        # mitten im Ablauf), wird zuerst abgeräumt: eine fallen gelassene
+        # Referenz nähme das Mikrofon mit und schriebe still weiter.
+        if self.mac is not None or self.proc is not None:
+            _log("audio: vorherige Aufnahme lief noch -> wird zuerst beendet")
+            self.stop()
+        # Nächste Rohdatei wählen: die vorige gehört noch dem vorherigen Diktat,
+        # dessen finish() sie unter Umständen erst noch ausliest.
+        self._slot = (self._slot + 1) % len(self._paths)
+        self.raw_path = self._paths[self._slot]
         if sys.platform == "darwin" and mac_backend() != "ffmpeg":
             mac = _MacStream(self.raw_path, native=mac_backend() == "sdnative")
             if not mac.start(mic):
                 return False
-            self.mac = mac
-            self.started = mac.started
+            with self._lock:
+                self.mac = mac
+                self.running_path = self.raw_path
+                self.started = mac.started
             return True
         cmd = record_command(mic)
         if cmd is None:
             return False
-        self._bt_before = _bluez_profiles()
-        self.outfile = open(self.raw_path, "wb")
-        self.proc = subprocess.Popen(
-            cmd, stdout=self.outfile, stderr=subprocess.DEVNULL)
-        self.started = time.monotonic()
+        bt_before = _bluez_profiles()
+        outfile = open(self.raw_path, "wb")
+        proc = subprocess.Popen(
+            cmd, stdout=outfile, stderr=subprocess.DEVNULL)
+        with self._lock:
+            self._bt_before = bt_before
+            self.outfile = outfile
+            self.proc = proc
+            self.running_path = self.raw_path
+            self.started = time.monotonic()
         return True
 
-    def raw_bytes(self):
+    def raw_bytes(self, path=None):
+        """Rohdaten lesen. Ohne path die gerade laufende Aufnahme (Live-Vorschau,
+        Wake-Listener); mit path genau diese Datei — so bekommt ein wartendes
+        finish() die Bytes SEINES Diktats, auch wenn inzwischen ein neues auf der
+        anderen Rohdatei begonnen hat."""
         try:
-            with open(self.raw_path, "rb") as f:
+            with open(path or self.raw_path, "rb") as f:
                 data = f.read()
             return data[:len(data) - (len(data) % SAMPLE_BYTES)]
         except OSError:
             return b""
 
     def stop(self):
-        if self.mac is not None:
-            self.mac.stop()
-            self.mac = None
-            return
-        if self.proc is None:
-            return
-        self.proc.send_signal(2)  # SIGINT
+        """Aufnahme beenden. Rückgabe (und self.last_path): die gerade
+        geschlossene Rohdatei — der Aufrufer reicht sie an raw_bytes() weiter
+        und liest damit sicher sein eigenes Diktat.
+
+        Genannt wird die Datei, die beim START dieser Aufnahme festgelegt wurde
+        (running_path), nicht die, die im Moment des Aufrufs gerade aktuell
+        ist: die Zusicherung gehört damit der Klasse und nicht dem Aufrufer.
+
+        Der Besitz von Stream und Prozess wird unter dem Lock übernommen, das
+        Beenden selbst läuft danach ohne ihn: fällt der Not-Aus aus einem
+        anderen Thread hier hinein, findet er nichts mehr vor und kehrt sofort
+        zurück, statt auf einem halb abgeräumten Zustand zu arbeiten."""
+        with self._lock:
+            path = self.last_path = self.running_path or self.raw_path
+            self.running_path = None
+            mac, self.mac = self.mac, None
+            proc, self.proc = self.proc, None
+            outfile, self.outfile = self.outfile, None
+            bt_before, self._bt_before = self._bt_before, {}
+        if mac is not None:
+            mac.stop()
+            if mac._abandoned:
+                self._abandoned = True
+            return path
+        if proc is None:
+            return path
+        proc.send_signal(2)  # SIGINT
         try:
-            self.proc.wait(timeout=5)
+            proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            self.proc.kill()
-        self.proc = None
-        if self.outfile:
-            self.outfile.close()
-            self.outfile = None
-        if self._bt_before:
-            _restore_bluez_profiles(self._bt_before)
-            self._bt_before = {}
+            proc.kill()
+        if outfile:
+            outfile.close()
+        if bt_before:
+            _restore_bluez_profiles(bt_before)
+        return path

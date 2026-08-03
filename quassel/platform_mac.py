@@ -39,6 +39,11 @@ PASTE_SETTLE = 0.25
 RESTORE_DELAY = 6.0
 STREAM_RESTORE_DELAY = 2.0
 
+# Frist für JEDEN osascript-Aufruf (Notification, Ducking). Ohne sie hängt der
+# aufrufende Thread unbegrenzt, wenn das Notification Center oder ein Player
+# klemmt — auf dem Mac ist das der Thread, der den Hotkey bedient.
+OSA_TIMEOUT = 5
+
 # EIN Restore-Slot für alle Einfüge-Pfade, lock-geschützt: ein neuer
 # paste()/type_chunk() bricht den anstehenden Restore ab und trägt das
 # ORIGINAL des Nutzers weiter — nie einen eigenen früheren Paste (sonst
@@ -297,7 +302,13 @@ def notify(text, ms=4000):
         f'display notification {_osa_quote(text)} '
         f'with title {_osa_quote("Quassel")}'
     )
-    subprocess.run(["osascript", "-e", script], check=False)
+    try:
+        subprocess.run(["osascript", "-e", script], check=False,
+                       timeout=OSA_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        # Hängt osascript (Notification Center klemmt), darf das den
+        # aufrufenden Thread nicht mitnehmen — die Meldung entfällt dann.
+        pass
 
 
 def _osa_quote(s):
@@ -313,9 +324,21 @@ def _osa_quote(s):
 # ---------------------------------------------------------- Audio-Ducking
 # Backend für quassel.mediacontrol: Gesamtton stummschalten (osascript) bzw.
 # spielende Player (Music.app, Spotify) pausieren.
+class _OsaTimedOut:
+    """Ersatz für das CompletedProcess, wenn osascript nicht antwortet. Leeres
+    stdout heißt für die Aufrufer: Ton ist nicht stumm, es spielt nichts —
+    das Ducking entfällt dann, statt das Diktat aufzuhalten."""
+    stdout = ""
+    stderr = ""
+    returncode = -1
+
+
 def _osa(script):
-    return subprocess.run(["osascript", "-e", script], capture_output=True,
-                          text=True, check=False)
+    try:
+        return subprocess.run(["osascript", "-e", script], capture_output=True,
+                              text=True, check=False, timeout=OSA_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return _OsaTimedOut()
 
 
 def _output_muted():

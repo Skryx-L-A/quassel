@@ -17,12 +17,30 @@ gedrückt = Druck; Keycode bereits gedrückt = Loslassen dieser Seite,
 während die andere noch hält. Bit gelöscht = alle Seiten der Familie los.
 decode_flags_changed bildet das auf (Keycode, gedrückt)-Paare ab.
 
-Der Tap-Callback macht nichts außer Einreihen (eine Queue): die eigentliche
-Maschinen-Arbeit (key/poll + on_start/on_finish/on_cancel) läuft auf EINEM
-eigenen Worker-Thread — ein langes finish() kann so nie mit einem neuen
-start() verschränken, und macOS deaktiviert den Tap nicht wegen eines
-langsamen Callbacks. Wird der Tap doch deaktiviert (Timeout/Secure Input),
-reaktiviert der Callback ihn selbst.
+Drei Threads, streng getrennt, damit kein langsamer Aufruf den Hotkey tötet:
+
+  Tap-Thread      macOS liefert die Events; der Callback reiht sie nur ein
+                  (sonst deaktiviert macOS den Tap wegen Timeout). Wird der
+                  Tap doch deaktiviert (Timeout/Secure Input), reaktiviert
+                  ihn der Callback selbst.
+  Ereignis-Thread ("mac-hotkey-worker") treibt die ChordMachine (key/poll
+                  unter dem Lock) und führt danach den SYNCHRONEN Teil der
+                  fälligen Aktionen selbst aus: on_start, und von finish/
+                  cancel alles, was die Aufnahme betrifft (stoppen, Rohdaten
+                  lesen). Damit liegt das Beenden einer Aufnahme immer vor dem
+                  Start der nächsten — dieselbe Zusicherung wie vor der
+                  Aufteilung, und keine, die ein Schloss herstellen müsste.
+  Aktions-Thread  ("mac-hotkey-actions") führt aus, was eine Aktion als
+                  Callable zurückgibt: Transkription, Nachbearbeitung,
+                  Einfügen. Diese Teile laufen der Reihe nach und fassen die
+                  Aufnahme nicht mehr an; hängt einer, bleiben Tastendrücke
+                  und Poll-Ticks trotzdem bedient.
+
+Beide eigenen Threads führen einen Zeitstempel mit (last_event_tick,
+last_action_tick) und den Namen dessen, woran sie gerade arbeiten
+(current_sync für den synchronen Teil, current_action für den Rest): daran
+erkennt der Watchdog im Daemon einen wirklich stehenden Ereignis-Thread und
+unterscheidet ihn von einem, der nur zäh arbeitet.
 
 CHORDS aus config.py sind evdev-Keycodes und hier nicht nutzbar; MAC_CHORDS
 bildet dieselben Chord-Namen auf macOS-Virtual-Keycodes ab (je linke/rechte
@@ -68,6 +86,7 @@ MAC_CHORDS = {
 }
 
 POLL_INTERVAL = 0.05   # s: await2-Timeout + pending_finish abwickeln (wie daemon.py)
+LOCK_WAIT = 1.0        # s: so lange wartet force_finish auf den Maschinen-Lock
 
 
 def _log(msg):
@@ -241,27 +260,34 @@ def handle_key_down(machine, keycode, now=None):
 
 class MacHotkeyListener(threading.Thread):
     """CGEventTap + CFRunLoop im eigenen Thread; der Tap-Callback reiht nur
-    ein, ein Worker-Thread treibt die ChordMachine (key/poll unter Lock,
-    finish/cancel/handsfree nach Lock-Release auf demselben Thread)."""
+    ein, der Ereignis-Thread treibt die ChordMachine (key/poll unter Lock),
+    der Aktions-Thread führt finish/cancel/handsfree aus."""
 
     def __init__(self, chord_name, cfg, on_start, on_finish, on_cancel, on_handsfree=None):
         super().__init__(daemon=True, name="mac-hotkey")
         group_a, group_b = MAC_CHORDS.get(chord_name, MAC_CHORDS["ctrl+meta"])
         self._lock = threading.Lock()
         self._events = queue.Queue()
+        self._actions = queue.Queue()   # (Name, Callable) für den Aktions-Thread
         self._mod_down = set()      # gedrückte Modifier-Seiten (decode_flags_changed)
-        self._pending_cb = []       # Callbacks, die nach dem Lock-Release laufen
-        # on_start bleibt synchron: sein Rückgabewert entscheidet, ob die
-        # Maschine armiert (fehlgeschlagener Aufnahme-Start darf nicht in
-        # 'hold' führen). Die übrigen Callbacks laufen außerhalb des Locks.
+        self._pending_cb = []       # Aktionen, die nach dem Lock-Release fällig sind
+        # Lebenszeichen beider Threads, vom Watchdog im Daemon gelesen.
+        self.last_event_tick = time.monotonic()
+        self.last_action_tick = time.monotonic()
+        self.current_action = None  # Name der laufenden Aktion (None = frei)
+        self.current_sync = None    # Name des laufenden SYNCHRONEN Teils
+        # on_start bleibt synchron auf dem Ereignis-Thread: sein Rückgabewert
+        # entscheidet, ob die Maschine armiert (fehlgeschlagener Aufnahme-Start
+        # darf nicht in 'hold' führen). Alles andere geht an den Aktions-Thread.
         self.machine = ChordMachine(
             group_a, group_b,
             on_start,
-            lambda: self._pending_cb.append(on_finish),
-            lambda r: self._pending_cb.append(lambda: on_cancel(r)),
+            lambda: self._pending_cb.append(("finish", on_finish)),
+            lambda r: self._pending_cb.append(("cancel", lambda: on_cancel(r))),
             hold_min=cfg.hold_min, double_window=cfg.double_window)
         if on_handsfree is not None:
-            self.machine.on_handsfree = lambda: self._pending_cb.append(on_handsfree)
+            self.machine.on_handsfree = lambda: self._pending_cb.append(
+                ("handsfree", on_handsfree))
         self._tap = None
         self._cfrunloop = None
         self._stop_poll = threading.Event()
@@ -290,9 +316,15 @@ class MacHotkeyListener(threading.Thread):
         Quartz.CGEventTapEnable(tap, True)
         self.ok = True
 
+        self.start_workers()
+        Quartz.CFRunLoopRun()
+
+    def start_workers(self):
+        """Ereignis- und Aktions-Thread starten (getrennt, siehe Modulkopf)."""
         threading.Thread(target=self._worker, daemon=True,
                          name="mac-hotkey-worker").start()
-        Quartz.CFRunLoopRun()
+        threading.Thread(target=self._action_worker, daemon=True,
+                         name="mac-hotkey-actions").start()
 
     def _callback(self, proxy, etype, event, refcon):
         """Läuft auf dem Tap-Thread: NUR einreihen (+ Tap-Reaktivierung),
@@ -332,9 +364,11 @@ class MacHotkeyListener(threading.Thread):
 
     def _process(self, item, now=None):
         """Ein eingereihtes Event (oder None = Poll-Tick) abwickeln. key/poll
-        laufen unter dem Lock; die dabei fällig gewordenen Callbacks danach —
-        auf DIESEM Thread, damit ein langes finish() nie mit einem neuen
-        start() verschränkt."""
+        laufen unter dem Lock; die fällig gewordenen Aktionen führt dieser
+        Thread danach selbst aus. Gibt eine davon ein Callable zurück, ist das
+        ihr langer Rest — er geht an den Aktions-Thread, damit hier nichts
+        wartet."""
+        self.last_event_tick = time.monotonic()
         with self._lock:
             if item is not None:
                 if item[0] == "flags":
@@ -345,8 +379,44 @@ class MacHotkeyListener(threading.Thread):
             self.machine.poll(now)
             cbs = self._pending_cb
             self._pending_cb = []
-        for cb in cbs:
-            cb()
+        for name, cb in cbs:
+            # current_sync sagt dem Watchdog, dass dieser Thread arbeitet und
+            # nicht hängt: der synchrone Teil darf zäh sein (Gerät stoppen,
+            # osascript), er wird deshalb an der langen Frist gemessen.
+            self.current_sync = name
+            try:
+                rest = cb()
+            except Exception as exc:   # noqa: BLE001 — dieser Thread darf nie sterben
+                _log("mac-hotkey: Aktion %r fehlgeschlagen: %r" % (name, exc))
+                continue
+            finally:
+                self.current_sync = None
+                self.last_event_tick = time.monotonic()
+            if callable(rest):
+                self._actions.put((name, rest))
+        self.last_event_tick = time.monotonic()
+
+    def _action_worker(self):
+        """Die langen Reste der Aktionen der Reihe nach ausführen. Dauert einer
+        (Transkription) oder hängt er ganz, sieht der Watchdog das an
+        current_action + last_action_tick — der Ereignis-Thread merkt nichts."""
+        while not self._stop_poll.is_set():
+            try:
+                name, cb = self._actions.get(timeout=POLL_INTERVAL)
+            except queue.Empty:
+                self.last_action_tick = time.monotonic()
+                continue
+            self.current_action = name
+            self.last_action_tick = time.monotonic()
+            # Eine geworfene Ausnahme darf den Thread nicht töten — sonst
+            # stünde nach einem Fehler in finish() jedes weitere Diktat still.
+            try:
+                cb()
+            except Exception as exc:   # noqa: BLE001
+                _log("mac-hotkey: Aktion %r fehlgeschlagen: %r" % (name, exc))
+            finally:
+                self.current_action = None
+                self.last_action_tick = time.monotonic()
 
     def reconfigure(self, chord_name, hold_min, double_window):
         """Geänderte Hotkey-Einstellungen live übernehmen (ohne Neustart).
@@ -354,7 +424,13 @@ class MacHotkeyListener(threading.Thread):
         Aufnahme würde die Maschine ihren Zustand verlieren; der nächste
         Aufruf (Housekeeping-Loop) holt ihn nach."""
         group_a, group_b = MAC_CHORDS.get(chord_name, MAC_CHORDS["ctrl+meta"])
-        with self._lock:
+        # Aufrufer ist die Haushaltsschleife, die auch den Watchdog fährt: sie
+        # darf hier nicht festhängen, sonst bliebe der Hänger unbemerkt. Sie
+        # kommt in fünf Sekunden ohnehin wieder vorbei.
+        if not self._lock.acquire(timeout=LOCK_WAIT):
+            _log("mac: Hotkey-Lock blockiert -> Einstellungen greifen später")
+            return
+        try:
             m = self.machine
             m.hold_min = hold_min
             m.double_window = double_window
@@ -362,18 +438,45 @@ class MacHotkeyListener(threading.Thread):
                     and not m.pending_finish:
                 m.a, m.b = set(group_a), set(group_b)
                 m.pressed.clear()
+        finally:
+            self._lock.release()
 
     def force_finish(self):
         """Freihand-Aufnahme hart beenden (MAX_RECORD-Sicherheitslimit).
         True = ausgelöst; das on_finish feuert über den nächsten Poll-Tick
-        des Worker-Threads."""
-        with self._lock:
+        des Ereignis-Threads. False = nicht ausgelöst: entweder läuft gar
+        keine Freihand-Aufnahme, oder der Lock ist blockiert (hängendes
+        on_start) — dann muss der Aufrufer zum Not-Aus eskalieren."""
+        if not self._lock.acquire(timeout=LOCK_WAIT):
+            _log("mac: Hotkey-Lock blockiert -> force_finish nicht möglich")
+            return False
+        try:
             if self.machine.state not in ("toggle", "toggle_armed"):
                 return False
             self.machine.state = "idle"
             self.machine.pressed.clear()
             self.machine.pending_finish = True
+        finally:
+            self._lock.release()
         return True
+
+    def force_reset(self):
+        """Maschine hart in den Ruhezustand zwingen — nach dem Not-Aus, wenn
+        sie sonst auf "toggle" stehenbliebe und der nächste Chord-Druck in ein
+        finish() ohne Aufnahme liefe."""
+        got = self._lock.acquire(timeout=LOCK_WAIT)
+        if not got:
+            _log("mac: Hotkey-Lock blockiert -> Zustand wird ohne Lock zurückgesetzt")
+        try:
+            # Bewusst AUCH ohne Lock: der Not-Aus ist der letzte Ausweg, und ein
+            # Wettlauf beim Zurücksetzen ist besser als ein Hotkey, der für den
+            # Rest der Sitzung verklemmt bleibt.
+            self.machine.state = "idle"
+            self.machine.pressed.clear()
+            self.machine.pending_finish = False
+        finally:
+            if got:
+                self._lock.release()
 
     def stop(self):
         self._stop_poll.set()

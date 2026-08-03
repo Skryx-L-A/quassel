@@ -1,7 +1,7 @@
 """macOS menu bar icon via QSystemTrayIcon.
 
 Status line (non-clickable): Bereit/Aufnahme
-Menu items: Kontrollzentrum öffnen, Beenden
+Menu items: Ausschalten, Diktat sofort beenden, Kontrollzentrum öffnen, Beenden
 Icon: monochromatic template-style for native macOS menu bar rendering.
 """
 import os
@@ -58,7 +58,8 @@ def _create_mic_icon(size=22, dpr=2.0):
 class TrayMenu(QSystemTrayIcon):
     """macOS menu bar tray icon with Quassel status and controls."""
 
-    def __init__(self, app, on_open_center, on_quit, on_toggle=None):
+    def __init__(self, app, on_open_center, on_quit, on_toggle=None,
+                 on_panic=None):
         super().__init__(app)
         self.app = app
         self.on_open_center = on_open_center
@@ -78,6 +79,13 @@ class TrayMenu(QSystemTrayIcon):
         self.toggle_action = None
         if on_toggle is not None:
             self.toggle_action = self.menu.addAction("Ausschalten", on_toggle)
+
+        # Not-Aus: beendet eine laufende Aufnahme auch dann, wenn der Hotkey
+        # nicht mehr reagiert (schickt SIGUSR2 an den Daemon-Prozess).
+        self.panic_action = None
+        if on_panic is not None:
+            self.panic_action = self.menu.addAction("Diktat sofort beenden",
+                                                    on_panic)
 
         # Open control center
         self.menu.addAction("Kontrollzentrum öffnen", self.on_open_center)
@@ -124,7 +132,7 @@ class TrayMenu(QSystemTrayIcon):
                 "Einschalten" if mode == "off" else "Ausschalten")
 
 
-def start_tray(app, on_open_center, on_quit, on_toggle=None):
+def start_tray(app, on_open_center, on_quit, on_toggle=None, on_panic=None):
     """Initialize and show the macOS tray menu.
 
     Args:
@@ -132,11 +140,13 @@ def start_tray(app, on_open_center, on_quit, on_toggle=None):
         on_open_center: callable to open the control center
         on_quit: callable to quit the app
         on_toggle: optional callable to switch dictation on/off
+        on_panic: optional callable to stop a running dictation at once
 
     Returns:
         TrayMenu instance (keep reference alive for menu to persist)
     """
-    tray = TrayMenu(app, on_open_center, on_quit, on_toggle=on_toggle)
+    tray = TrayMenu(app, on_open_center, on_quit, on_toggle=on_toggle,
+                    on_panic=on_panic)
     return tray
 
 

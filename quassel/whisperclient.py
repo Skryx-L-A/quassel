@@ -25,17 +25,39 @@ def _default_starter():
 STARTER = _default_starter
 
 
+_server_seen = False       # war der Server in dieser Sitzung schon erreichbar?
+
+
 def server_up(timeout=2):
-    return subprocess.run(
+    global _server_seen
+    ok = subprocess.run(
         ["curl", "-fsS", "-m", str(timeout), "-o", os.devnull, SERVER + "/"],
         check=False, **NOWIN).returncode == 0
+    if ok:
+        _server_seen = True
+    return ok
 
 
-def ensure_server():
+def server_was_up():
+    """War der Server in dieser Sitzung schon einmal erreichbar? Dann ist er
+    warm und eine kurze Frist reicht. Beim Kaltstart lädt er erst das Modell
+    (large-v3-turbo dauert auf schwacher Hardware Minuten) — dort wäre eine
+    kurze Frist gleichbedeutend mit einem verworfenen Diktat."""
+    return _server_seen
+
+
+# Vorgabe: die alte Schleife zählte 240 Versuche mit bis zu 2,5 s je Runde, im
+# schlechtesten Fall also zehn Minuten. Der Wert hält das für alle Aufrufer,
+# die keine eigene Frist mitgeben (Vorladen, Kontrollzentrum, Datei-Transkription).
+def ensure_server(deadline=600):
+    """Server starten und auf seine Bereitschaft warten, höchstens aber
+    deadline Sekunden. Kurze Frist für Pfade, die am Hotkey hängen (das
+    Diktat-Ende bei warmem Server), lange für alles andere."""
     if server_up():
         return True
     STARTER()
-    for _ in range(240):
+    end = time.monotonic() + deadline
+    while time.monotonic() < end:
         if server_up():
             return True
         time.sleep(0.5)

@@ -93,6 +93,28 @@ def test_without_toggle_callback_no_toggle_action(tray):
     assert "Ausschalten" not in labels and "Einschalten" not in labels
 
 
+def test_without_panic_callback_no_panic_item(tray):
+    assert tray.panic_action is None
+    labels = [a.text() for a in tray.menu.actions() if a.text()]
+    assert "Diktat sofort beenden" not in labels
+
+
+def test_panic_action_fires_callback(qapp):
+    """Not-Aus im Menü: der einzige Weg für den Nutzer, wenn der Hotkey
+    nicht mehr reagiert."""
+    calls = {"panic": 0}
+    t = traymac.start_tray(qapp, lambda: None, lambda: None,
+                           on_panic=lambda: calls.__setitem__(
+                               "panic", calls["panic"] + 1))
+    try:
+        actions = {a.text(): a for a in t.menu.actions() if a.text()}
+        assert "Diktat sofort beenden" in actions
+        actions["Diktat sofort beenden"].trigger()
+        assert calls["panic"] == 1
+    finally:
+        t.hide()
+
+
 def test_toggle_action_fires_and_label_follows_mode(qapp):
     calls = {"toggle": 0}
     t = traymac.start_tray(qapp, lambda: None, lambda: None,

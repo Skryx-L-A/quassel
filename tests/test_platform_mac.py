@@ -3,8 +3,10 @@ CoreAudio), damit die Suite auch ohne mac-Frameworks headless läuft.
 Reine Integrationsschritte (echtes Quartz/AppKit) sind mit skipif auf
 sys.platform != 'darwin' bzw. fehlendes pyobjc markiert."""
 import os
+import subprocess
 import sys
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -400,6 +402,59 @@ def test_mediacontrol_selects_mac_backend_on_darwin(monkeypatch):
         sys.modules.pop("quassel.mediacontrol", None)
         monkeypatch.undo()
         importlib.import_module("quassel.mediacontrol")
+
+
+# ------------------------------------------------- osascript mit harter Frist
+# Jeder osascript-Aufruf läuft auf dem Thread, der auch den Hotkey bedient —
+# ohne Frist hängt dort das ganze Diktat, wenn das Notification Center oder
+# ein Player klemmt.
+
+def _osa_raises_timeout(monkeypatch, seen):
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        seen["timeout"] = kw.get("timeout")
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+    monkeypatch.setattr(pm.subprocess, "run", fake_run)
+
+
+def test_notify_passes_a_timeout_and_swallows_it(monkeypatch):
+    seen = {}
+    _osa_raises_timeout(monkeypatch, seen)
+    pm.notify("hallo")                     # darf nicht durchschlagen
+    assert seen["cmd"][0] == "osascript"
+    assert seen["timeout"] == pm.OSA_TIMEOUT
+
+
+def test_osa_returns_empty_stdout_on_timeout(monkeypatch):
+    """Die Aufrufer lesen .stdout — bei Timeout muss ein Objekt zurückkommen,
+    kein Ausnahmefehler: 'nicht stumm' bzw. 'es spielt nichts'."""
+    seen = {}
+    _osa_raises_timeout(monkeypatch, seen)
+    assert pm._osa("beliebig").stdout == ""
+    assert seen["timeout"] == pm.OSA_TIMEOUT
+    assert pm._output_muted() is False
+    assert pm._playing_apps() == []
+
+
+def test_osa_passes_the_timeout_on_the_normal_path(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        return SimpleNamespace(stdout="true", stderr="", returncode=0)
+    monkeypatch.setattr(pm.subprocess, "run", fake_run)
+    assert pm._output_muted() is True
+    assert seen["timeout"] == pm.OSA_TIMEOUT
+
+
+def test_ducking_stays_harmless_when_osascript_hangs(monkeypatch):
+    """duck_apply/duck_restore dürfen im Timeout-Fall nichts kaputt machen."""
+    seen = {}
+    _osa_raises_timeout(monkeypatch, seen)
+    token = pm.duck_apply("all")
+    assert token == {"was_muted": False}
+    pm.duck_restore("all", token)          # keine Ausnahme
+    assert pm.duck_apply("music") == {"apps": []}
 
 
 # ------------------------------------------------------- Echte mac-Integration

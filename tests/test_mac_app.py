@@ -1,5 +1,6 @@
 """Tests für quassel/mac_app.py — Qt/Prozesse gemockt."""
 import os
+import signal
 import subprocess
 import sys
 from unittest.mock import MagicMock, patch
@@ -170,3 +171,121 @@ def test_sync_tray_without_tray_is_noop():
     mac = mac_app.MacApp(MagicMock())
     mac.tray = None
     mac.sync_tray()   # darf nicht werfen
+
+
+def _dead_daemon(code=3):
+    proc = MagicMock()
+    proc.poll.return_value = code
+    proc.returncode = code
+    return proc
+
+
+def _supervised_app(daemon=None, enabled=True):
+    mac = mac_app.MacApp(MagicMock())
+    mac.daemon = daemon
+    mac.enabled = enabled
+    mac.tray = MagicMock()
+    mac.pill = MagicMock()
+    return mac
+
+
+def test_supervise_restarts_a_daemon_that_ended_itself():
+    """Der Daemon beendet sich bei verklemmtem CoreAudio mit Code 3. Ohne
+    Aufsicht wäre das Diktat danach still weg."""
+    mac = _supervised_app(_dead_daemon())
+    fresh = MagicMock()
+    with patch.object(subprocess, "Popen", return_value=fresh) as popen:
+        mac._supervise(now=100.0)
+    popen.assert_called_once()
+    assert popen.call_args.args[0] == mac_app.daemon_command()
+    assert mac.daemon is fresh
+    assert mac.enabled is True
+    assert mac._restarts == [100.0]
+
+
+def test_supervise_ignores_other_exit_codes():
+    """Nur der verabredete Code bedeutet „bitte neu starten". Wer den Daemon
+    von außen beendet, bekommt ihn nicht fünfmal zurück."""
+    mac = _supervised_app(_dead_daemon(0))
+    with patch.object(subprocess, "Popen") as popen:
+        mac._supervise(now=100.0)
+    popen.assert_not_called()
+    assert mac.enabled is False
+    assert mac._restarts == []
+    mac.tray.set_mode.assert_called_once_with("off")
+
+
+def test_restart_exit_code_matches_the_daemon():
+    """Die beiden Konstanten stehen in verschiedenen Modulen — hier hängen sie
+    zusammen, damit sie nicht auseinanderlaufen."""
+    from quassel import daemon
+    assert mac_app.DAEMON_RESTART_EXIT == daemon.RESTART_EXIT
+
+
+def test_supervise_leaves_a_running_daemon_alone():
+    running = MagicMock()
+    running.poll.return_value = None
+    mac = _supervised_app(running)
+    with patch.object(subprocess, "Popen") as popen:
+        mac._supervise(now=100.0)
+    popen.assert_not_called()
+    assert mac.daemon is running
+    assert mac._restarts == []
+
+
+def test_supervise_does_not_revive_after_a_deliberate_off():
+    """Nach dem Ausschalten über Menü oder Kontrollzentrum bleibt es aus."""
+    mac = _supervised_app(_dead_daemon(0), enabled=False)
+    with patch.object(subprocess, "Popen") as popen:
+        mac._supervise(now=100.0)
+    popen.assert_not_called()
+
+
+def test_supervise_gives_up_after_too_many_restarts():
+    """Hilft der Neustart nicht, wird nicht endlos neu gestartet: aus, Tray auf
+    'off', eine Meldung an den Nutzer."""
+    mac = _supervised_app(_dead_daemon())
+    mac._restarts = [100.0, 101.0, 102.0, 103.0, 104.0]   # RESTART_LIMIT = 5
+    with patch.object(subprocess, "Popen") as popen:
+        mac._supervise(now=105.0)
+    popen.assert_not_called()
+    assert mac.enabled is False
+    mac.tray.set_mode.assert_called_once_with("off")
+    mac.tray.showMessage.assert_called_once()
+    assert mac_app.RESTART_GIVEUP_HINT in mac.tray.showMessage.call_args.args
+
+
+def test_supervise_forgets_restarts_outside_the_window():
+    """Ein Neustart vor Stunden zählt nicht mehr mit."""
+    mac = _supervised_app(_dead_daemon())
+    mac._restarts = [1.0, 2.0, 3.0, 4.0, 5.0]
+    old = mac_app.RESTART_WINDOW + 100.0
+    with patch.object(subprocess, "Popen", return_value=MagicMock()) as popen:
+        mac._supervise(now=old)
+    popen.assert_called_once()
+    assert mac._restarts == [old]
+    assert mac.enabled is True
+
+
+def test_panic_signals_the_daemon():
+    """Not-Aus aus dem Menü: SIGUSR2 an den Daemon-Prozess — er beendet die
+    Aufnahme selbst, auch wenn sein Hotkey-Thread hängt."""
+    mac = mac_app.MacApp(MagicMock())
+    daemon = MagicMock()
+    daemon.poll.return_value = None
+    daemon.pid = 4242
+    mac.daemon = daemon
+    with patch.object(os, "kill") as kill:
+        mac.panic()
+    kill.assert_called_once_with(4242, signal.SIGUSR2)
+
+
+def test_panic_without_running_daemon_sends_nothing():
+    mac = mac_app.MacApp(MagicMock())
+    with patch.object(os, "kill") as kill:
+        mac.panic()                       # gar kein Daemon
+        dead = MagicMock()
+        dead.poll.return_value = 0        # schon beendet
+        mac.daemon = dead
+        mac.panic()
+    kill.assert_not_called()

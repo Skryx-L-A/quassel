@@ -167,6 +167,30 @@ Homebrew cask skips this step for you.
 On first launch macOS also asks once for **Microphone**, **Accessibility** and
 **Input Monitoring** — grant all three, then restart Quassel.
 
+If a dictation ever seems stuck — the pill keeps recording and pressing the chord
+no longer ends it — choose **"Diktat sofort beenden"** (stop dictation now) from
+the menu-bar icon. It stops the recording immediately, and a dictation stopped
+this way stays stopped — its text is not inserted afterwards, even if you start
+the next one right away. If nothing is running, Quassel tells you that instead
+of appearing to act. The same emergency stop runs from a terminal with
+`kill -USR2 <daemon-pid>`, which still works when the keyboard hook itself is
+wedged. For a bug report, `kill -USR1 <daemon-pid>`
+writes the stacks of all daemon threads to `~/Library/Logs/Quassel/daemon.log`;
+every line in that log carries a timestamp, and the daemon notes its version and
+start time whenever it launches.
+
+If the speech server is not up yet — or the transcription fails — the recording
+is not thrown away: it lands in Quassel's runtime folder as
+`rescued-<timestamp>.wav` (`~/Library/Application Support/Quassel/run` on macOS)
+and the error message names the file. The five most recent ones are kept.
+
+Some audio devices lock up inside macOS itself, and no timeout can unstick them.
+Quassel notices that, finishes the dictation you just spoke, and then restarts
+its own dictation service — a short notification says so, and the hotkey works
+again a moment later. Should that repeat more than five times in five minutes,
+Quassel turns dictation off instead of restarting in circles and points you at
+the log.
+
 > **Status:** same disclaimer as Windows above — young and unsigned. Please
 > [open an issue](https://github.com/Skryx-L-A/quassel/issues) if anything misbehaves.
 

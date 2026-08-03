@@ -14,6 +14,45 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- macOS: the menu-bar icon has a new entry **"Diktat sofort beenden"** that stops a running
+  dictation at once — for the rare case where the hotkey no longer responds. The same
+  emergency stop runs from a terminal with `kill -USR2 <daemon-pid>`.
+- macOS: `kill -USR1 <daemon-pid>` writes the stacks of all daemon threads to
+  `~/Library/Logs/Quassel/daemon.log`. Every line in that log now carries a timestamp, and
+  the daemon notes its version and start time on launch, so a hang can be pinned down after
+  the fact.
+
+- macOS: the app supervises its own dictation service. Some audio devices deadlock inside
+  macOS — recorded on a stuck daemon, with two threads waiting on each other's mutex — and no
+  timeout can unstick that. Quassel now inserts the dictation you just spoke, restarts the
+  service, and has it back within about two seconds; a notification says what happened. More
+  than five restarts in five minutes switch dictation off instead, with a pointer to the log.
+  Only that one restart request brings the service back — a daemon you stop yourself stays
+  stopped.
+
+### Fixed
+- macOS: dictation could wedge for good — the recording kept running and pressing the chord
+  no longer ended it, until Quassel was restarted. A slow or faulty audio device blocked the
+  thread that handles the keyboard. Stopping a recording, every AppleScript call and the wait
+  for the speech server now have hard time limits, and that thread no longer does the work
+  itself, so it stays responsive even while a dictation is being transcribed.
+- macOS: starting a new dictation while the previous one was still being transcribed could
+  throw away the finished text, stop the wrong recording, and leave the microphone running.
+  Stopping a recording and reading it now happen on the same thread that starts one, so the
+  two can no longer overtake each other; only transcription runs in the background.
+  Recordings additionally alternate between two files on disk, so a new one can never
+  overwrite the audio of the previous.
+- A dictation is no longer lost when the speech server does not come up or the transcription
+  fails: the recording is written to `rescued-<timestamp>.wav` in Quassel's runtime folder and
+  the error message names the file. Two failures in the same second get separate files, and
+  the five most recent rescues are kept. On a cold start,
+  where the model still has to load, Quassel now waits for the server instead of giving up
+  after 30 seconds. Applies to Linux, Windows and macOS.
+- macOS: pressing "Diktat sofort beenden" during transcription no longer inserts the text
+  anyway — not even when you start the next dictation right after, which used to take the
+  stop back. With nothing running, the entry now says so instead of doing nothing silently.
+
 ## [2.5.0] - 2026-07-28
 
 ### Added

@@ -44,6 +44,25 @@ def test_mixed_combines_primer_and_words():
     assert wc.MIXED_PRIMER in prompt and "Kubernetes" in prompt
 
 
+def test_ensure_server_returns_at_once_when_up(monkeypatch):
+    started = []
+    monkeypatch.setattr(wc, "server_up", lambda timeout=2: True)
+    monkeypatch.setattr(wc, "STARTER", lambda: started.append(1))
+    assert wc.ensure_server(deadline=0.1) is True
+    assert started == []                       # läuft schon -> nichts starten
+
+
+def test_ensure_server_gives_up_after_the_deadline(monkeypatch):
+    """Die Frist ist eine Wanduhr-Frist: der Aufrufer am Diktat-Ende darf
+    nicht zwei Minuten warten, nur weil der Server nicht hochkommt."""
+    import time
+    monkeypatch.setattr(wc, "server_up", lambda timeout=2: False)
+    monkeypatch.setattr(wc, "STARTER", lambda: None)
+    t0 = time.monotonic()
+    assert wc.ensure_server(deadline=0.2) is False
+    assert time.monotonic() - t0 < 5
+
+
 if __name__ == "__main__":
     for fn in [test_auto_has_no_language_field, test_fixed_language_sets_field,
                test_mixed_adds_primer_and_no_hard_language,

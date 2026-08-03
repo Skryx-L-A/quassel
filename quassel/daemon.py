@@ -8,13 +8,17 @@ Modi:
 Während der Aufnahme entstehen alle ~2 s Teiltranskripte (letzte 15 s Audio)
 für die Live-Vorschau in der Pille (state.json).
 """
+import faulthandler
+import glob
 import os
 import select
+import signal
 import struct
 import sys
 import threading
 import time
 
+from . import __version__
 from . import (aimodes, beep, config, i18n, learn, progmode, stats, textproc,
                textreplace, vad, wakeword, whisperclient)
 from .mediacontrol import AudioDucker
@@ -24,7 +28,7 @@ from .config import CHORDS
 from .i18n import tr
 from .platform import (mic_is_bluetooth, notify, paste, send_backspaces,
                        send_enter, type_chunk, streaming_begin, streaming_restore)
-from .state import PARTWAV, WAV, state_set
+from .state import PARTWAV, RUNDIR, WAV, state_set
 
 EVENT_FORMAT = "llHHi"
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
@@ -33,6 +37,27 @@ KEY_PRESS = 1
 
 MAX_RECORD = 300       # s: Sicherheitslimit im Freihand-Modus
 RESCAN_EVERY = 5       # s: /dev/input auf neue Tastaturen prüfen
+# Am Diktat-Ende wartet niemand zwei Minuten auf einen Server, der ohnehin
+# schon lief. Beim Kaltstart lädt er dagegen erst das Modell — dort wird lange
+# gewartet, statt ein fertiges Diktat wegzuwerfen.
+SERVER_WAIT_FINISH = 30
+SERVER_WAIT_COLD = 600
+# Gerettete Aufnahmen: Server tot oder Transkription gescheitert.
+RESCUE_NAME = "rescued-%Y%m%d-%H%M%S"       # via time.strftime, ohne Endung
+RESCUE_GLOB = "rescued-*.wav"
+RESCUE_KEEP = 5
+PANIC_EXIT_WAIT = 5.0  # s: so lange wartet der Not-Aus auf das Ende einer Aktion
+SLOW_STOP = 0.5        # s: ab hier ist das Stoppen der Aufnahme meldenswert
+# Der Ereignis-Thread führt den synchronen Teil der Aktionen selbst aus, und
+# darin steckt osascript (Benachrichtigung, Ducking) mit je 5 s Frist. Der Wert
+# liegt darüber, damit ein zäher, aber normaler Start keinen Fehlalarm samt
+# Thread-Dump in genau das Log kippt, das im Ernstfall gelesen wird.
+EVENT_STALL = 10.0     # s: so lange darf der Ereignis-Thread höchstens schweigen
+ACTION_STALL = 60.0    # s: so lange darf eine Hotkey-Aktion höchstens laufen
+DEAD_STALL = 30.0      # s: danach ist der Prozess verloren -> Selbstneustart
+# Beendigungscode für den Selbstneustart. Die Aufsicht in mac_app.py startet den
+# Daemon danach neu; 0 wäre ein normales Ende, 1 ein Fehler.
+RESTART_EXIT = 3
 PARTIAL_EVERY = 2.0    # s: Abstand der Live-Vorschau-Transkripte
 PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
 
@@ -50,7 +75,9 @@ TAIL_PAD_MS, TAIL_PAD_BT_MS = 250, 450
 
 
 def log(msg):
-    print(msg, file=sys.stderr, flush=True)
+    # Zeitstempel: im Log der App (~/Library/Logs/Quassel/daemon.log) ließe
+    # sich sonst weder ein Neustart noch die Dauer eines Hängers ablesen.
+    print("%s %s" % (time.strftime("%H:%M:%S"), msg), file=sys.stderr, flush=True)
 
 
 class PartialLoop(threading.Thread):
@@ -105,6 +132,18 @@ class PartialLoop(threading.Thread):
 
 
 class Daemon:
+    # Entprellung der Watchdog-Warnung: eine Meldung je Hänger, nicht alle 5 s.
+    _stall_logged = False
+    _listener = None            # MacHotkeyListener, nur im mac-Loop gesetzt
+    # Not-Aus-Ereignis des gerade laufenden Diktats (je Diktat eines, siehe
+    # _finish_capture) und Name des laufenden synchronen Teils.
+    _panic_flag = None
+    _sync_action = None
+    # Prozessende ohne Aufräumen: ein reguläres sys.exit liefe beim Abbau der
+    # Audio-Bibliothek erneut in den verklemmten CoreAudio-Mutex. Als Attribut,
+    # damit Tests den Aufruf abfangen können, statt sich selbst zu beenden.
+    _exit = os._exit
+
     def __init__(self):
         self.cfg = config.Cfg()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
@@ -122,6 +161,9 @@ class Daemon:
     def start_recording(self):
         self.cfg.reload()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
+        # Starten und Beenden laufen auf DEMSELBEN Thread (dem Ereignis-Thread
+        # des Hotkeys, im Linux-Loop der Hauptschleife): die Reihenfolge steht
+        # damit strukturell fest, kein Schloss muss sie herstellen.
         if not self.rec.start(self.cfg.mic):
             if sys.platform == "darwin":
                 # sounddevice-Pfad: es fehlt kein Programm, sondern ein
@@ -158,32 +200,166 @@ class Daemon:
         self.streamer = StreamTyper(self.cfg.streaming_mode, typ, dele)
 
     def cancel_recording(self, reason_key):
+        # Wie finish(): läuft synchron auf dem Ereignis-Thread und zählt
+        # solange als laufendes Diktat (siehe _busy).
+        self._sync_action = "cancel"
+        try:
+            if self.partial:
+                self.partial.stop()
+                self.partial = None
+            if self.streamer is not None:
+                streaming_restore(self._clip_backup)
+                self.streamer = None
+            self.rec.stop()
+            if self.cfg.beep:
+                beep.stop()
+            self.ducker.restore()
+            state_set("idle")
+            notify("✖ " + tr(reason_key))
+        finally:
+            self._sync_action = None
+        # Ein Stream, der beim Abbruch aufgegeben werden musste, vergiftet den
+        # Prozess genauso wie einer am Diktat-Ende.
+        self._restart_if_audio_poisoned()
+
+    def panic_stop(self, *_args):
+        """Not-Aus: laufende Aufnahme sofort beenden, ohne zu transkribieren.
+
+        Aus JEDEM Thread aufrufbar, auch aus dem SIGUSR2-Handler. Jeder Schritt
+        hier hat eine harte Frist (Recorder-Stopp, osascript), damit der Not-Aus
+        nicht genau dort hängen bleibt, wo das Diktat schon hängt. Läuft weder
+        eine Aufnahme noch eine Aktion, gibt es nichts zu beenden — dann sagt
+        die Methode das und tut sonst nichts."""
+        if not self._busy():
+            log("panic: Not-Aus ohne laufendes Diktat")
+            notify(tr("nothing_running"))
+            return
+        # Merker des LAUFENDEN Diktats: wer „sofort beenden" drückt, will von
+        # diesem Diktat keinen Text mehr. Ein später begonnenes Diktat hat sein
+        # eigenes Ereignis und bleibt davon unberührt.
+        if self._panic_flag is not None:
+            self._panic_flag.set()
+        log("panic: Not-Aus -> laufendes Diktat wird abgebrochen")
         if self.partial:
             self.partial.stop()
             self.partial = None
         if self.streamer is not None:
             streaming_restore(self._clip_backup)
             self.streamer = None
-        self.rec.stop()
+        try:
+            self.rec.stop()
+        except Exception as exc:   # noqa: BLE001 — der Not-Aus darf an nichts scheitern
+            log("panic: rec.stop() fehlgeschlagen: %r" % exc)
         if self.cfg.beep:
             beep.stop()
         self.ducker.restore()
         state_set("idle")
-        notify("✖ " + tr(reason_key))
+        notify(tr("panic_stopped"))
+        # Die Maschine steht nach einem Not-Aus womöglich noch auf "toggle" —
+        # der nächste Chord-Druck liefe sonst in ein finish() ohne Aufnahme.
+        if self._listener is not None:
+            self._listener.force_reset()
+        self._restart_if_audio_poisoned(after_panic=True)
+
+    def _busy(self):
+        """Läuft gerade ein Diktat? Drei Zustände zählen dazu: die Aufnahme
+        selbst, der synchrone Teil des Beendens (zwischen rec.stop() und der
+        Übergabe an den Aktions-Thread — dort ist die Aufnahme schon aus und
+        die Aktion noch nicht gestartet) und der lange Rest."""
+        if self.rec.active or self._sync_action is not None:
+            return True
+        return (self._listener is not None
+                and self._listener.current_action is not None)
+
+    def _restart_if_audio_poisoned(self, after_panic=False):
+        """Musste ein Aufnahme-Stream aufgegeben werden, steckt in CoreAudio ein
+        Mutex fest, den auch der nächste Stream braucht: der Hänger wanderte dann
+        nur vom Stoppen zum Starten. Der Prozess ist nicht mehr zu retten, also
+        beendet er sich — die Aufsicht in mac_app.py startet ihn neu.
+
+        Im normalen Ablauf wird das erst gerufen, wenn der Text schon eingefügt
+        ist. Aus dem Not-Aus heraus (anderer Thread) wird zusätzlich gewartet,
+        bis keine Aktion mehr läuft: sonst risse os._exit ein Einfügen mitten
+        entzwei. Klappt das nicht, bleibt das Flag stehen und das nächste
+        Diktat-Ende erledigt es."""
+        if not getattr(self.rec, "stream_abandoned", False):
+            return
+        if after_panic and not self._wait_for_idle_action():
+            log("panic: Aktion läuft noch -> Neustart erst nach ihrem Ende")
+            return
+        log("audio: Stream aufgegeben, CoreAudio verklemmt -> Daemon startet neu")
+        notify(tr("audio_restart"))
+        self._exit(RESTART_EXIT)
+
+    def _wait_for_idle_action(self, deadline=None):
+        """Warten, bis der Aktions-Thread frei ist (höchstens deadline Sekunden).
+        True = frei."""
+        deadline = PANIC_EXIT_WAIT if deadline is None else deadline
+        listener = self._listener
+        if listener is None:
+            return True
+        end = time.monotonic() + deadline
+        while listener.current_action is not None:
+            if time.monotonic() >= end:
+                return False
+            time.sleep(0.1)
+        return True
 
     def finish(self):
-        """Aufnahme beenden, transkribieren, einfügen bzw. Kommando ausführen."""
+        """Aufnahme beenden — der SYNCHRONE Teil, er läuft auf dem Thread, der
+        auch die Aufnahmen startet (Hotkey-Ereignis-Thread bzw. der Linux-Loop).
+
+        Nachlauf, Recorder stoppen und Rohdaten lesen bleiben damit strukturell
+        vor dem Start des nächsten Diktats — kein Schloss kann diese Reihenfolge
+        herstellen, ein gemeinsamer Thread schon. Alles Langsame (Server,
+        Transkription, Nachbearbeitung, Einfügen) kommt als Callable zurück und
+        läuft auf dem Aktions-Thread; None heißt, es gibt nichts mehr zu tun."""
+        rest = None
+        self._sync_action = "finish"
+        try:
+            rest = self._finish_capture()
+        finally:
+            self._sync_action = None
+            if rest is None:
+                self._restart_if_audio_poisoned()
+        return rest
+
+    def finish_now(self):
+        """Das ganze Diktat auf EINEM Thread abwickeln — für den Linux-Loop,
+        der die Tastatur ohnehin einthreadig liest, und überall dort, wo es
+        keinen Aktions-Thread gibt."""
+        rest = self.finish()
+        if rest is not None:
+            rest()
+
+    def _finish_capture(self):
         if self.partial:
             self.partial.stop()
             self.partial = None
+        # Streamer und die zugehörige Zwischenablagen-Sicherung EINMAL übernehmen:
+        # der Rest läuft lange, und ein neues Freihand-Diktat setzt self.streamer
+        # inzwischen für SICH — ab hier zählt nur die lokale Kopie.
+        streamer, clip_backup = self.streamer, self._clip_backup
+        self.streamer = None
+        # Eigenes Not-Aus-Ereignis für GENAU dieses Diktat. Ein Flag für alle
+        # wäre falsch: ein neues Diktat würde den Not-Aus des vorherigen
+        # aufheben, und dessen Text käme doch noch ins Fenster.
+        panic = threading.Event()
+        self._panic_flag = panic
         # Nachlauf: kurz weiter aufnehmen, damit das letzte Wort nicht abschneidet
         # (Bluetooth braucht mehr). Dann stoppen + Stopp-Ton.
         time.sleep((TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS) / 1000.0)
-        self.rec.stop()
+        t_stop = time.monotonic()
+        # Der Rückgabewert ist die eben geschlossene Rohdatei: ein neues Diktat
+        # schreibt in die andere, gelesen wird trotzdem diese hier.
+        done_path = self.rec.stop()
+        stop_took = time.monotonic() - t_stop
+        if stop_took > SLOW_STOP:
+            log("dict: rec.stop() dauerte %.1fs (Audiogerät träge?)" % stop_took)
         if self.cfg.beep:
             beep.stop()
         self.ducker.restore()
-        data = self.rec.raw_bytes()
+        data = self.rec.raw_bytes(done_path)
         raw_len = len(data)
         # Vorlauf verwerfen: mit VAD nur den eigenen Start-Ton (VAD macht den Rest
         # — sonst würde das erste Wort doppelt weggeschnitten); ohne VAD bei BT
@@ -202,31 +378,52 @@ class Daemon:
         if len(data) < 8000:  # < ~0,25 s Audio
             state_set("idle")
             notify(tr("too_short"))
-            return
+            return None
         state_set("transcribing")
-        if not whisperclient.ensure_server():
-            state_set("error", tr("no_server"))
+        return lambda: self._finish_rest(streamer, clip_backup, data, panic)
+
+    def _finish_rest(self, streamer, clip_backup, data, panic):
+        """Der lange Teil: Server, Transkription, Nachbearbeitung, Einfügen.
+        Läuft auf dem Aktions-Thread und fasst den Recorder nicht mehr an."""
+        try:
+            self._transcribe_and_insert(streamer, clip_backup, data, panic)
+        finally:
+            self._restart_if_audio_poisoned()
+
+    def _transcribe_and_insert(self, streamer, clip_backup, data, panic):
+        # Beim Kaltstart lädt der Server erst das Modell; eine kurze Frist wäre
+        # dort gleichbedeutend mit einem weggeworfenen Diktat.
+        deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
+                    else SERVER_WAIT_COLD)
+        if not whisperclient.ensure_server(deadline=deadline):
+            self._fail_with_rescue(data, streamer, clip_backup)
             return
         wav_from_raw(data, WAV)
         raw_text = whisperclient.transcribe(WAV, self.cfg)
         if raw_text is None:
-            state_set("error", tr("no_server"))
+            self._fail_with_rescue(data, streamer, clip_backup)
+            return
+        if panic.is_set():
+            # „Diktat sofort beenden" wurde gedrückt, während transkribiert
+            # wurde: kein Text mehr ins Fenster.
+            log("panic: Ergebnis verworfen (Not-Aus während der Transkription)")
+            if streamer is not None:
+                streaming_restore(clip_backup)
+            state_set("idle")
             return
         kind, value = textproc.postprocess(raw_text, self.cfg)
         if kind is None:
-            if self.streamer is not None:
-                streaming_restore(self._clip_backup)
-                self.streamer = None
+            if streamer is not None:
+                streaming_restore(clip_backup)
             state_set("error", tr("nothing"))
             return
         if kind == "command":
             action = value
             # Im Streaming wurde das Kommando ("scratch that" / "press enter")
             # selbst live getippt -> diese Länge zurücknehmen.
-            live_typed = len(self.streamer.typed) if self.streamer is not None else 0
-            if self.streamer is not None:
-                streaming_restore(self._clip_backup)
-                self.streamer = None
+            live_typed = len(streamer.typed) if streamer is not None else 0
+            if streamer is not None:
+                streaming_restore(clip_backup)
             if action == "enter":
                 if live_typed:
                     send_backspaces(live_typed)
@@ -244,13 +441,12 @@ class Daemon:
                 state_set("error", tr("nothing"))
             return
         mech = self._refine_mechanical(value)
-        if self.streamer is not None:
+        if streamer is not None:
             # Streaming: KI auf den Endtext, dann Zielfenster exakt darauf bringen.
             final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
-            typed = self.streamer.finish(final)
+            typed = streamer.finish(final)
             self.last_paste_len = len(typed)
-            streaming_restore(self._clip_backup)
-            self.streamer = None
+            streaming_restore(clip_backup)
             value = final
         elif self.cfg.ai_enabled:
             # Lokale KI braucht Sekunden. ERST den Rohtext einfügen (solange der
@@ -273,6 +469,52 @@ class Daemon:
         state_set("done", value)
         secs = len(data) / (RATE * SAMPLE_BYTES)
         self._after_insert(value, secs)
+
+    # --------------------------------------------------- Rettung der Aufnahme
+    def _fail_with_rescue(self, data, streamer, clip_backup):
+        """Server nicht erreichbar oder Transkription gescheitert: die Aufnahme
+        ist gesprochen und darf nicht einfach verschwinden — als WAV sichern und
+        den Pfad in der Fehlermeldung nennen."""
+        if streamer is not None:
+            streaming_restore(clip_backup)
+        path = self._rescue(data)
+        text = tr("no_server")
+        if path:
+            text += " · " + tr("rescued").format(path=path)
+        state_set("error", text)
+
+    def _rescue(self, data):
+        """Rohdaten als eigene WAV-Datei ablegen. Rückgabe: Pfad oder None."""
+        os.makedirs(RUNDIR, exist_ok=True)
+        # Der Name hat Sekundenauflösung. Bei totem Server scheitern zwei
+        # Diktate leicht in derselben Sekunde — dann zählt ein Suffix weiter,
+        # statt die erste Rettung stillschweigend zu überschreiben.
+        stem = os.path.join(RUNDIR, time.strftime(RESCUE_NAME))
+        path, n = stem + ".wav", 1
+        while os.path.exists(path):
+            path = "%s-%d.wav" % (stem, n)
+            n += 1
+        try:
+            wav_from_raw(data, path)
+        except OSError as exc:
+            log("rescue: %s nicht schreibbar: %r" % (path, exc))
+            return None
+        log("rescue: Aufnahme gesichert -> %s" % path)
+        self._prune_rescues()
+        return path
+
+    def _prune_rescues(self):
+        """Nur die letzten RESCUE_KEEP Rettungen behalten — der Ordner ist eine
+        Notfallablage, kein Archiv."""
+        try:
+            old = sorted(glob.glob(os.path.join(RUNDIR, RESCUE_GLOB)))
+        except OSError:
+            return
+        for path in old[:-RESCUE_KEEP]:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
     def _refine_mechanical(self, text):
         """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
@@ -437,11 +679,13 @@ class Daemon:
             log("mac: fehlende TCC-Freigaben: " + ", ".join(missing))
         state_set("idle")
         notify(tr("ready"), 2000)
+        self._install_panic_signal()
         self._sync_wakeword()
         listener = MacHotkeyListener(
             self.cfg.chord, self.cfg,
             on_start=self.start_recording, on_finish=self.finish,
             on_cancel=self.cancel_recording, on_handsfree=self.enable_streaming)
+        self._listener = listener       # der Not-Aus setzt darüber zurück
         listener.start()
         while True:
             time.sleep(RESCAN_EVERY)
@@ -455,13 +699,66 @@ class Daemon:
             self._sync_wakeword()
             self._mac_watchdog(listener)
 
+    def _install_panic_signal(self):
+        """Not-Aus per Signal (SIGUSR2): beendet ein hängendes Diktat auch
+        dann, wenn der Event-Tap nicht mehr reagiert — der Menüpunkt „Diktat
+        sofort beenden" schickt genau dieses Signal an den Daemon-Prozess."""
+        if not hasattr(signal, "SIGUSR2"):
+            return
+        try:
+            signal.signal(signal.SIGUSR2, lambda *_: self.panic_stop())
+        except (OSError, ValueError):   # nicht im Haupt-Thread -> kein Handler
+            log("mac: SIGUSR2-Handler nicht installierbar (Not-Aus nur übers Menü)")
+
     def _mac_watchdog(self, listener, now=None):
         """Sicherheitslimit im Freihand-Modus (Pendant zu MAX_RECORD im
-        Linux-Loop): zu lange Aufnahme hart beenden -> Text wird eingefügt."""
+        Linux-Loop): zu lange Aufnahme hart beenden -> Text wird eingefügt.
+        Zusätzlich: hängende Threads melden, notfalls den Not-Aus auslösen."""
         now = now if now is not None else time.monotonic()
+        self._mac_check_stall(listener, now)
         if self.rec.active and now - self.rec.started > MAX_RECORD:
             if listener.force_finish():
                 log("mac: MAX_RECORD erreicht -> Freihand-Aufnahme beendet")
+            else:
+                log("mac: MAX_RECORD erreicht, Hotkey antwortet nicht -> Not-Aus")
+                self.panic_stop()
+
+    def _mac_check_stall(self, listener, now):
+        """Steht der Ereignis-Thread oder läuft eine Aktion zu lange, EINMALIG
+        (entprellt, bis es wieder läuft) Zustand und die Stacks aller Threads
+        in den Log schreiben — ohne das ist ein Hänger im Nachhinein nicht
+        aufzuklären."""
+        silent = now - listener.last_event_tick
+        action = listener.current_action
+        # Arbeitet der Ereignis-Thread nachweislich an einem synchronen Teil
+        # (Gerät stoppen, osascript), ist er nicht still — er ist langsam. Dann
+        # gilt die lange Frist, sonst schlüge der Selbstneustart weiter unten
+        # mitten in ein zähes, aber normales Diktatende und würfe die eben
+        # gelesenen Rohdaten weg.
+        sync = getattr(listener, "current_sync", None)
+        limit = ACTION_STALL if sync is not None else EVENT_STALL
+        action_stalled = (action is not None
+                          and now - listener.last_action_tick > ACTION_STALL)
+        if not (silent > limit or action_stalled):
+            self._stall_logged = False
+            return
+        if not self._stall_logged:
+            self._stall_logged = True
+            log("mac: Hotkey hängt — Ereignis-Thread %.1fs still, Aktion %r seit "
+                "%.1fs, Maschine=%s, Aufnahme=%s; Thread-Stacks folgen"
+                % (silent, action, now - listener.last_action_tick,
+                   listener.machine.state, self.rec.active))
+            faulthandler.dump_traceback()
+        # Letzter Ausweg: der Ereignis-Thread steht schon beim Öffnen des
+        # Audiogeräts fest (keine Aufnahme aktiv, also greift auch die
+        # MAX_RECORD-Eskalation nicht). Von hier kommt der Prozess nicht mehr
+        # zurück — die Aufsicht in mac_app.py startet ihn neu.
+        dead_after = ACTION_STALL if sync is not None else DEAD_STALL
+        if silent > dead_after and not self.rec.active:
+            log("mac: Ereignis-Thread seit %.0fs tot (sync=%r) -> Daemon startet neu"
+                % (silent, sync))
+            notify(tr("audio_restart"))
+            self._exit(RESTART_EXIT)
 
     def _run_linux(self):
         pressed = set()
@@ -572,7 +869,9 @@ class Daemon:
             if pending and (not pressed or time.monotonic() - pending_since > 2.0):
                 pending = False
                 pressed.clear()
-                self.finish()
+                # Linux liest die Tastatur einthreadig: hier läuft auch der
+                # lange Teil, wie bisher, mitten in dieser Schleife.
+                self.finish_now()
 
 
 def scan_devices(fds):
@@ -600,7 +899,23 @@ def scan_devices(fds):
             del fds[fd]
 
 
+def install_diagnostics():
+    """Stacks aller Threads auf Zuruf: `kill -USR1 <pid>` schreibt sie in den
+    Log. Nur auf macOS registriert — unter Linux beendet SIGUSR1 den Prozess
+    per Voreinstellung, und dieses Verhalten bleibt dort unangetastet."""
+    faulthandler.enable()
+    if sys.platform != "darwin" or not hasattr(signal, "SIGUSR1"):
+        return
+    try:
+        faulthandler.register(signal.SIGUSR1, all_threads=True)
+    except (OSError, ValueError, RuntimeError):
+        log("mac: faulthandler/SIGUSR1 nicht registrierbar")
+
+
 def main():
+    install_diagnostics()
+    log("quassel-daemon %s gestartet (%s, pid=%d)"
+        % (__version__, time.strftime("%Y-%m-%d %H:%M:%S"), os.getpid()))
     try:
         Daemon().run()
     except KeyboardInterrupt:

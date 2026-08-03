@@ -14,11 +14,25 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 from . import audio, server_mac
 from .state import state_read
 
 DAEMON_STOP_TIMEOUT = 5
+
+# Aufsicht über den Daemon-Kindprozess. Er beendet sich bei verklemmtem
+# CoreAudio selbst (Exit-Code 3) und wird dann neu gestartet; die Begrenzung
+# verhindert Dauerfeuer, wenn der Neustart nichts hilft.
+SUPERVISE_EVERY = 2000     # ms
+RESTART_WINDOW = 300.0     # s
+RESTART_LIMIT = 5
+# Muss zu quassel/daemon.py::RESTART_EXIT passen (ein Test hält beides zusammen).
+# Nur dieser Code bedeutet „bitte neu starten"; wer den Daemon von außen beendet,
+# bekommt ihn nicht ungefragt zurück.
+DAEMON_RESTART_EXIT = 3
+RESTART_GIVEUP_HINT = ("Diktat-Dienst startet wiederholt neu, bitte Log prüfen: "
+                       "~/Library/Logs/Quassel/daemon.log")
 
 # Finder startet Apps mit minimalem PATH (/usr/bin:/bin:...) — ohne die
 # Homebrew-Pfade findet shutil.which("ffmpeg") nichts. Die Aufnahme braucht
@@ -87,6 +101,7 @@ class MacApp:
         self.enabled = False
         self._settings = None
         self._down = False
+        self._restarts = []          # monotone Zeitpunkte der letzten Neustarts
         self._repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def start(self):
@@ -126,6 +141,54 @@ class MacApp:
         else:
             self._start_daemon()
         self._sync_ui()
+
+    def _supervise(self, now=None):
+        """Läuft der Daemon noch? Er beendet sich bei verklemmtem Audiogerät
+        selbst und stirbt auch sonst still — ohne Aufsicht wäre das Diktat
+        danach einfach weg, ohne dass es jemand merkt.
+
+        Nach einem bewussten Ausschalten (enabled False) wird nichts neu
+        gestartet."""
+        if not self.enabled or self.daemon is None:
+            return
+        if self.daemon.poll() is None:
+            return
+        code = self.daemon.returncode
+        self.daemon.wait()           # Zombie einsammeln (Prozess ist schon weg)
+        self.daemon = None
+        if code != DAEMON_RESTART_EXIT:
+            print("mac_app: Daemon beendet (code=%s) -> kein Neustart" % code,
+                  file=sys.stderr, flush=True)
+            self.enabled = False
+            self._sync_ui()
+            return
+        now = now if now is not None else time.monotonic()
+        self._restarts = [t for t in self._restarts if now - t < RESTART_WINDOW]
+        if len(self._restarts) >= RESTART_LIMIT:
+            print("mac_app: Daemon beendet (code=%s), zu viele Neustarts -> aus"
+                  % code, file=sys.stderr, flush=True)
+            self.enabled = False
+            self._sync_ui()
+            if self.tray is not None:
+                self.tray.showMessage("Quassel", RESTART_GIVEUP_HINT)
+            return
+        self._restarts.append(now)
+        print("mac_app: Daemon beendet (code=%s) -> Neustart (%d in %d Minuten)"
+              % (code, len(self._restarts), int(RESTART_WINDOW // 60)),
+              file=sys.stderr, flush=True)
+        self._start_daemon()
+        self._sync_ui()
+
+    def panic(self):
+        """Not-Aus aus dem Menüleisten-Menü: SIGUSR2 an den Daemon-Prozess —
+        er beendet eine laufende Aufnahme sofort, auch wenn sein Hotkey
+        hängt. Läuft kein Daemon, gibt es nichts zu beenden."""
+        if self.daemon is None or self.daemon.poll() is not None:
+            return
+        try:
+            os.kill(self.daemon.pid, signal.SIGUSR2)
+        except (OSError, AttributeError):
+            pass
 
     def _sync_ui(self):
         mode = "ready" if self.enabled else "off"
@@ -195,7 +258,7 @@ def main():
     pill_qt.OPEN_CENTER = mac.open_center
     pill_qt.TOGGLE = mac.toggle
     mac.tray = traymac.start_tray(app, mac.open_center, mac.quit,
-                                  on_toggle=mac.toggle)
+                                  on_toggle=mac.toggle, on_panic=mac.panic)
     check_ffmpeg(mac.tray)
     mac.pill = pill_qt.Pill()
     mac.pill.show()
@@ -203,6 +266,11 @@ def main():
     tray_timer = QTimer()
     tray_timer.timeout.connect(mac.sync_tray)
     tray_timer.start(1000)
+
+    # Aufsicht: startet den Daemon neu, wenn er sich beendet hat
+    watch_timer = QTimer()
+    watch_timer.timeout.connect(mac._supervise)
+    watch_timer.start(SUPERVISE_EVERY)
 
     # Ctrl+C/kill räumen die Kindprozesse mit auf. (Der 1-s-QTimer weckt den
     # Interpreter regelmäßig, damit Python-Signalhandler auch im Qt-Loop laufen.)
