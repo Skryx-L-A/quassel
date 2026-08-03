@@ -58,8 +58,14 @@ DEAD_STALL = 30.0      # s: danach ist der Prozess verloren -> Selbstneustart
 # Beendigungscode für den Selbstneustart. Die Aufsicht in mac_app.py startet den
 # Daemon danach neu; 0 wäre ein normales Ende, 1 ein Fehler.
 RESTART_EXIT = 3
-PARTIAL_EVERY = 2.0    # s: Abstand der Live-Vorschau-Transkripte
+PARTIAL_EVERY = 2.0    # s: Mindestabstand der Live-Vorschau-Transkripte
 PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
+# Obergrenze für den adaptiven Abstand (PartialLoop.run): ein einzelner
+# langsamer Durchlauf (Server-Kaltstart, kurzer Systemhänger) soll die
+# Vorschau nicht minutenlang verstummen lassen. 10 s = Fünffaches des
+# Mindestabstands -- genug Puffer für eine kurze Verlangsamung, aber die
+# Vorschau meldet sich spätestens nach 10 s wieder.
+PARTIAL_MAX_WAIT = 10.0
 
 # Eigene Roh-/WAV-Dateien für den Wake-Listener (getrennt vom Tastatur-Pfad)
 WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
@@ -95,37 +101,62 @@ class PartialLoop(threading.Thread):
 
     def run(self):
         whisperclient.ensure_server()   # Modell vorladen -> finale Transkription flott
-        while not self.stop_event.wait(PARTIAL_EVERY):
-            if not self.rec.active:
-                return
-            # Ohne Streaming UND ohne Vorschaublase braucht niemand das
-            # Teiltranskript — die teure Transkription dann überspringen
-            # (spart auf schwacher CPU viel Last, die sonst das Finale bremst).
-            if self.owner.streamer is None and not self.cfg.pill_preview:
-                continue
-            data = self.rec.raw_bytes()
-            if len(data) < RATE * SAMPLE_BYTES // 2:   # < 0,5 s
-                continue
-            data = data[-(RATE * SAMPLE_BYTES * PARTIAL_WINDOW):]
+        # Adaptiver Abstand statt fest PARTIAL_EVERY: der Server bearbeitet
+        # Teil- und Finaltranskript NACHEINANDER, und ein Teiltranskript
+        # kostet fast so viel wie das Finale (whisper.cpp füllt jede Eingabe
+        # ohnehin auf ein volles 30-s-Fenster auf). Bei festem Abstand wäre
+        # der Server während des ganzen Diktats > 80% ausgelastet, gemessen
+        # im CPU-Sparlauf. delay wird nach jedem Durchlauf auf dessen eigene
+        # Dauer angehoben (Untergrenze PARTIAL_EVERY, Obergrenze
+        # PARTIAL_MAX_WAIT) -> Auslastung bleibt strukturell < 50%.
+        delay = PARTIAL_EVERY
+        while not self.stop_event.wait(delay):
+            iter_start = time.monotonic()
             try:
-                wav_from_raw(data, PARTWAV)
-            except OSError:
-                continue
-            raw = whisperclient.transcribe(PARTWAV, self.cfg, timeout=20)
-            if raw is None or self.stop_event.is_set() or not self.rec.active:
-                continue
-            kind, text = textproc.postprocess(raw, self.cfg)
-            if kind != "text":
-                continue
-            streamer = self.owner.streamer
-            show = self.cfg.pill_preview
-            if streamer is not None:
-                streamer.update(text)
-                # Blase zeigt nur den noch nicht getippten Rest (oder nichts)
-                state_set("recording",
-                          text[len(streamer.typed):].strip() if show else "")
-            else:
-                state_set("recording", text if show else "")
+                if not self.rec.active:
+                    return
+                # Ohne Streaming UND ohne Vorschaublase braucht niemand das
+                # Teiltranskript — die teure Transkription dann überspringen
+                # (spart auf schwacher CPU viel Last, die sonst das Finale bremst).
+                if self.owner.streamer is None and not self.cfg.pill_preview:
+                    continue
+                data = self.rec.raw_bytes()
+                if len(data) < RATE * SAMPLE_BYTES // 2:   # < 0,5 s
+                    continue
+                data = data[-(RATE * SAMPLE_BYTES * PARTIAL_WINDOW):]
+                try:
+                    wav_from_raw(data, PARTWAV)
+                except OSError:
+                    continue
+                # Erneut prüfen, unmittelbar VOR der teuren Transkription: das
+                # Diktat kann zwischen Schleifenstart und hier beendet worden
+                # sein. Ohne diese zweite Prüfung würde ein Teiltranskript
+                # starten, obwohl das Finale schon ansteht -- und sich hinter
+                # ihm in die Warteschlange des Servers stellen.
+                if self.stop_event.is_set() or not self.rec.active:
+                    return
+                raw = whisperclient.transcribe(PARTWAV, self.cfg, timeout=20)
+                # Ehrlich bleiben: die HTTP-Anfrage selbst lässt sich
+                # clientseitig nicht abbrechen, sie läuft am Server so oder so
+                # durch, und das Finale wartet trotzdem dahinter. Hier wird
+                # nur noch das ERGEBNIS verworfen, kein Zeitgewinn erzielt.
+                if raw is None or self.stop_event.is_set() or not self.rec.active:
+                    continue
+                kind, text = textproc.postprocess(raw, self.cfg)
+                if kind != "text":
+                    continue
+                streamer = self.owner.streamer
+                show = self.cfg.pill_preview
+                if streamer is not None:
+                    streamer.update(text)
+                    # Blase zeigt nur den noch nicht getippten Rest (oder nichts)
+                    state_set("recording",
+                              text[len(streamer.typed):].strip() if show else "")
+                else:
+                    state_set("recording", text if show else "")
+            finally:
+                delay = max(PARTIAL_EVERY,
+                            min(time.monotonic() - iter_start, PARTIAL_MAX_WAIT))
 
     def stop(self):
         self.stop_event.set()

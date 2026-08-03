@@ -30,11 +30,16 @@ from .hook import CHORDS_VK, KeyboardHook
 from .machine import ChordMachine
 from .paste import paste, send_backspaces, send_enter, type_chunk
 
-PARTIAL_EVERY = 2.0
+PARTIAL_EVERY = 2.0    # s: Mindestabstand der Live-Vorschau-Transkripte
 # Anfang verwerfen (Einschwingen/Start-Ton) und Ende puffern (nicht abschneiden).
 LEAD_TRIM_MS = 120
 TAIL_PAD_MS = 250
 PARTIAL_WINDOW = 15
+# Obergrenze für den adaptiven Abstand (PartialWorker.run) -- Spiegelung von
+# daemon.py: siehe dort für die Begründung (10 s = Fünffaches des
+# Mindestabstands, ein einzelner langsamer Durchlauf verstummt die Vorschau
+# nicht minutenlang).
+PARTIAL_MAX_WAIT = 10.0
 
 
 DEBUG_LOG_MAX = 1_000_000   # ab ~1 MB eine Generation wegrotieren
@@ -90,28 +95,50 @@ class PartialWorker(threading.Thread):
         t = time.monotonic()
         whisperclient.ensure_server()
         dlog("partial: ensure_server %.2fs" % (time.monotonic() - t))
-        while not self.stop_event.wait(PARTIAL_EVERY):
-            if not self.rec.active:
-                return
-            # Weder Vorschau noch Streaming -> Teiltranskript spart man sich (CPU).
-            if not self.cfg.pill_preview and not (self.is_streaming and self.is_streaming()):
-                continue
-            data = self.rec.raw_bytes()
-            if len(data) < RATE * SAMPLE_BYTES // 2:
-                continue
-            data = data[-(RATE * SAMPLE_BYTES * PARTIAL_WINDOW):]
+        # Adaptiver Abstand statt fest PARTIAL_EVERY -- Spiegelung von
+        # daemon.PartialLoop.run: der Server bearbeitet Teil- und
+        # Finaltranskript nacheinander, ein Teiltranskript kostet fast so
+        # viel wie das Finale. delay wird nach jedem Durchlauf auf dessen
+        # eigene Dauer angehoben (Untergrenze PARTIAL_EVERY, Obergrenze
+        # PARTIAL_MAX_WAIT) -> Auslastung bleibt strukturell < 50%.
+        delay = PARTIAL_EVERY
+        while not self.stop_event.wait(delay):
+            iter_start = time.monotonic()
             try:
-                wav_from_raw(data, PARTWAV)
-            except OSError:
-                continue
-            t = time.monotonic()
-            text = whisperclient.transcribe(PARTWAV, self.cfg, timeout=20)
-            dlog("partial: transcribe %.2fs (%d Bytes Audio)"
-                 % (time.monotonic() - t, len(data)))
-            if text is not None and not self.stop_event.is_set() and self.rec.active:
-                kind, clean = textproc.postprocess(text, self.cfg)
-                if kind == "text":
-                    self.on_partial(clean)
+                if not self.rec.active:
+                    return
+                # Weder Vorschau noch Streaming -> Teiltranskript spart man sich (CPU).
+                if not self.cfg.pill_preview and not (self.is_streaming and self.is_streaming()):
+                    continue
+                data = self.rec.raw_bytes()
+                if len(data) < RATE * SAMPLE_BYTES // 2:
+                    continue
+                data = data[-(RATE * SAMPLE_BYTES * PARTIAL_WINDOW):]
+                try:
+                    wav_from_raw(data, PARTWAV)
+                except OSError:
+                    continue
+                # Erneut prüfen, unmittelbar VOR der teuren Transkription: das
+                # Diktat kann seit Schleifenstart beendet worden sein --
+                # sonst stellt sich ein unnötiges Teiltranskript in der
+                # Warteschlange des Servers vor das Finale.
+                if self.stop_event.is_set() or not self.rec.active:
+                    return
+                t = time.monotonic()
+                text = whisperclient.transcribe(PARTWAV, self.cfg, timeout=20)
+                dlog("partial: transcribe %.2fs (%d Bytes Audio)"
+                     % (time.monotonic() - t, len(data)))
+                # Ehrlich bleiben: die HTTP-Anfrage lässt sich clientseitig
+                # nicht abbrechen, sie läuft am Server so oder so durch, und
+                # das Finale wartet trotzdem dahinter. Hier wird nur noch das
+                # ERGEBNIS verworfen, kein Zeitgewinn erzielt.
+                if text is not None and not self.stop_event.is_set() and self.rec.active:
+                    kind, clean = textproc.postprocess(text, self.cfg)
+                    if kind == "text":
+                        self.on_partial(clean)
+            finally:
+                delay = max(PARTIAL_EVERY,
+                            min(time.monotonic() - iter_start, PARTIAL_MAX_WAIT))
 
     def stop(self):
         self.stop_event.set()
