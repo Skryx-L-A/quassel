@@ -433,6 +433,10 @@ class Center(QMainWindow):
         self.pill_opacity.setValue(int(self.cfg.pill_opacity * 100))
         self.pill_opacity.valueChanged.connect(self.save_settings)
         self.labeled_row(tr("pill_opacity"), self.pill_opacity, g)
+        self.pill_movable = QCheckBox(tr("pill_movable"))
+        self.pill_movable.setChecked(self.cfg.pill_movable)
+        self.pill_movable.toggled.connect(self.save_settings)
+        g.addWidget(self.pill_movable)
         self.pill_preview = QCheckBox(tr("pill_preview"))
         self.pill_preview.setChecked(self.cfg.pill_preview)
         self.pill_preview.toggled.connect(self.save_settings)
@@ -860,6 +864,7 @@ class Center(QMainWindow):
             ("pill", "enabled"): str(self.pill_show.isChecked()).lower(),
             ("pill", "scale"): self.pill_size.value() / 100,
             ("pill", "opacity"): self.pill_opacity.value() / 100,
+            ("pill", "movable"): str(self.pill_movable.isChecked()).lower(),
             ("pill", "show_preview"): str(self.pill_preview.isChecked()).lower(),
             ("hotkey", "chord"): self.chord.currentData(),
             ("behavior", "mute_while_dictating"): self.mute_combo.currentData(),

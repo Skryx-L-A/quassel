@@ -22,7 +22,7 @@ one-line installer (unsigned — building from source is still available too, se
 - **Hands-free mode:** double-tap `Ctrl+Meta`, speak freely, press once → text is pasted
 - **Live preview:** see the transcript in the pill *while* you're still speaking
 - **Minimal pill overlay** with a real microphone waveform — click it to open
-  the control center; resizable, translucent, or turn it off entirely
+  the control center; resizable, translucent, movable, or turn it off entirely
 - **Control center** for everything — no config files needed: hotkey, language,
   Whisper model (with in-app download), microphone, personal dictionary,
   history, autostart

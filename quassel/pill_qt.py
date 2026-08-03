@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 
-from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtCore import Qt, QTimer, QRectF, QPoint
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -80,6 +80,11 @@ class Pill(QWidget):
         self.last_poll = 0.0
         self.on = daemon_active()
         self.mode = "ready" if self.on else "off"
+        # Ziehen: globale Mausposition + Fenster-Position bei mousePressEvent,
+        # _dragging erst ab der 4px-Schwelle (sonst wird jeder Klick zum Mini-Zug)
+        self._drag_start = None
+        self._drag_origin = None
+        self._dragging = False
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(80)
@@ -87,6 +92,8 @@ class Pill(QWidget):
         self.cfg_timer.timeout.connect(self.reload_cfg)
         self.cfg_timer.start(1000)
         self.resize_to_cfg()
+        self.setWindowOpacity(self._op())
+        self._update_cursor()
         self.setVisible(self.cfg.pill_enabled)
 
     def showEvent(self, ev):
@@ -129,14 +136,42 @@ class Pill(QWidget):
         self.reposition()
 
     def reposition(self):
+        """Bei aktiviertem Verschieben eine gespeicherte Position benutzen —
+        aber nur, wenn sie noch auf einem verfügbaren Bildschirm liegt (Monitor
+        abgezogen, Auflösung geändert). Sonst die automatische Position unten
+        mittig; die Pille darf nie außerhalb aller Bildschirme landen."""
+        if self.cfg.pill_movable and self._stored_pos_valid():
+            self.move(self.cfg.pill_pos_x, self.cfg.pill_pos_y)
+            return
+        self._reposition_auto()
+
+    def _reposition_auto(self):
         scr = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
         g = scr.availableGeometry()
         self.move(g.x() + (g.width() - self.width()) // 2,
                   g.y() + g.height() - self.height() - int(36 * self._scale()))
 
+    def _stored_pos_valid(self):
+        x, y = self.cfg.pill_pos_x, self.cfg.pill_pos_y
+        if x < 0 or y < 0:
+            return False
+        return any(scr.availableGeometry().contains(QPoint(x, y))
+                   for scr in QApplication.screens())
+
+    def _update_cursor(self):
+        if not self.cfg.pill_movable:
+            self.unsetCursor()
+        elif self._dragging:
+            self.setCursor(Qt.ClosedHandCursor)
+        else:
+            self.setCursor(Qt.OpenHandCursor)
+
     def reload_cfg(self):
         if self.cfg.reload():
             self.resize_to_cfg()
+            self.setWindowOpacity(self._op())
+            self._update_cursor()
+            self.update()
         self.setVisible(self.cfg.pill_enabled)
 
     def set_mode(self, mode, text=""):
@@ -169,7 +204,7 @@ class Pill(QWidget):
     def paintEvent(self, _ev):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        s, op = self._scale(), self._op()
+        s = self._scale()
         pill_h = int(28 * s)
         wave_w = 22 * s
         pad = 13 * s
@@ -178,12 +213,10 @@ class Pill(QWidget):
         pill = QRectF(cx - pill_w / 2, self.height() - pill_h - 2, pill_w, pill_h)
         path = QPainterPath()
         path.addRoundedRect(pill, pill_h / 2, pill_h / 2)
-        bg = QColor(PILL_BG)
-        bg.setAlphaF(op)
-        p.fillPath(path, bg)
+        p.fillPath(path, PILL_BG)
         self._draw_wave(p, pill.left() + pad, pill.center().y(), wave_w, 14 * s)
         if self.cfg.pill_preview and self.text and self.mode in ("recording", "done", "error"):
-            self._draw_bubble(p, pill, s, op)
+            self._draw_bubble(p, pill, s)
 
     def _wave_color(self):
         if self.mode == "off":
@@ -209,7 +242,7 @@ class Pill(QWidget):
             bx = x + i * (bw + gap)
             p.drawRoundedRect(QRectF(bx, cy - bh / 2, bw, bh), bw / 2, bw / 2)
 
-    def _draw_bubble(self, p, pill, s, op):
+    def _draw_bubble(self, p, pill, s):
         txt = self.text if len(self.text) <= 140 else "…" + self.text[-139:]
         f = QFont()
         f.setPixelSize(int(11 * s))
@@ -223,24 +256,53 @@ class Pill(QWidget):
         box = br.adjusted(-2 * pad, -pad, 2 * pad, pad)
         path = QPainterPath()
         path.addRoundedRect(box, 10, 10)
-        bg = QColor(PILL_BG)
-        bg.setAlphaF(op)
-        p.fillPath(path, bg)
+        p.fillPath(path, PILL_BG)
         p.setPen(C_TEXT)
         p.drawText(avail, flags, txt)
 
     # -------------------------------------------------------------- Klicks
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton and self.cfg.pill_movable:
+            self._drag_start = ev.globalPosition().toPoint()
+            self._drag_origin = self.pos()
+            self._dragging = False
+
+    def mouseMoveEvent(self, ev):
+        if self._drag_start is None:
+            return
+        delta = ev.globalPosition().toPoint() - self._drag_start
+        if not self._dragging:
+            if abs(delta.x()) < 4 and abs(delta.y()) < 4:
+                return
+            self._dragging = True
+            self._update_cursor()
+        self.move(self._drag_origin + delta)
+
     def mouseReleaseEvent(self, ev):
         # Linksklick öffnet (sicher) das Kontrollzentrum; An/Aus liegt auf dem
         # Rechtsklick — sonst beendet ein versehentlicher Klick neben dem Textfeld
-        # unter der Pille mitten im Diktat ganz Quassel.
+        # unter der Pille mitten im Diktat ganz Quassel. Wurde tatsächlich
+        # gezogen, öffnet der Release das Kontrollzentrum nicht.
         if ev.button() == Qt.LeftButton:
-            if OPEN_CENTER is not None:
-                OPEN_CENTER()
-            else:
-                subprocess.Popen(list(CENTER_CMD))
+            was_dragging = self._dragging
+            if was_dragging:
+                self._save_position()
+            self._drag_start = None
+            self._dragging = False
+            self._update_cursor()
+            if not was_dragging:
+                if OPEN_CENTER is not None:
+                    OPEN_CENTER()
+                else:
+                    subprocess.Popen(list(CENTER_CMD))
         elif ev.button() == Qt.RightButton:
             self._toggle()
+
+    def _save_position(self):
+        pos = self.pos()
+        config.save({("pill", "pos_x"): pos.x(), ("pill", "pos_y"): pos.y()})
+        self.cfg.pill_pos_x = pos.x()
+        self.cfg.pill_pos_y = pos.y()
 
     def _toggle(self):
         if TOGGLE is not None:

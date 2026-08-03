@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- macOS/Windows: the pill can now be dragged to any position on screen. Turn it on with
+  **"Pill can be moved"** in the control center (off by default); a plain click still opens the
+  control center, and a drag of at least a few pixels moves the pill instead. Turning the
+  setting back off snaps the pill back to its usual spot at the bottom of the screen.
+
 - macOS: the menu-bar icon has a new entry **"Diktat sofort beenden"** that stops a running
   dictation at once — for the rare case where the hotkey no longer responds. The same
   emergency stop runs from a terminal with `kill -USR2 <daemon-pid>`.
@@ -32,6 +37,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stopped.
 
 ### Fixed
+- macOS/Windows: the pill's opacity slider in the control center had no visible effect — it only
+  faded a thin background plate, while the waveform and the live-preview text (the parts you
+  actually see) stayed fully opaque. The setting now controls the whole pill window, changes
+  apply immediately, and dragging the slider all the way down no longer makes the pill invisible.
 - macOS: dictation could wedge for good — the recording kept running and pressing the chord
   no longer ended it, until Quassel was restarted. A slow or faulty audio device blocked the
   thread that handles the keyboard. Stopping a recording, every AppleScript call and the wait

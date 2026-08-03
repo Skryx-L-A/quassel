@@ -17,6 +17,7 @@ STRINGS = {
     "pill_show": ("Show pill", "Pille anzeigen"),
     "pill_size": ("Size", "Größe"),
     "pill_opacity": ("Opacity", "Transparenz"),
+    "pill_movable": ("Pill can be moved", "Pille frei verschiebbar"),
     "pill_preview": ("Show live preview text in the pill", "Live-Vorschautext in der Pille zeigen"),
     "sec_hotkey": ("Hotkey", "Hotkey"),
     "chord_ctrl_meta": ("Ctrl + Meta (Windows key)", "Strg + Meta (Windows-Taste)"),
