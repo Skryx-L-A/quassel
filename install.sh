@@ -258,10 +258,23 @@ else
     # ANDERE Wert (eigene Wahl, "-bs 8", "-nf", zusätzliche Flags) bleibt
     # unangetastet. Idempotent: nach der Anhebung steht dort "-bs 1", die
     # Bedingung trifft beim nächsten Lauf nicht mehr zu.
-    CUR_DECODE=$(grep '^WHISPER_DECODE=' "$SENV" | head -1 | cut -d= -f2- \
-                 | tr -s '[:space:]' ' ' | sed -e 's/^ //' -e 's/ $//')
-    [[ "$CUR_DECODE" == "-bs 5" ]] \
-        && sed -i 's/^WHISPER_DECODE=.*/WHISPER_DECODE=-bs 1/' "$SENV"
+    # Vorsicht mit "set -euo pipefail" (Zeile 9): eine Zuweisung, deren
+    # Kommandosubstitution fehlschlaegt, beendet das Skript OHNE Meldung --
+    # und grep liefert 1, sobald der Schluessel fehlt. Genau diesen Fall
+    # nimmt das Skript fuenf Zeilen weiter unten selbst an. Deshalb "|| true"
+    # und ein if statt einer &&-Kette, deren letztes Glied (sed) bei einem
+    # nicht beschreibbaren ~/.config/quassel ebenfalls abbraeche.
+    # tail -1, nicht head -1: bei doppeltem Schluessel gilt fuer systemd der
+    # LETZTE Wert -- nur der ist der wirksame, und nur er darf entscheiden.
+    CUR_DECODE=$(grep '^WHISPER_DECODE=' "$SENV" 2>/dev/null | tail -1 \
+                 | cut -d= -f2- | tr -s '[:space:]' ' ' \
+                 | sed -e 's/^ //' -e 's/ $//' || true)
+    if [[ "$CUR_DECODE" == "-bs 5" ]]; then
+        if ! sed -i 's/^WHISPER_DECODE=.*/WHISPER_DECODE=-bs 1/' "$SENV"; then
+            echo "WARNUNG: $SENV nicht schreibbar -- WHISPER_DECODE bleibt auf '-bs 5'." >&2
+            echo "         Von Hand auf '-bs 1' setzen bringt die schnellere Suche." >&2
+        fi
+    fi
     grep -q '^WHISPER_THREADS=' "$SENV" || echo "WHISPER_THREADS=$THREADS" >> "$SENV"
     grep -q '^WHISPER_DECODE=' "$SENV" || echo "WHISPER_DECODE=$DECODE" >> "$SENV"
     [[ -n "$VAD_PATH" ]] && ! grep -q '^VAD_MODEL=' "$SENV" \
