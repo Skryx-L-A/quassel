@@ -288,10 +288,12 @@ def start():
             p for p in env.get("PATH", "").split(os.pathsep)
             if p and not p.startswith(mei))
     # whisper-Threads: bis ~8 (mehr bringt kaum etwas; HT-Kerne wenig).
-    # Decode: mit NVIDIA Beam-Search (genauer, dort günstig); sonst greedy + -nf
-    # (kein Temperatur-Fallback -> deckelt die Decode-Zeit auf schwacher CPU).
+    # Decode: gierige Suche überall (eigene Messung über 36 Dateien/938
+    # Referenzwörter: beam_size=5 in keiner Datei besser, ~6% langsamer) —
+    # ohne NVIDIA zusätzlich -nf (kein Temperatur-Fallback, deckelt die
+    # Decode-Zeit auf schwacher CPU).
     threads = str(min(8, os.cpu_count() or 4))
-    decode = ["-bs", "5"] if has_nvidia() else ["-nf"]
+    decode = ["-bs", "1"] if has_nvidia() else ["-nf"]
     args = [exe, "-m", model, "-t", threads, *decode,
             "--host", "127.0.0.1", "--port", "8765", "-l", "auto", "-nt"]
     vad = vad_model_path()

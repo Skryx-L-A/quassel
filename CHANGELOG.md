@@ -14,6 +14,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Dictation decodes with greedy search on every platform now. Beam search was the default
+  wherever a GPU was found; measured over 36 recordings and 938 reference words it was never
+  more accurate, on one noisy take worse, and about 6 % slower (median 0.595 s against
+  0.557 s). An installation that still carries the old default is moved over on the next
+  start. A decode setting you picked yourself stays untouched.
 ### Added
 - macOS/Windows: **"Click on the pill opens the control center"** in the control center. It is
   on by default; switch it off when opening the settings window by accident gets in the way.

@@ -10,12 +10,16 @@ from quassel import config, server_mac
 
 
 def test_build_args_full():
+    """Prüft die Absicht von build_args(): ein beliebiger WHISPER_DECODE-Wert
+    wird an Leerzeichen gesplittet 1:1 durchgereicht (nicht auf einen
+    bestimmten Beam-Wert festverdrahtet) und die VAD-Flags kommen dazu, wenn
+    die Datei existiert. "-bs 1" ist hier nur das reale Default-Beispiel."""
     env = {"SERVER_BIN": "/x/whisper-server", "MODEL_PATH": "/m/ggml-a.bin",
-           "WHISPER_THREADS": "8", "WHISPER_DECODE": "-bs 5",
+           "WHISPER_THREADS": "8", "WHISPER_DECODE": "-bs 1",
            "VAD_MODEL": __file__}          # existiert -> VAD-Flags dabei
     args = server_mac.build_args(env)
     assert args[:5] == ["/x/whisper-server", "-m", "/m/ggml-a.bin", "-t", "8"]
-    assert "-bs" in args and "5" in args
+    assert "-bs" in args and "1" in args
     assert "--vad" in args and "--vad-model" in args and __file__ in args
     assert ["--host", "127.0.0.1", "--port", "8765", "-l", "auto", "-nt"] \
         == args[-7:]
@@ -98,11 +102,106 @@ def test_ensure_env_fills_missing_only(tmp_path):
     assert "VAD_MODEL" not in written
 
 
+def test_ensure_env_defaults_to_greedy_decode(tmp_path):
+    """Die eigentliche Absicht der Umstellung: fehlt WHISPER_DECODE, wählt
+    ensure_env() gierige Suche ("-bs 1"), NICHT mehr Beam-Search ("-bs 5") —
+    eigene Messung über 36 Dateien/938 Referenzwörter zeigte beam_size=5 nie
+    besser, ~6% langsamer."""
+    binpath = tmp_path / "whisper-server"
+    binpath.write_text("")
+    binpath.chmod(0o755)
+    model = tmp_path / "ggml-small-q5_1.bin"
+    model.write_bytes(b"0" * 2048)
+    written = {}
+    with patch.object(config, "read_serverenv", return_value={}), \
+         patch.object(config, "write_serverenv",
+                      side_effect=lambda e: written.update(e)), \
+         patch.object(server_mac, "server_bin", return_value=str(binpath)), \
+         patch.object(server_mac, "_find_model", return_value=str(model)), \
+         patch.object(server_mac, "current_model",
+                      side_effect=[None, str(model)]), \
+         patch.object(server_mac, "vad_model_path", return_value=None):
+        assert server_mac.ensure_env() is True
+    assert written["WHISPER_DECODE"] == "-bs 1"
+    assert written["WHISPER_DECODE"] != "-bs 5"
+
+
+def _ensure_env_with_decode(decode_value, binpath, model):
+    """Wie ensure_env(), aber mit SERVER_BIN/MODEL_PATH/THREADS schon gefüllt
+    -- damit changed ausschließlich vom WHISPER_DECODE-Zweig herrührt und die
+    Migrationslogik isoliert geprüft werden kann."""
+    written = {}
+    env = {"SERVER_BIN": str(binpath), "MODEL_PATH": str(model),
+           "WHISPER_THREADS": "8", "VAD_MODEL": "x"}
+    if decode_value is not None:
+        env["WHISPER_DECODE"] = decode_value
+    with patch.object(config, "read_serverenv", return_value=env), \
+         patch.object(config, "write_serverenv",
+                      side_effect=lambda e: written.update(e)), \
+         patch.object(os, "access", return_value=True), \
+         patch.object(server_mac, "current_model", return_value=str(model)), \
+         patch.object(server_mac, "vad_model_path", return_value=None):
+        assert server_mac.ensure_env() is True
+    return written
+
+
+def test_ensure_env_migrates_the_exact_old_beam_default(tmp_path):
+    """Bestandsnutzer: server.env enthält noch den alten Vorgabewert dieses
+    Programms selbst -- kein erkennbarer Nutzerwille, wird angehoben. Auf
+    dieser Maschine nachweisbar: die laufende Instanz (PID 6506) hat exakt
+    diesen alten Wert in ihrer server.env stehen (siehe Result-File)."""
+    binpath = tmp_path / "whisper-server"
+    binpath.write_text("")
+    binpath.chmod(0o755)
+    model = tmp_path / "ggml-small-q5_1.bin"
+    model.write_bytes(b"0" * 2048)
+    written = _ensure_env_with_decode("-bs 5", binpath, model)
+    assert written["WHISPER_DECODE"] == "-bs 1"
+
+
+def test_ensure_env_migrates_the_old_default_with_extra_whitespace(tmp_path):
+    """Nach Normalisierung von Leerraum -- "-bs  5" oder "  -bs 5  " zählen
+    genauso als der alte Vorgabewert wie "-bs 5"."""
+    binpath = tmp_path / "whisper-server"
+    binpath.write_text("")
+    binpath.chmod(0o755)
+    model = tmp_path / "ggml-small-q5_1.bin"
+    model.write_bytes(b"0" * 2048)
+    for messy in ("-bs  5", "  -bs 5  ", "-bs\t5"):
+        assert _ensure_env_with_decode(messy, binpath, model)["WHISPER_DECODE"] == "-bs 1", messy
+
+
+def test_ensure_env_preserves_a_deliberate_decode_value(tmp_path):
+    """Alles außer EXAKT dem alten Vorgabewert ist eine bewusste Nutzerwahl
+    und bleibt unangetastet -- eigener Wert, ein anderer Beam-Size, "-nf",
+    oder "-bs 5" mit zusätzlichen Flags (kein exakter Treffer mehr)."""
+    binpath = tmp_path / "whisper-server"
+    binpath.write_text("")
+    binpath.chmod(0o755)
+    model = tmp_path / "ggml-small-q5_1.bin"
+    model.write_bytes(b"0" * 2048)
+    for own_value in ("-bs 8", "-nf", "-bs 5 -nf", "--my-custom-flag"):
+        written = _ensure_env_with_decode(own_value, binpath, model)
+        assert written.get("WHISPER_DECODE", own_value) == own_value, own_value
+
+
+def test_ensure_env_migration_is_idempotent(tmp_path):
+    """Nach der Anhebung steht "-bs 1" da -- ein zweiter Lauf darf write_serverenv
+    für dieses Feld nicht nochmal auslösen (changed bleibt False)."""
+    binpath = tmp_path / "whisper-server"
+    binpath.write_text("")
+    binpath.chmod(0o755)
+    model = tmp_path / "ggml-small-q5_1.bin"
+    model.write_bytes(b"0" * 2048)
+    written = _ensure_env_with_decode("-bs 1", binpath, model)
+    assert written == {}                    # nichts geändert -> write_serverenv nie gerufen
+
+
 def test_start_spawns_server_and_is_idempotent(tmp_path):
     binpath = tmp_path / "whisper-server"
     binpath.write_text("")
     env = {"SERVER_BIN": str(binpath), "MODEL_PATH": "m",
-           "WHISPER_THREADS": "4", "WHISPER_DECODE": "-bs 5"}
+           "WHISPER_THREADS": "4", "WHISPER_DECODE": "-bs 1"}
     proc = MagicMock()
     proc.poll.return_value = None
     server_mac._proc = None

@@ -5,11 +5,15 @@ Konfiguration über dieselbe server.env wie auf Linux/Windows:
   SERVER_BIN       Pfad zum whisper-server-Binary (Metal-Build)
   MODEL_PATH       ggml-Modell unter ~/Library/Application Support/Quassel/models
   WHISPER_THREADS  Threads (bis 8)
-  WHISPER_DECODE   Decode-Flags (Metal-GPU -> Beam-Search "-bs 5")
+  WHISPER_DECODE   Decode-Flags ("-bs 1", gierige Suche — gemessen über 36
+                   Dateien/938 Referenzwörter nie schlechter als beam_size=5,
+                   ~6% schneller)
   VAD_MODEL        Silero-VAD-Modell (optional)
 
 ensure_env() füllt fehlende Einträge mit Hardware-Defaults, überschreibt aber
-nie eine schon getroffene Wahl (gleiches Prinzip wie install.sh/win-provision).
+nie eine schon getroffene Wahl (gleiches Prinzip wie install.sh/win-provision)
+— einzige Ausnahme: der überholte WHISPER_DECODE-Altwert "-bs 5" wird einmalig
+auf "-bs 1" gehoben (siehe ensure_env()).
 """
 import os
 import signal
@@ -79,8 +83,9 @@ def vad_model_path():
 
 
 def ensure_env():
-    """server.env vervollständigen (nur fehlende Schlüssel). True, wenn danach
-    Binary + Modell vorhanden sind."""
+    """server.env vervollständigen (nur fehlende Schlüssel, mit einer einzigen
+    Ausnahme: der überholte WHISPER_DECODE-Vorgabewert "-bs 5" wird gehoben,
+    siehe Kommentar dort). True, wenn danach Binary + Modell vorhanden sind."""
     env = config.read_serverenv()
     changed = False
     if not env.get("SERVER_BIN") or not os.access(env.get("SERVER_BIN", ""), os.X_OK):
@@ -97,7 +102,19 @@ def ensure_env():
         env["WHISPER_THREADS"] = str(min(8, os.cpu_count() or 4))
         changed = True
     if not env.get("WHISPER_DECODE"):
-        env["WHISPER_DECODE"] = "-bs 5"    # Metal = GPU -> Beam-Search
+        # Gierige Suche: eigene Messung über 36 Dateien/938 Referenzwörter
+        # zeigte beam_size=5 in keiner Datei besser, in einer verrauschten
+        # sogar schlechter, bei ~6% mehr Zeit (Median 0,595s vs. 0,557s).
+        env["WHISPER_DECODE"] = "-bs 1"
+        changed = True
+    elif " ".join(env["WHISPER_DECODE"].split()) == "-bs 5":
+        # Einmalige Migration, NICHT die allgemeine "füllt nur Fehlendes"-Regel:
+        # "-bs 5" war der frühere Vorgabewert dieses Programms selbst (kein
+        # Nutzerwille), durch obige Messung abgelöst -- Bestandsnutzer sollen
+        # die schnellere Suche auch ohne Neuinstallation bekommen. Jeder ANDERE
+        # Wert (eigene Wahl, "-bs 8", "-nf", zusätzliche Flags) bleibt
+        # unangetastet: das erkennt man nicht als "alter Default" wieder.
+        env["WHISPER_DECODE"] = "-bs 1"
         changed = True
     if not env.get("VAD_MODEL"):
         vad = vad_model_path()

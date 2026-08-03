@@ -233,9 +233,11 @@ mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/share/applications" \
 install -m 644 "$SRC"/systemd/*.service "$HOME/.config/systemd/user/"
 # whisper-Threads: bis ~8 (darüber bringt mehr kaum etwas, HT-Kerne wenig)
 THREADS=$(nproc 2>/dev/null || echo 4); [[ "$THREADS" -gt 8 ]] && THREADS=8
-# Decode: mit GPU Beam-Search (genauer, dort günstig); ohne GPU greedy + kein
-# Temperatur-Fallback (-nf) -> deckelt die Decode-Zeit auf schwacher CPU.
-[[ "$HAS_GPU" -eq 1 ]] && DECODE="-bs 5" || DECODE="-nf"
+# Decode: gierige Suche überall (eigene Messung über 36 Dateien/938
+# Referenzwörter: beam_size=5 in keiner Datei besser, ~6% langsamer); ohne
+# GPU zusätzlich kein Temperatur-Fallback (-nf) -> deckelt die Decode-Zeit
+# auf schwacher CPU.
+[[ "$HAS_GPU" -eq 1 ]] && DECODE="-bs 1" || DECODE="-nf"
 if [[ ! -s "$HOME/.config/quassel/server.env" ]]; then
     cat > "$HOME/.config/quassel/server.env" <<EOF
 SERVER_BIN=$SERVER_BIN_PATH
@@ -248,6 +250,18 @@ else
     # Bestehende server.env nicht überschreiben (Modellwahl bleibt), aber Thread-
     # Zahl, Decode-Flags und VAD-Modell bei Bedarf ergänzen.
     SENV="$HOME/.config/quassel/server.env"
+    # Einmalige Migration, NICHT die "füllt nur Fehlendes"-Regel darunter:
+    # "-bs 5" war der frühere Vorgabewert dieses Programms selbst (kein
+    # Nutzerwille), durch eigene Messung abgelöst (36 Dateien/938
+    # Referenzwörter: beam_size=5 nie besser, ~6% langsamer) -- Bestandsnutzer
+    # sollen die schnellere Suche auch ohne Neuinstallation bekommen. Jeder
+    # ANDERE Wert (eigene Wahl, "-bs 8", "-nf", zusätzliche Flags) bleibt
+    # unangetastet. Idempotent: nach der Anhebung steht dort "-bs 1", die
+    # Bedingung trifft beim nächsten Lauf nicht mehr zu.
+    CUR_DECODE=$(grep '^WHISPER_DECODE=' "$SENV" | head -1 | cut -d= -f2- \
+                 | tr -s '[:space:]' ' ' | sed -e 's/^ //' -e 's/ $//')
+    [[ "$CUR_DECODE" == "-bs 5" ]] \
+        && sed -i 's/^WHISPER_DECODE=.*/WHISPER_DECODE=-bs 1/' "$SENV"
     grep -q '^WHISPER_THREADS=' "$SENV" || echo "WHISPER_THREADS=$THREADS" >> "$SENV"
     grep -q '^WHISPER_DECODE=' "$SENV" || echo "WHISPER_DECODE=$DECODE" >> "$SENV"
     [[ -n "$VAD_PATH" ]] && ! grep -q '^VAD_MODEL=' "$SENV" \
