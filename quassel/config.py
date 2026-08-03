@@ -201,7 +201,10 @@ def dictionary_words():
         except OSError:
             _dictionary_cache["words"] = []
         _dictionary_cache["key"] = key
-    return _dictionary_cache["words"]
+    # Kopie zurückgeben: heutige Aufrufer verändern die Liste nicht, aber ein
+    # künftiger, der sie doch verändert (z.B. sort() oder append()), würde
+    # sonst den Cache für alle Leser verfälschen.
+    return list(_dictionary_cache["words"])
 
 
 def dictionary_save(text):

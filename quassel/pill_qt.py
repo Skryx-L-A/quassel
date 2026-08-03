@@ -16,20 +16,26 @@ import subprocess
 import sys
 import time
 
-from PySide6.QtCore import Qt, QTimer, QRectF, QPoint
+from PySide6.QtCore import Qt, QTimer, QRectF, QPoint, QFileSystemWatcher
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QApplication, QWidget
 
 from . import config
-from .state import state_read
+from .state import state_read, RUNDIR
 
 RESULT_SHOW_S = 3.0
 # Taktstufen des Timers: schnell nur, solange etwas animiert (Aufnahme,
 # Ergebnisfenster) — der Rest der Zeit reicht der langsame Takt, die Pille
-# zeigt sonst nur einen ruhenden Zustand. Nicht langsamer als 250 ms: die
-# Pille ist die Rückmeldung "Aufnahme läuft", mehr Verzug wäre spürbar.
+# zeigt sonst nur einen ruhenden Zustand.
+# Der Ruhetakt bestimmt, wie schnell die Pille "Aufnahme läuft" zeigt, und das
+# ist ihr einziger Zweck. Der Verzeichnis-Watcher weiter unten fängt den
+# Zustandswechsel zwar zusätzlich ab, aber auf macOS gemessene 194-226 ms
+# (FSEvents-Latenz, von Qt nicht einstellbar) — er ersetzt den Takt hier also
+# nicht, er sichert ihn nur ab. 150 ms halbiert die Leerlauf-Weckvorgänge
+# gegenüber 80 ms und bleibt im Mittel bei 75 ms Verzug, also nahe an dem,
+# was vorher war. Auf Windows meldet der Watcher sofort.
 TICK_FAST_MS = 80
-TICK_SLOW_MS = 250
+TICK_SLOW_MS = 150
 # daemon_active() zwischenspeichern: unter Linux startet jeder Aufruf einen
 # systemctl-Prozess, bei 80ms-Takt sonst 43.200 Prozesse pro Tag.
 DAEMON_ACTIVE_CACHE_S = 10.0
@@ -80,6 +86,16 @@ def daemon_active():
     return val
 
 
+def daemon_active_invalidate():
+    """Cache verwerfen — nötig überall dort, wo der An/Aus-Zustand außerhalb
+    von daemon_active() selbst geändert wird (_toggle() startet/stoppt die
+    Dienste direkt). Sonst hält der 10s-Cache den ALTEN Wert fest, tick()
+    sieht beim nächsten Poll on != self.on und dreht den gerade gesetzten
+    Modus wieder zurück."""
+    _daemon_active_cache["ts"] = float("-inf")
+    _daemon_active_cache["val"] = None
+
+
 class Pill(QWidget):
     def __init__(self):
         super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -107,6 +123,13 @@ class Pill(QWidget):
         self.cfg_timer = QTimer(self)
         self.cfg_timer.timeout.connect(self.reload_cfg)
         self.cfg_timer.start(1000)
+        # Weckt tick() sofort bei einer Zustandsänderung (state_set() ersetzt
+        # state.json atomar per os.replace) statt bis zu TICK_SLOW_MS zu
+        # warten. Der Timer bleibt zusätzlich als Sicherheitsnetz bestehen —
+        # FSEvents/kqueue können ein Ereignis verschlucken.
+        self._fs_watcher = QFileSystemWatcher(self)
+        self._fs_watcher.directoryChanged.connect(lambda _path: self.tick())
+        self._watch_state_dir()
         self.resize_to_cfg()
         self._update_cursor()
         self.setVisible(self.cfg.pill_enabled)
@@ -190,6 +213,23 @@ class Pill(QWidget):
         else:
             self.setCursor(Qt.OpenHandCursor)
 
+    def _watch_state_dir(self):
+        """Beobachtet werden muss RUNDIR (das Verzeichnis), nicht state.json
+        selbst: state_set() ersetzt die Datei atomar per os.replace, dabei
+        verschwindet kurz der Ziel-Inode — ein Watch auf die Datei verliert
+        sie dabei und meldet danach nichts mehr. RUNDIR kann beim Start der
+        Pille noch fehlen (der Daemon hat state.json noch nie geschrieben);
+        wir legen es hier selbst an (dasselbe exist_ok wie state_set()) statt
+        nur auf ein späteres Nachziehen zu warten — so beobachtet der Watcher
+        von Anfang an, ohne auf den ersten Daemon-Start zu warten."""
+        if RUNDIR in self._fs_watcher.directories():
+            return
+        try:
+            os.makedirs(RUNDIR, exist_ok=True)
+            self._fs_watcher.addPath(RUNDIR)
+        except OSError:
+            pass  # nächster tick()-Aufruf versucht es erneut
+
     def reload_cfg(self):
         if self.cfg.reload():
             self.resize_to_cfg()
@@ -223,6 +263,7 @@ class Pill(QWidget):
         self.update()
 
     def tick(self):
+        self._watch_state_dir()   # billig (guard), holt ein zunächst fehlendes RUNDIR nach
         now = time.monotonic()
         if now - self.last_poll > 2.0:
             self.last_poll = now
@@ -356,11 +397,13 @@ class Pill(QWidget):
         if daemon_active():
             subprocess.run(["systemctl", "--user", "stop", "quasseld",
                             "quassel-server", "quassel-ydotoold"], check=False)
+            daemon_active_invalidate()
             self.on = False
             self.set_mode("off")
         else:
             subprocess.run(["systemctl", "--user", "start", "quasseld",
                             "quassel-server"], check=False)
+            daemon_active_invalidate()
             self.on = True
             self.set_mode("ready")
 

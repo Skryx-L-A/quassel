@@ -65,3 +65,15 @@ def test_dictionary_save_invalidates_the_cache(tmp_path, monkeypatch):
     assert config.dictionary_words() == ["PyTorch"]
     config.dictionary_save("PyTorch\nKubernetes")
     assert config.dictionary_words() == ["PyTorch", "Kubernetes"]
+
+
+def test_mutating_the_returned_list_does_not_corrupt_the_cache(tmp_path, monkeypatch):
+    """dictionary_words() gibt eine Kopie zurück -- ein Aufrufer, der die
+    Liste verändert, darf den Cache nicht für alle anderen Leser verfälschen."""
+    _isolate(tmp_path, monkeypatch)
+    with open(config.DICTIONARY, "w", encoding="utf-8") as f:
+        f.write("PyTorch\nNASA\n")
+    words = config.dictionary_words()
+    words.append("Kubernetes")
+    words.sort()
+    assert config.dictionary_words() == ["PyTorch", "NASA"]   # Cache unangetastet

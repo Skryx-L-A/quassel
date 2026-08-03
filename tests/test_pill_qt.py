@@ -7,6 +7,7 @@ import configparser
 import os
 import sys
 import time
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -27,9 +28,12 @@ def qapp():
 
 @pytest.fixture(autouse=True)
 def isolated_cfg(tmp_path, monkeypatch):
-    """Jeder Test bekommt eine eigene config.ini — nie die echte anfassen."""
+    """Jeder Test bekommt eine eigene config.ini und ein eigenes RUNDIR — nie
+    die echte Konfiguration oder das RUNDIR der laufenden Instanz anfassen
+    (dort schreibt state.py, unter anderem der auf Port 8765 laufende Daemon)."""
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
+    monkeypatch.setattr(pill_qt, "RUNDIR", str(tmp_path / "run"))
 
 
 @pytest.fixture
@@ -296,3 +300,45 @@ def test_daemon_active_caches_systemctl_result(monkeypatch):
     t[0] += pill_qt.DAEMON_ACTIVE_CACHE_S + 1   # Cache abgelaufen
     assert pill_qt.daemon_active() is True
     assert len(calls) == 2
+
+
+def test_toggle_invalidates_cache_so_the_next_poll_does_not_revert_the_mode(pill, monkeypatch):
+    """Regression: _toggle() schaltete self.on/mode von Hand, ließ den
+    10s-Cache aber auf dem alten Wert stehen. tick() sah beim nächsten Poll
+    on != self.on und drehte den gerade gesetzten Modus zurück -- bis zu 10s
+    zeigte die Pille das Gegenteil des geschalteten Zustands."""
+    monkeypatch.setattr(pill_qt.sys, "platform", "linux")
+
+    def fake_run(args, **kw):
+        if "is-active" in args:
+            return SimpleNamespace(returncode=1)   # nach dem Stop: inaktiv
+        return SimpleNamespace(returncode=0)        # stop/start-Aufruf selbst
+    monkeypatch.setattr(pill_qt.subprocess, "run", fake_run)
+    # Cache noch warm vom letzten Poll VOR dem Umschalten (daemon war an)
+    monkeypatch.setattr(pill_qt, "_daemon_active_cache",
+                        {"ts": time.monotonic(), "val": True})
+    pill.on = True
+    pill.mode = "ready"
+
+    pill._toggle()                     # schaltet ab
+    assert pill.mode == "off"
+
+    pill.tick()                        # nächster Poll -- darf NICHT zurückdrehen
+    assert pill.mode == "off", "tick() hat den Modus nach dem manuellen Toggle zurückgedreht"
+
+
+# --------------------------------------------------- state.json-Watcher (RUNDIR)
+def test_directory_watcher_triggers_an_immediate_tick(pill, monkeypatch):
+    """Ohne echtes Dateisystem-Ereignis: das Signal direkt auslösen und
+    prüfen, dass dieselbe tick()-Logik greift (hier: eine neue state.json
+    landet sofort im Modus, statt erst am nächsten Timer-Takt)."""
+    ticked = []
+    monkeypatch.setattr(pill, "tick", lambda: ticked.append(1))
+    pill._fs_watcher.directoryChanged.emit(pill_qt.RUNDIR)
+    assert ticked == [1]
+
+
+def test_timer_keeps_running_alongside_the_watcher(pill):
+    """Der Timer bleibt Sicherheitsnetz -- der Watcher ersetzt ihn nicht."""
+    assert pill.timer.isActive() is True
+    assert pill_qt.RUNDIR in pill._fs_watcher.directories()

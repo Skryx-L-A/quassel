@@ -39,6 +39,12 @@ def server_up(timeout=2):
     # urllib statt curl-Subprozess: gemessen 0,17ms gegen 5,75ms. Der
     # Multipart-Upload in transcribe() bleibt bei curl (Unterschied dort nur
     # 0,8ms, Umbau riskanter).
+    # ACHTUNG Timeout-Semantik: urllib's timeout gilt je Socket-Operation
+    # (Connect, jeder einzelne Read), NICHT für die Gesamtdauer wie curls -m.
+    # Auf 127.0.0.1 mit einer winzigen Antwort ist der Unterschied praktisch
+    # nicht auslösbar (kein Read kann länger hängen als das ganze Gespräch) —
+    # deshalb kein Umbau. Wer diesen Wert später als harte Gesamtfrist liest,
+    # irrt sich.
     global _server_seen
     try:
         with _probe.open(SERVER + "/", timeout=timeout):
