@@ -172,10 +172,22 @@ def read_serverenv():
 
 
 def write_serverenv(env):
+    """Atomar schreiben (Temp-Datei + os.replace, wie state.py).
+
+    Ein einfaches open(..., "w") kürzt die Datei sofort auf null und füllt sie
+    erst danach. Stirbt der Prozess in diesem Fenster — oder geht der Strom
+    weg —, bleibt eine leere oder halbe server.env zurück, und der nächste
+    Start sucht sich Modell und Binary neu zusammen: die getroffene Modellwahl
+    wäre still weg. Der Umweg über die Temp-Datei macht das unmöglich; sichtbar
+    wird immer entweder die alte oder die vollständige neue Datei."""
     os.makedirs(CONFDIR, exist_ok=True)
-    with open(SERVERENV, "w", encoding="utf-8") as f:
+    tmp = SERVERENV + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         for k, v in env.items():
             f.write(f"{k}={v}\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, SERVERENV)
 
 
 # ----------------------------------------------------------------- Wörterbuch

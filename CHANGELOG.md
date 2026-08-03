@@ -56,6 +56,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stopped.
 
 ### Fixed
+- The speech-engine settings file is written atomically now. It used to be emptied first and
+  refilled afterwards, so a crash or a power cut in that moment left it blank — and the next
+  start would look for a model on its own instead of using the one you picked.
 - macOS: the tone that marks the start of a recording often stayed silent over Bluetooth
   headphones, while the closing tone was reliable. An idle Bluetooth link swallows the first
   few hundred milliseconds of playback when it wakes up, and both tones are shorter than that.

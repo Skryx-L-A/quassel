@@ -77,3 +77,50 @@ def test_mutating_the_returned_list_does_not_corrupt_the_cache(tmp_path, monkeyp
     words.append("Kubernetes")
     words.sort()
     assert config.dictionary_words() == ["PyTorch", "NASA"]   # Cache unangetastet
+
+
+# ------------------------------------------------------------------ server.env
+def _isolate_serverenv(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
+    monkeypatch.setattr(config, "SERVERENV", str(tmp_path / "server.env"))
+
+
+def test_serverenv_round_trip(tmp_path, monkeypatch):
+    """Werte mit Leerzeichen ("-bs 1") und Pfade mit Leerzeichen (der echte
+    MODEL_PATH liegt unter "Application Support") müssen unverändert
+    zurückkommen -- an genau diesen beiden Formen hängt die Decode-Migration."""
+    _isolate_serverenv(tmp_path, monkeypatch)
+    env = {"SERVER_BIN": "/x/whisper-server",
+           "MODEL_PATH": "/Users/x/Library/Application Support/Quassel/m.bin",
+           "WHISPER_THREADS": "8",
+           "WHISPER_DECODE": "-bs 1"}
+    config.write_serverenv(env)
+    assert config.read_serverenv() == env
+
+
+def test_a_failed_write_leaves_the_old_serverenv_intact(tmp_path, monkeypatch):
+    """Der Grund für den Umweg über die Temp-Datei: schlägt das Schreiben
+    fehl, darf die bestehende Datei nicht als leerer Rumpf zurückbleiben.
+    Sonst verlöre der nächste Start die getroffene Modellwahl und suchte sich
+    ein Modell neu."""
+    _isolate_serverenv(tmp_path, monkeypatch)
+    original = {"SERVER_BIN": "/x/whisper-server", "MODEL_PATH": "/m/gross.bin",
+                "WHISPER_DECODE": "-bs 5"}
+    config.write_serverenv(original)
+    before = open(config.SERVERENV, encoding="utf-8").read()
+
+    def boom(*a, **kw):
+        raise OSError("Platte voll")
+    monkeypatch.setattr(config.os, "replace", boom)
+    try:
+        config.write_serverenv({"SERVER_BIN": "/neu", "MODEL_PATH": "/m/klein.bin"})
+    except OSError:
+        pass
+    assert open(config.SERVERENV, encoding="utf-8").read() == before
+    assert config.read_serverenv() == original
+
+
+def test_write_leaves_no_temp_file_behind(tmp_path, monkeypatch):
+    _isolate_serverenv(tmp_path, monkeypatch)
+    config.write_serverenv({"WHISPER_DECODE": "-bs 1"})
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["server.env"]
