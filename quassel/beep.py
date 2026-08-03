@@ -48,8 +48,20 @@ STOP_WAV = os.path.join(_DIR, "stop.wav")
 # Gegenmittel: ein eigener Ausgabestrom, der nach einem Ton offen bleibt (dann
 # läuft die Strecke über ein Diktat hinweg durch), plus Vorlauf-Stille, wenn
 # er doch kalt geöffnet werden musste.
-WARM_KEEP = 15.0      # s ohne Ton, danach wird der Ausgabestrom geschlossen
-PREROLL_MS = 350      # ms Stille vor einem Ton auf frisch geöffnetem Strom
+#
+# Der Strom läuft KONTINUIERLICH über einen Callback, der immer Material
+# liefert: anstehende Tonproben, den Rest mit Null aufgefüllt. Der erste Umbau
+# schrieb nur die 0,17 s Ton in einen Puffer, den PortAudio mit der Vorgabe
+# 'high' fast eine Sekunde lang anlegt (gemessen 0,993 s), und danach nichts
+# mehr — der Puffer lief leer, und die Unterläufe waren als kurzes "Pfft"
+# statt des Stopptons zu hören. Mit dem Callback kann strukturell nichts mehr
+# leerlaufen, weder am Tonende noch während der Warmhaltezeit.
+WARM_KEEP = 60.0      # s ohne Ton bis zum Schließen: über eine Arbeitssitzung
+                      # bleibt die Strecke wach, Vorlauf fällt nur nach echter Pause an
+PREROLL_MS = 250      # ms Stille vor einem Ton auf frisch geöffnetem Strom: weckt
+                      # die Funkstrecke (12-18 ms) und verzögert den Ton so wenig wie möglich
+BLOCKSIZE = 256       # feste kleine Callback-Blöcke (16 ms bei 16 kHz): der Puffer
+                      # passt damit zur Tonlänge statt zur PortAudio-Vorgabe
 OUT_RATE = 16000      # beide Töne liegen als 16-kHz-Mono vor, CoreAudio wandelt
 STOP_TIMEOUT = 2.0    # Frist beim Schließen des Ausgabestroms
 QUEUE_MAX = 8         # hängt die Wiedergabe, sind wartende Töne ohnehin wertlos
@@ -99,6 +111,11 @@ class _MacPlayer:
     warten: sie reihen den Ton nur ein, abgespielt wird in einem eigenen
     Thread. Die WAV-Dateien werden einmal gelesen und im Speicher gehalten
     (wenige Kilobyte).
+
+    Der Ausgabestrom wird nicht beschrieben, sondern vom Audio-Callback
+    bedient: der Abspiel-Thread legt die Proben in `_pending`, der Callback
+    holt sie blockweise ab und füllt den Rest mit Stille. Beide teilen sich
+    `_pending` unter einem kurzen Lock — der Callback darf nie warten.
     """
 
     def __init__(self):
@@ -108,6 +125,10 @@ class _MacPlayer:
         self._stream = None
         self._rate = OUT_RATE
         self._cache = {}                   # (Pfad, Rate) -> int16-Bytes
+        self._pending = bytearray()        # noch nicht abgeholte Tonproben
+        self._pending_lock = threading.Lock()
+        self._underflow = False            # vom Callback gesetzt
+        self._underflow_logged = False     # eine Zeile je Strom, mehr nicht
 
     def play(self, path):
         """Aus dem Aufrufer-Thread: einreihen und sofort zurückkehren."""
@@ -151,6 +172,21 @@ class _MacPlayer:
                 self._play_one(path)
             except Exception:              # noqa: BLE001 — Ton darf nie stören
                 pass
+            self._note_underflow()
+
+    def _callback(self, outdata, _frames, _time, status):
+        """Audio-Thread: nimmt, was anliegt, füllt den Rest mit Stille und
+        kehrt sofort zurück. Kein Warten, kein Logging — ein Unterlauf setzt
+        nur den Merker, die Zeile schreibt der Abspiel-Thread."""
+        if status and status.output_underflow:
+            self._underflow = True
+        need = len(outdata)
+        with self._pending_lock:
+            chunk = bytes(self._pending[:need])
+            del self._pending[:len(chunk)]
+        if len(chunk) < need:
+            chunk += b"\x00" * (need - len(chunk))
+        outdata[:need] = chunk
 
     def _play_one(self, path):
         fresh = self._ensure_stream()
@@ -158,22 +194,30 @@ class _MacPlayer:
         if data is None:
             _afplay(path)                  # kein Strom oder fremdes Format
             return
-        try:
-            if fresh and PREROLL_MS > 0:
-                # Vorlauf nur im kalten Fall: er weckt die Funkstrecke, damit
-                # der Ton selbst nicht mehr in ihr Anlaufloch fällt.
-                frames = int(self._rate * PREROLL_MS / 1000.0)
-                self._stream.write(b"\x00\x00" * frames)
-            self._stream.write(data)
-        except Exception:                  # noqa: BLE001 — Gerät gewechselt o.ä.
-            # Dieser Ton ist verloren; der nächste öffnet wieder frisch.
-            self._close_stream()
+        if fresh and PREROLL_MS > 0:
+            # Vorlauf nur im kalten Fall: er weckt die Funkstrecke, damit
+            # der Ton selbst nicht mehr in ihr Anlaufloch fällt.
+            frames = int(self._rate * PREROLL_MS / 1000.0)
+            data = b"\x00\x00" * frames + data
+        with self._pending_lock:
+            self._pending.extend(data)
+
+    def _note_underflow(self):
+        """Einmal je Strom, sonst fände man einen leerlaufenden Puffer wieder
+        nur durchs Zuhören."""
+        if self._underflow and not self._underflow_logged:
+            self._underflow_logged = True
+            audio._log("beep: Ausgabestrom lief leer (output underflow)")
 
     def _ensure_stream(self):
         """Öffnet den Ausgabestrom, falls nötig. True = für diesen Ton frisch
         geöffnet, es braucht also den Vorlauf."""
         if self._stream is not None:
-            return False
+            if getattr(self._stream, "active", True):
+                return False
+            # Der Strom läuft nicht mehr (Gerät gewechselt o.ä.): der Callback
+            # holt nichts mehr ab, also aufgeben und frisch öffnen.
+            self._close_stream()
         sd = _sd()
         if sd is None:
             return False
@@ -182,15 +226,29 @@ class _MacPlayer:
         if dev_rate != OUT_RATE:
             rates.append(dev_rate)         # 16 kHz abgelehnt -> Gerätevorgabe
         for rate in rates:
-            try:
-                stream = sd.RawOutputStream(samplerate=rate, channels=1,
-                                            dtype="int16")
-                stream.start()
-            except Exception:              # noqa: BLE001 — Rate oder Gerät nicht nutzbar
+            stream = self._open_stream(sd, rate)
+            if stream is None:
                 continue
             self._stream, self._rate = stream, rate
+            self._underflow = self._underflow_logged = False
             return True
         return False
+
+    def _open_stream(self, sd, rate):
+        """Erst mit kleinen Blöcken und niedriger Latenz; nimmt das Gerät die
+        Vorgaben nicht an, derselbe Strom noch einmal ohne sie."""
+        for extra in ({"blocksize": BLOCKSIZE, "latency": "low"}, {}):
+            stream = None
+            try:
+                stream = sd.RawOutputStream(samplerate=rate, channels=1,
+                                            dtype="int16",
+                                            callback=self._callback, **extra)
+                stream.start()
+                return stream
+            except Exception:              # noqa: BLE001 — Rate/Blockgröße nicht nutzbar
+                if stream is not None:
+                    audio._close_stream_quiet(stream)
+        return None
 
     def _samples(self, path):
         """int16-Bytes des Tons in der Rate des offenen Stroms, oder None."""
@@ -214,7 +272,10 @@ class _MacPlayer:
         Aufnahmepfad (audio._MacStream._halt_stream): kehrt CoreAudio nicht
         zurück, wird der Strom aufgegeben statt den Abspiel-Thread zu
         blockieren. Der nächste Ton öffnet dann einen neuen."""
+        self._note_underflow()
         stream, self._stream = self._stream, None
+        with self._pending_lock:           # Reste gehören zum alten Strom
+            del self._pending[:]
         if stream is None:
             return
         t = threading.Thread(target=audio._close_stream_quiet, args=(stream,),

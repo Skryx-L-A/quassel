@@ -46,9 +46,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - macOS: the tone that marks the start of a recording often stayed silent over Bluetooth
   headphones, while the closing tone was reliable. An idle Bluetooth link swallows the first
   few hundred milliseconds of playback when it wakes up, and both tones are shorter than that.
-  Quassel now plays them itself instead of handing them to `afplay`, keeps the output open for
-  a few seconds after a tone so the link stays awake for the rest of the dictation, and slips a
-  moment of silence in front of a tone whenever the link has to wake up first.
+  Quassel now plays them itself instead of handing them to `afplay`, over an output that keeps
+  running for a minute after a tone so the link stays awake through a working session, and it
+  slips a quarter second of silence in front of a tone whenever the link has to wake up first.
 - macOS/Windows: moving the pill's opacity slider in the control center had no visible effect
   until the pill's mode changed next (e.g. starting a recording) — a config reload only resized
   the pill window, it never repainted it. The oval background and the live-preview bubble now
