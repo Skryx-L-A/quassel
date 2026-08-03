@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -298,11 +299,23 @@ def test_polyphase_filters_above_nyquist():
 
 # ---------------------------------------------------------------------- beep
 def test_beep_uses_afplay_on_darwin(tmp_path, monkeypatch):
+    """Ohne sounddevice bleibt afplay der Weg auf darwin. Gespielt wird im
+    Abspiel-Thread, deshalb wird auf den Aufruf gewartet statt sofort geprüft.
+    Der eigene Ausgabestrom hat eine eigene Testdatei (test_beep_mac.py)."""
     wav = tmp_path / "start.wav"
     wav.write_bytes(b"RIFF")
     calls = []
     monkeypatch.setattr(beep.sys, "platform", "darwin")
+    monkeypatch.setattr(beep, "_sd", lambda: None)   # nie ein echtes Gerät
     monkeypatch.setattr(beep.subprocess, "Popen",
                         lambda args, **kw: calls.append(args))
-    beep._play(str(wav))
+    player = beep._MacPlayer()
+    monkeypatch.setattr(beep, "_PLAYER", player)
+    try:
+        beep._play(str(wav))
+        ende = time.monotonic() + 3.0
+        while not calls and time.monotonic() < ende:
+            time.sleep(0.005)
+    finally:
+        player.close()
     assert calls and calls[0][:2] == ["afplay", str(wav)]
