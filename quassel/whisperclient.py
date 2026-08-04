@@ -118,12 +118,18 @@ MIXED_PRIMER = "Das Meeting ist um 3 PM. Let's go - schick mir das Update."
 # oben: 2,3s bis zur ersten Verschlechterung, 3,4s bis zum rechnerischen
 # Kipppunkt (768/1500 * 30s = 15,36s). NICHT ohne neue Messreihe anheben.
 #
-# GRENZE DER MESSUNG: gemessen wurde EIN Modell auf EINER Plattform. Diese
-# Datei ist plattformübergreifend, Linux und Windows bekommen das Feld also
-# mit — dort läuft ohne NVIDIA aber small-q5_1 oder base-q5_1
-# (hwdetect.default_model_for_hardware), und ob ein kleineres Modell auf ein
-# verkürztes Encoder-Fenster gleich reagiert, weiß niemand. Wer die Schwelle
-# für eine andere Plattform anpassen will, misst dort zuerst.
+# Auf Linux/CUDA gegengemessen (04.08.2026, docs/measurements/
+# 2026-08-04-audio-ctx-linux-modelle/): base-q5_1 und small — die Modelle, die
+# hwdetect.default_model_for_hardware() ohne NVIDIA wählt — halten die Schwelle
+# ebenfalls, mit mehr Abstand als das große Modell. base-q5_1 bleibt bis 14,3s
+# unverändert, small bis 16,1s und kippt bis 48s überhaupt nicht. Kleinere
+# Modelle sind hier also NICHT empfindlicher.
+# Der Kontrolllauf trägt das Ergebnis: large-v3-turbo lieferte auf CUDA/fp16
+# bei 16,08s exakt dieselben Werte wie der Mac mit q5_0 (0,061 -> 0,091) und
+# bei 18,03s dieselbe Wiederholungsschleife. Andere Hardware, andere
+# Quantisierung, gleiches Verhalten.
+# OFFEN bleibt Windows: derselbe geteilte Code, dieselben Modellgrößen, aber
+# dort hat niemand gemessen.
 AUDIO_CTX_SHORT = 768
 AUDIO_CTX_MAX_SECONDS = 12.0
 

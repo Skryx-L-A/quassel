@@ -1,0 +1,898 @@
+[
+ {
+  "label": "bench-01",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.09197973899790668,
+   0.09270251999987522,
+   0.09567147499910789,
+   0.09340012599932379,
+   0.08552658400003565
+  ],
+  "median_s": 0.09270251999987522,
+  "min_s": 0.08552658400003565,
+  "max_s": 0.09567147499910789,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Wie spät es ist, ist ungefähr halb drei.\n",
+  "wer": 0.42857142857142855,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/01",
+  "load1_before": 0.74755859375
+ },
+ {
+  "label": "bench-02",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.09958746999836876,
+   0.10305416499977582,
+   0.11464339399753953,
+   0.10750596399884671,
+   0.09505718400032492
+  ],
+  "median_s": 0.10305416499977582,
+  "min_s": 0.09505718400032492,
+  "max_s": 0.11464339399753953,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Die Rechnung beläuft sich auf 42,17 Euro für drei Artikel.\n",
+  "wer": 0.3076923076923077,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/02",
+  "load1_before": 0.76806640625
+ },
+ {
+  "label": "bench-03",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.11151814199911314,
+   0.10745899500034284,
+   0.1102267269998265,
+   0.11291236599936383,
+   0.1073262079989945
+  ],
+  "median_s": 0.1102267269998265,
+  "min_s": 0.1073262079989945,
+  "max_s": 0.11291236599936383,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Milch, Brot, Käse, Äpfel und Marmelade\n",
+  "wer": 0.5384615384615384,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/03",
+  "load1_before": 0.76806640625
+ },
+ {
+  "label": "bench-04",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.07865701400078251,
+   0.08444294199944125,
+   0.08415976299875183,
+   0.08559363399763242,
+   0.08051825100119459
+  ],
+  "median_s": 0.08415976299875183,
+  "min_s": 0.07865701400078251,
+  "max_s": 0.08559363399763242,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " The quick brown fox jumps over the lazy dog near the riverbank.\n",
+  "wer": 0.0,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/04",
+  "load1_before": 0.76806640625
+ },
+ {
+  "label": "bench-05",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.09036697000192362,
+   0.08619577499848674,
+   0.0929991519988107,
+   0.09289329999955953,
+   0.09236668100129464
+  ],
+  "median_s": 0.09236668100129464,
+  "min_s": 0.08619577499848674,
+  "max_s": 0.0929991519988107,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Please schedule the meeting for next Tuesday at 3.30 in the afternoon.\n",
+  "wer": 0.0,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/05",
+  "load1_before": 0.76806640625
+ },
+ {
+  "label": "bench-06",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.0960868459987978,
+   0.09266570799809415,
+   0.1002388000015344,
+   0.09547704200303997,
+   0.09744438299821923
+  ],
+  "median_s": 0.0960868459987978,
+  "min_s": 0.09266570799809415,
+  "max_s": 0.1002388000015344,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " I would like to order two coffees and one croissant. Thank you very much.\n",
+  "wer": 0.0,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/06",
+  "load1_before": 0.76806640625
+ },
+ {
+  "label": "09.91s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.15389044000039576,
+   0.14780399099981878,
+   0.14312413399966317,
+   0.14170690500031924,
+   0.14035304799836013
+  ],
+  "median_s": 0.14312413399966317,
+  "min_s": 0.14035304799836013,
+  "max_s": 0.15389044000039576,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " am samstag morgens bin ich früh aufgestanden und mit dem fahrrad zum wochenmarkt gefahren dort habe ich frisches gemüse zwei kilo epfel\n",
+  "wer": 0.18181818181818182,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.76806640625
+ },
+ {
+  "label": "12.62s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.18081234599958407,
+   0.18162159499843256,
+   0.18407147099787835,
+   0.17962158500085934,
+   0.176865301997168
+  ],
+  "median_s": 0.18081234599958407,
+  "min_s": 0.176865301997168,
+  "max_s": 0.18407147099787835,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft.\n",
+  "wer": 0.07692307692307693,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.76806640625
+ },
+ {
+  "label": "14.34s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.20909168900107034,
+   0.19084793599904515,
+   0.20641781999802333,
+   0.20044299399887677,
+   0.20482400100081577
+  ],
+  "median_s": 0.20482400100081577,
+  "min_s": 0.19084793599904515,
+  "max_s": 0.20909168900107034,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " am samstagmorgen bin ich früh aufgestanden und mit dem fahrrad zum wochenmarkt gefahren dort habe ich frisches gemüse zwei kilo epfel und ein großes rockenbrot gekauft der händler erzählte mir\n",
+  "wer": 0.10344827586206896,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.76806640625
+ },
+ {
+  "label": "16.08s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.22385610100172926,
+   0.22143797600074322,
+   0.24474199000178487,
+   0.23500660700301523,
+   0.23136085999794886
+  ],
+  "median_s": 0.23136085999794886,
+  "min_s": 0.22143797600074322,
+  "max_s": 0.24474199000178487,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des Getreus\n",
+  "wer": 0.15151515151515152,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.787109375
+ },
+ {
+  "label": "18.03s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.23469271200156072,
+   0.24746529399999417,
+   0.23932300899832626,
+   0.2267130129985162,
+   0.2464057329998468
+  ],
+  "median_s": 0.23932300899832626,
+  "min_s": 0.2267130129985162,
+  "max_s": 0.24746529399999417,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " am samstag morgens bin ich früh aufgestanden und mit dem fahrrad zum wochenmarkt gefahren dort habe ich frisches gemüse zwei kilo epfel und ein großes rockenbrot gekauft der händler erzählte mir dass die preise wegen des getrockneten trockenen\n",
+  "wer": 0.1388888888888889,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.787109375
+ },
+ {
+  "label": "20.33s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.2724574849999044,
+   0.2694158720005362,
+   0.28076091800176073,
+   0.26561247700010426,
+   0.28033960800166824
+  ],
+  "median_s": 0.2724574849999044,
+  "min_s": 0.26561247700010426,
+  "max_s": 0.28076091800176073,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten, trockenen Sommers um fast 15 Uhr\n",
+  "wer": 0.125,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.787109375
+ },
+ {
+  "label": "21.84s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.2755730390017561,
+   0.2854100840013416,
+   0.29314276600052835,
+   0.27931929999977,
+   0.28908520999902976
+  ],
+  "median_s": 0.2854100840013416,
+  "min_s": 0.2755730390017561,
+  "max_s": 0.29314276600052835,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten, trockenen Sommers um fast 15% gestiegen sind.\n",
+  "wer": 0.11627906976744186,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.787109375
+ },
+ {
+  "label": "23.98s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.2987298650004959,
+   0.317524971000239,
+   0.3095079220001935,
+   0.30428584900073474,
+   0.3229920920020959
+  ],
+  "median_s": 0.3095079220001935,
+  "min_s": 0.2987298650004959,
+  "max_s": 0.3229920920020959,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten, trockenen Sommers um fast 15% gestiegen sind. Anschließend traf ich mein\n",
+  "wer": 0.13043478260869565,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.80419921875
+ },
+ {
+  "label": "26.22s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.3409581630003231,
+   0.33261506099734106,
+   0.33933279500342906,
+   0.3313547919970006,
+   0.3334302010007377
+  ],
+  "median_s": 0.3334302010007377,
+  "min_s": 0.3313547919970006,
+  "max_s": 0.3409581630003231,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten, trockenen Sommers um fast 15% gestiegen sind. Anschließend traf ich meine Schwester in einem kleinen Café.\n",
+  "wer": 0.11764705882352941,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.80419921875
+ },
+ {
+  "label": "lang-48.4s",
+  "audio_ctx": null,
+  "reach_s": null,
+  "times_s": [
+   0.6479056040006981,
+   0.6179935449981713,
+   0.6220082120016741,
+   0.622972294997453,
+   0.6259210739990522
+  ],
+  "median_s": 0.622972294997453,
+  "min_s": 0.6179935449981713,
+  "max_s": 0.6479056040006981,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten, trockenen Sommers um fast 15% gestiegen sind. Anschließend traf ich meine Schwester in einem kleinen Café am Marktplatz, wo wir über ihre geplante Reise nach Österreich sprachen.\n Sie will im Oktober für 10 Tage nach Wien und Salzburg, obwohl sie eigentlich immer ans Meer fährt. Auf dem Rückweg begann es plötzlich zu regnen und ich war völlig durchnäßt, als ich endlich nach Hause kam.\n",
+  "wer": 0.1,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, vollstaendig, bench_samples/07 (Kontrolle)",
+  "load1_before": 0.80419921875
+ },
+ {
+  "label": "bench-01",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.08184181600154261,
+   0.0850755110004684,
+   0.07112996599971666,
+   0.07806043700111331,
+   0.07727654100017389
+  ],
+  "median_s": 0.07806043700111331,
+  "min_s": 0.07112996599971666,
+  "max_s": 0.0850755110004684,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Wie spät es ist? Es ist ungefähr halb drei.\n",
+  "wer": 0.35714285714285715,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/01",
+  "load1_before": 0.8203125
+ },
+ {
+  "label": "bench-02",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.088273230001505,
+   0.08385458100019605,
+   0.08149367700025323,
+   0.08938416199816857,
+   0.08764519800024573
+  ],
+  "median_s": 0.08764519800024573,
+  "min_s": 0.08149367700025323,
+  "max_s": 0.08938416199816857,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Die Rechnung beläuft sich auf 42,17 Euro für drei Artikel.\n",
+  "wer": 0.3076923076923077,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/02",
+  "load1_before": 0.8203125
+ },
+ {
+  "label": "bench-03",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.09884220100138918,
+   0.10100744499868597,
+   0.10048360899963882,
+   0.1037093820013979,
+   0.10635796199858305
+  ],
+  "median_s": 0.10100744499868597,
+  "min_s": 0.09884220100138918,
+  "max_s": 0.10635796199858305,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " wir haben heute Milch, Brot, Käse, Äpfel und wenn möglich auch Marmelade gekauft.\n",
+  "wer": 0.0,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/03",
+  "load1_before": 0.8203125
+ },
+ {
+  "label": "bench-04",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.07516220199977397,
+   0.07740302200181759,
+   0.07044349300122121,
+   0.07552810599736404,
+   0.07407984699966619
+  ],
+  "median_s": 0.07516220199977397,
+  "min_s": 0.07044349300122121,
+  "max_s": 0.07740302200181759,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " The quick brown fox jumps over the lazy dog near the riverbank.\n",
+  "wer": 0.0,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/04",
+  "load1_before": 0.8203125
+ },
+ {
+  "label": "bench-05",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.07890582799882395,
+   0.07767287699971348,
+   0.07984910199957085,
+   0.08700447600131156,
+   0.07984769500035327
+  ],
+  "median_s": 0.07984769500035327,
+  "min_s": 0.07767287699971348,
+  "max_s": 0.08700447600131156,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Please schedule the meeting for next Tuesday at 3.30 in the afternoon.\n",
+  "wer": 0.0,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/05",
+  "load1_before": 0.8203125
+ },
+ {
+  "label": "bench-06",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.0838998500003072,
+   0.09074745299949427,
+   0.08274798500133329,
+   0.08218013599980623,
+   0.08530733299994608
+  ],
+  "median_s": 0.0838998500003072,
+  "min_s": 0.08218013599980623,
+  "max_s": 0.09074745299949427,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " I would like to order two coffees and one croissant. Thank you very much.\n",
+  "wer": 0.0,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, bench_samples/06",
+  "load1_before": 0.8203125
+ },
+ {
+  "label": "09.91s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.13344800099730492,
+   0.13482478900186834,
+   0.1293062340009783,
+   0.13574534800136462,
+   0.1301934990005975
+  ],
+  "median_s": 0.13344800099730492,
+  "min_s": 0.1293062340009783,
+  "max_s": 0.13574534800136462,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " am samstag morgens bin ich früh aufgestanden und mit dem fahrrad zum wochenmarkt gefahren dort habe ich frisches gemüse zwei kilo epfel\n",
+  "wer": 0.18181818181818182,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.8203125
+ },
+ {
+  "label": "12.62s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.16195661800156813,
+   0.1688111260009464,
+   0.16928847400049563,
+   0.16365059800227755,
+   0.17324468899823842
+  ],
+  "median_s": 0.1688111260009464,
+  "min_s": 0.16195661800156813,
+  "max_s": 0.17324468899823842,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft.\n",
+  "wer": 0.07692307692307693,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.8349609375
+ },
+ {
+  "label": "14.34s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.1933346719997644,
+   0.1846130189987889,
+   0.19115602400052012,
+   0.19046759100092459,
+   0.19476284600023064
+  ],
+  "median_s": 0.19115602400052012,
+  "min_s": 0.1846130189987889,
+  "max_s": 0.19476284600023064,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir,\n",
+  "wer": 0.10344827586206896,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.8349609375
+ },
+ {
+  "label": "16.08s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.21700174499710556,
+   0.21437287800290505,
+   0.21482527899934212,
+   0.2109559860000445,
+   0.22560103300202172
+  ],
+  "median_s": 0.21482527899934212,
+  "min_s": 0.2109559860000445,
+  "max_s": 0.22560103300202172,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des Getreppens\n",
+  "wer": 0.15151515151515152,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.8349609375
+ },
+ {
+  "label": "18.03s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.2382977760025824,
+   0.2586001479976403,
+   0.2414165169975604,
+   0.23401631999877281,
+   0.23496352800066234
+  ],
+  "median_s": 0.2382977760025824,
+  "min_s": 0.23401631999877281,
+  "max_s": 0.2586001479976403,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten Getrocknements getrocknet wurde.\n",
+  "wer": 0.16666666666666666,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.8349609375
+ },
+ {
+  "label": "20.33s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.24888292600007844,
+   0.2490532970005006,
+   0.24887246800062712,
+   0.25322734200017294,
+   0.24200794699936523
+  ],
+  "median_s": 0.24888292600007844,
+  "min_s": 0.24200794699936523,
+  "max_s": 0.25322734200017294,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten Getrocknements getrocknet wurde.\n",
+  "wer": 0.175,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 0.8349609375
+ },
+ {
+  "label": "21.84s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.26358669900218956,
+   0.24944563700046274,
+   0.25566711999999825,
+   0.24992884099992807,
+   0.2548599190013192
+  ],
+  "median_s": 0.2548599190013192,
+  "min_s": 0.24944563700046274,
+  "max_s": 0.26358669900218956,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten Getrocknements getrocknet wurde.\n",
+  "wer": 0.23255813953488372,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 1.0087890625
+ },
+ {
+  "label": "23.98s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.2880868989996088,
+   0.2852940810007567,
+   0.2729843939996499,
+   0.26575853200120036,
+   0.2822387010019156
+  ],
+  "median_s": 0.2822387010019156,
+  "min_s": 0.26575853200120036,
+  "max_s": 0.2880868989996088,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten Getrocknements getrocknet wurde.\n",
+  "wer": 0.2826086956521739,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 1.0087890625
+ },
+ {
+  "label": "26.22s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.28161169499799144,
+   0.2776476539984287,
+   0.2670569549991342,
+   0.2702623249970202,
+   0.2778688139987935
+  ],
+  "median_s": 0.2776476539984287,
+  "min_s": 0.2670569549991342,
+  "max_s": 0.28161169499799144,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten Getrocknements getrocknet wurde.\n",
+  "wer": 0.35294117647058826,
+  "hyps_identical": true,
+  "note": "bench_samples/07.wav wortgrenzengenau geschnitten (real, nicht verkettet)",
+  "load1_before": 1.0087890625
+ },
+ {
+  "label": "lang-48.4s",
+  "audio_ctx": 768,
+  "reach_s": 15.36,
+  "times_s": [
+   0.527757465999457,
+   0.5330922600005579,
+   0.5356309880007757,
+   0.5213313349995587,
+   0.5377999699994689
+  ],
+  "median_s": 0.5330922600005579,
+  "min_s": 0.5213313349995587,
+  "max_s": 0.5377999699994689,
+  "outlier_flag": false,
+  "returncodes": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "hyp": " Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, 2 Kilo Äpfel und ein großes Rockenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des getrockneten Getrocknements getrocknet wurde.\n Sie will im Oktober für 10 Tage nach Wien und Salzburg, obwohl sie eigentlich immer ans Meer fährt. Auf dem Rückweg begann es plötzlich zu regnen und ich war völlig durchnest, als ich endlich nach Hauhau fährt.\n",
+  "wer": 0.36,
+  "hyps_identical": true,
+  "note": "echte Aufnahme, vollstaendig, bench_samples/07 (Kontrolle)",
+  "load1_before": 1.0087890625
+ }
+]

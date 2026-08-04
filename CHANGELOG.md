@@ -32,9 +32,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   word error rate identical to the full window — 0.484 s to 0.270 s on a 5.8-second recording,
   0.560 s to 0.349 s on a 12.6-second one. Longer recordings keep the full window: from about
   14 seconds the shorter one starts costing accuracy, and past 18 seconds the decoder runs into
-  a repetition loop. Measured on Apple Silicon with `large-v3-turbo-q5_0`; the change applies on
-  every platform, but no other model or platform has been measured yet. Data and scripts are in
-  `docs/measurements/2026-08-03-audio-ctx-und-beam-size/`.
+  a repetition loop. Measured on Apple Silicon with `large-v3-turbo-q5_0` and confirmed
+  afterwards on Linux/CUDA with `base-q5_1` and `small`, the models a machine without an NVIDIA
+  card loads — they hold the threshold with more room than the large one. Windows is untested.
+  Data and scripts are in `docs/measurements/`.
 
 ### Added
 - macOS/Windows: **"Click on the pill opens the control center"** in the control center. It is

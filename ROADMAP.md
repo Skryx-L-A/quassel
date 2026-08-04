@@ -55,9 +55,10 @@ GitHub `Skryx-L-A/quassel`. Effort: **S** = hours, **M** = a day, **L** = multi-
 ## Someday / maybe
 - macOS: measure the Bluetooth microphone path (24 kHz) and word-error rate on a real
   voice — both were left unmeasured because acoustic tests need explicit consent — **S**
-- Measure the shorter audio window on Linux and Windows. The threshold applies there
-  too, because the code is shared, but it was measured on Apple Silicon with
-  `large-v3-turbo-q5_0`; without an NVIDIA card those platforms run `small-q5_1` or
-  `base-q5_1`, and nobody knows whether a smaller model reacts the same way — **S**
+- Measure the shorter audio window on Windows. Linux is done (2026-08-04): `base-q5_1`
+  and `small` hold the twelve-second threshold with more room than the large model, and
+  a control run reproduced the Mac numbers exactly on different hardware. Windows runs
+  the same shared code and the same model sizes, so this is a confirmation, not an open
+  risk — **S**
 - Refresh the Windows installer. `Quassel-Setup.exe` has been carried over unchanged
   since 2.4.0 and needs a Windows machine to rebuild — **M**
