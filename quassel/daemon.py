@@ -178,6 +178,7 @@ class Daemon:
     def __init__(self):
         self.cfg = config.Cfg()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
+        beep.set_output(self.cfg.beep_output)
         self.rec = Recorder()
         self.partial = None
         self.last_paste_len = 0
@@ -192,6 +193,9 @@ class Daemon:
     def start_recording(self):
         self.cfg.reload()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
+        # Vor dem Startton, damit eine im Kontrollzentrum geänderte Gerätewahl
+        # schon beim nächsten Diktat greift und nicht erst nach einem Neustart.
+        beep.set_output(self.cfg.beep_output)
         # Starten und Beenden laufen auf DEMSELBEN Thread (dem Ereignis-Thread
         # des Hotkeys, im Linux-Loop der Hauptschleife): die Reihenfolge steht
         # damit strukturell fest, kein Schloss muss sie herstellen.

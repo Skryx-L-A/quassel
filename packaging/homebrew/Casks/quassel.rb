@@ -1,9 +1,9 @@
 cask "quassel" do
-  version "2.6.0"
+  version "2.7.0"
   # SHA256 des veröffentlichten Release-Assets (nicht eines lokalen Builds).
   # Bei jedem Release neu setzen: scripts/build_mac_dmg.sh gibt sie aus, und sie
   # liegt als Quassel-macOS-arm64.dmg.sha256 am Release.
-  sha256 "80ee8d5da7387380d2d16adf9be0d60bf5e1aab396fd9880f86b5eee232f41e8"
+  sha256 "a10a59303fda7e870a130764e6a7bd1d8b650dec218cd14159d3e66b480d58ad"
 
   url "https://github.com/Skryx-L-A/quassel/releases/download/v#{version}/Quassel-macOS-arm64.dmg"
   name "Quassel"

@@ -110,6 +110,9 @@ class Cfg:
         self.stats_enabled = p.getboolean("behavior", "stats_enabled", fallback=True)
         # Kurzer Ton bei Aufnahme-Start/-Ende (Standard an)
         self.beep = p.getboolean("behavior", "beep", fallback=True)
+        # Ausgabegeraet fuer die Signaltoene: "system" = dem System-Standard
+        # folgen, sonst der gespeicherte Geraetename (nur auf macOS waehlbar)
+        self.beep_output = g("behavior", "beep_output", fallback="system")
         # Programmier-Diktat: gesprochene Symbole/Bezeichner in Code wandeln
         self.programmer_mode = p.getboolean("speech", "programmer_mode", fallback=False)
         # Auffällige Fachwörter/Namen automatisch ins Wörterbuch lernen

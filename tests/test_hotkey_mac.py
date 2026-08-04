@@ -801,7 +801,8 @@ def _rec_daemon(monkeypatch, rec, **cfg_extra):
     d._vad = True
     d.last_paste_len = 0
     d.ducker = SimpleNamespace(apply=lambda mode: None, restore=lambda: None)
-    cfg = dict(beep=False, mic="default", mute_mode="off", ui_language="auto",
+    cfg = dict(beep=False, beep_output="system", mic="default", mute_mode="off",
+               ui_language="auto",
                streaming=False, ai_enabled=False, programmer_mode=False,
                text_replace=False, history_enabled=False, stats_enabled=False,
                auto_learn=False, reload=lambda: False)
@@ -1612,7 +1613,8 @@ def test_start_recording_failure_names_missing_piece(monkeypatch):
     nutzbares Eingabegerät bzw. die Mikrofon-Freigabe."""
     from quassel import daemon as daemon_mod
     d = daemon_mod.Daemon.__new__(daemon_mod.Daemon)
-    d.cfg = SimpleNamespace(reload=lambda: False, ui_language="auto", mic="default")
+    d.cfg = SimpleNamespace(reload=lambda: False, ui_language="auto", mic="default",
+                            beep_output="system")
     d.rec = SimpleNamespace(start=lambda mic: False)
     notes = []
     monkeypatch.setattr(daemon_mod, "notify", lambda text, ms=0: notes.append(text))

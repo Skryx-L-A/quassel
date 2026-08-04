@@ -44,9 +44,9 @@ def test_apply_multi_word_trigger():
 
 
 def test_expansion_with_regex_special_chars_is_literal():
-    rules = [("myemail", "you@example.com")]
-    assert expand("myemail", "myemail=you@example.com") == \
-        "you@example.com"
+    rules = [("myemail", "name@example.com")]
+    assert expand("myemail", "myemail=name@example.com") == \
+        "name@example.com"
     # Backslashes und Gruppen-Referenzen duerfen nicht interpretiert werden.
     rules2 = [("re", r"a\1\b[x]")]
     assert apply_rules("re", rules2) == r"a\1\b[x]"

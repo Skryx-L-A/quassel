@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import (__version__, ai, aimodes, config, i18n, stats, transcribe_file,
+from . import (__version__, ai, aimodes, beep, config, i18n, stats, transcribe_file,
                updatecheck, whisperclient)
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
@@ -473,6 +473,27 @@ class Center(QMainWindow):
         self.beep_chk.toggled.connect(self.save_settings)
         g.addWidget(self.beep_chk)
         self.desc(tr("beep_hint"), g)
+        # Geraetewahl fuer die Signaltoene: nur auf macOS, weil nur der dortige
+        # Abspielweg ein Ausgabegeraet entgegennimmt (Linux/Windows spielen
+        # ueber den jeweiligen System-Player ohne Geraeteauswahl).
+        self.beep_out = None
+        if IS_MAC:
+            self.beep_out = self.guard(QComboBox())
+            self.beep_out.addItem(tr("beep_out_system"), "system")
+            for name, desc in beep.list_outputs():
+                self.beep_out.addItem(desc, name)
+                if name == self.cfg.beep_output:
+                    self.beep_out.setCurrentIndex(self.beep_out.count() - 1)
+            if (self.cfg.beep_output != "system"
+                    and self.beep_out.findData(self.cfg.beep_output) < 0):
+                # Gespeichertes Geraet ist gerade nicht angeschlossen: trotzdem
+                # aufnehmen und auswaehlen, sonst wirft das Oeffnen des Fensters
+                # die Einstellung stillschweigend auf "system" zurueck.
+                self.beep_out.addItem(self.cfg.beep_output, self.cfg.beep_output)
+                self.beep_out.setCurrentIndex(self.beep_out.count() - 1)
+            self.beep_out.currentIndexChanged.connect(self.save_settings)
+            self.labeled_row(tr("beep_out_label"), self.beep_out, g)
+            self.desc(tr("beep_out_hint"), g)
 
         lay.addStretch(1)
         note = QLabel(tr("close_note"))
@@ -876,7 +897,7 @@ class Center(QMainWindow):
     def save_settings(self, *_a):
         if self._loading:
             return
-        config.save({
+        werte = {
             ("pill", "enabled"): str(self.pill_show.isChecked()).lower(),
             ("pill", "scale"): self.pill_size.value() / 100,
             ("pill", "opacity"): self.pill_opacity.value() / 100,
@@ -907,7 +928,14 @@ class Center(QMainWindow):
             ("ai", "post_mode"): self.ai_mode.currentData() or "cleanup",
             ("ai", "voice_modes"): str(self.ai_voice.isChecked()).lower(),
             ("ui", "language"): self.uilang.currentData(),
-        })
+        }
+        # Nur schreiben, wo es das Auswahlfeld überhaupt gibt. Auf Linux und
+        # Windows würde der Schlüssel sonst bei jedem Speichern auf "system"
+        # gesetzt — und eine vom Mac mitgenommene config.ini verlöre dort ihre
+        # Gerätewahl, ohne dass jemand etwas umgestellt hätte.
+        if self.beep_out is not None:
+            werte[("behavior", "beep_output")] = self.beep_out.currentData()
+        config.save(werte)
         self.cfg.reload(force=True)
         self.hint.setText(tr("hint", chord=self.chord_label()))
 

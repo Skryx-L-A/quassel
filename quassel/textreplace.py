@@ -1,7 +1,7 @@
 """Textersetzung / Snippet-Erweiterung (GitHub-Issue #20).
 
 Der Nutzer definiert Kurzbefehle, die im final diktierten Text expandieren,
-z. B. ``omw=on my way`` oder ``myemail=you@example.com``.
+z. B. ``omw=on my way`` oder ``myemail=name@example.com``.
 Regeln liegen zeilenweise als ``trigger=expansion`` in einer Textdatei.
 
 Dieses Modul ist reine Logik: ``apply_rules`` macht kein Datei-IO, der Aufrufer

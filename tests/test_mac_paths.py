@@ -101,12 +101,12 @@ def test_list_mics_mac_parses_ffmpeg_output(monkeypatch):
         "[AVFoundation indev @ 0x1] AVFoundation video devices:\n"
         "[AVFoundation indev @ 0x1] [0] FaceTime Camera\n"
         "[AVFoundation indev @ 0x1] AVFoundation audio devices:\n"
-        "[AVFoundation indev @ 0x1] [0] APLTF\n"
+        "[AVFoundation indev @ 0x1] [0] Bluetooth-Kopfhörer\n"
         "[AVFoundation indev @ 0x1] [1] MacBook Pro Microphone\n")
     monkeypatch.setattr(audio.subprocess, "run",
                         lambda *a, **kw: MagicMock(stderr=stderr))
     mics = audio._list_mics_mac_ffmpeg()
-    assert mics == [("APLTF", "APLTF"),
+    assert mics == [("Bluetooth-Kopfhörer", "Bluetooth-Kopfhörer"),
                     ("MacBook Pro Microphone", "MacBook Pro Microphone")]
 
 
@@ -133,7 +133,7 @@ def _fake_sd(devices):
 
 
 DEVICES = [
-    {"name": "APLTF", "max_input_channels": 1, "default_samplerate": 24000.0},
+    {"name": "Bluetooth-Kopfhörer", "max_input_channels": 1, "default_samplerate": 24000.0},
     {"name": "Lautsprecher", "max_input_channels": 0,
      "default_samplerate": 48000.0},
     {"name": "MacBook Pro-Mikrofon", "max_input_channels": 1,
@@ -160,7 +160,7 @@ def test_list_mics_mac_uses_sounddevice(monkeypatch):
     monkeypatch.setattr(audio, "_sd", lambda: _fake_sd(DEVICES))
     # nur Eingänge, Ausgabegeräte fallen raus
     assert audio._list_mics_mac() == [
-        ("APLTF", "APLTF"),
+        ("Bluetooth-Kopfhörer", "Bluetooth-Kopfhörer"),
         ("MacBook Pro-Mikrofon", "MacBook Pro-Mikrofon")]
 
 
@@ -299,14 +299,19 @@ def test_polyphase_filters_above_nyquist():
 
 # ---------------------------------------------------------------------- beep
 def test_beep_uses_afplay_on_darwin(tmp_path, monkeypatch):
-    """Ohne sounddevice bleibt afplay der Weg auf darwin. Gespielt wird im
-    Abspiel-Thread, deshalb wird auf den Aufruf gewartet statt sofort geprüft.
-    Der eigene Ausgabestrom hat eine eigene Testdatei (test_beep_mac.py)."""
+    """Lässt sich keine Ausgabe-Einheit öffnen, bleibt afplay der Weg auf
+    darwin. Gespielt wird im Abspiel-Thread, deshalb wird auf den Aufruf
+    gewartet statt sofort geprüft. Die eigene Ausgabe-Einheit hat eine eigene
+    Testdatei (test_beep_mac.py)."""
     wav = tmp_path / "start.wav"
     wav.write_bytes(b"RIFF")
     calls = []
+
+    def kein_geraet(*_args, **_kw):
+        raise OSError("kein Ausgabegerät")
+
     monkeypatch.setattr(beep.sys, "platform", "darwin")
-    monkeypatch.setattr(beep, "_sd", lambda: None)   # nie ein echtes Gerät
+    monkeypatch.setattr(beep, "_open_unit", kein_geraet)   # nie ein echtes Gerät
     monkeypatch.setattr(beep.subprocess, "Popen",
                         lambda args, **kw: calls.append(args))
     player = beep._MacPlayer()

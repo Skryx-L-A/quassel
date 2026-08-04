@@ -58,6 +58,22 @@ def test_changed_mtime_or_size_invalidates_the_cache(tmp_path, monkeypatch):
     assert config.dictionary_words() == ["PyTorch", "Kubernetes"]
 
 
+def _isolate_cfg(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
+    monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
+
+
+def test_beep_output_defaults_to_system(tmp_path, monkeypatch):
+    _isolate_cfg(tmp_path, monkeypatch)
+    assert config.Cfg().beep_output == "system"
+
+
+def test_beep_output_reads_saved_device(tmp_path, monkeypatch):
+    _isolate_cfg(tmp_path, monkeypatch)
+    config.save({("behavior", "beep_output"): "Bluetooth-Kopfhörer"})
+    assert config.Cfg().beep_output == "Bluetooth-Kopfhörer"
+
+
 def test_dictionary_save_invalidates_the_cache(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
     with open(config.DICTIONARY, "w", encoding="utf-8") as f:

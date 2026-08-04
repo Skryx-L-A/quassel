@@ -14,6 +14,33 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-04
+
+> macOS only. Nothing in this release changes Linux or Windows; both keep playing
+> the tones through their own system player, which has always followed the
+> system output.
+
+### Fixed
+- macOS: the start, stop and cancel tones came out of the built-in speakers even
+  when the headphones were the system output device. The tones now play on
+  whatever output macOS is using at that moment, and they follow a change while
+  the app is running — plug in headphones mid-session and the next tone is
+  already there. The cause was the audio library the tones went through: it
+  reads the default output device once, when the app starts, and never looks
+  again. Connect a headset afterwards and it stayed invisible; it was not even in
+  the device list. Measured on a MacBook Pro with a Bluetooth headset: the system
+  said "MacBook Pro speakers", the library still answered with the headset it had
+  seen at launch. The tones now go through the macOS output unit that tracks the
+  default device by itself.
+
+### Added
+- macOS: a new setting **"Play tones on"** in the control center, under the tone
+  switch. It stays on "System default output" unless you change it, which is what
+  almost everyone wants. Pick a fixed device when you want the tones somewhere
+  else than the rest of your sound — on a headset while music keeps playing over
+  the speakers, for instance. A device that is currently disconnected stays
+  selected instead of falling back silently.
+
 ## [2.6.0] - 2026-08-04
 
 > macOS and Linux are new in this release. The Windows installer
