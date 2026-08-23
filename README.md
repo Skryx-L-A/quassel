@@ -221,5 +221,5 @@ last dictation; turning Quassel off frees the GPU memory — handy before gaming
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+AGPL-3.0-only — see [LICENSE](LICENSE). Uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
 (MIT) and OpenAI's Whisper models (downloaded at install time).
