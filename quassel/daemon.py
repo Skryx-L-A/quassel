@@ -682,7 +682,11 @@ class Daemon:
         # Wake-Phrase als Bias mitgeben, damit Whisper das Kunstwort eher trifft.
         text = whisperclient.transcribe(WAKE_WAV, self.cfg, timeout=30,
                                         prompt_extra=self.cfg.wakeword_phrase)
-        log("wake: heard %r (phrase=%r)" % ((text or "").strip(), self.cfg.wakeword_phrase))
+        # Nur Länge und Treffer loggen: der Listener hört alles im Raum, der Text
+        # darf nie in eine Logdatei.
+        heard = (text or "").strip()
+        matched, _ = wakeword.match_wake(heard, self.cfg.wakeword_phrase)
+        log("wake: heard %d chars, match=%s" % (len(heard), "yes" if matched else "no"))
         return text
 
     def _wake_insert(self, raw_text):

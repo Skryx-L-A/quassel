@@ -14,6 +14,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+- With the wake word switched on, the log no longer contains what was heard.
+  The listener transcribes everything said in the room, and every sentence used
+  to be written to the log in plain text. It now records only how long the
+  phrase was and whether it matched the wake word.
+
 ## [2.7.0] - 2026-08-04
 
 > macOS only. Nothing in this release changes Linux or Windows; both keep playing
