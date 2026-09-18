@@ -40,7 +40,7 @@ _probe = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def server_up(timeout=2):
-    # urllib statt curl-Subprozess: gemessen 0,17ms gegen 5,75ms. Der
+    # urllib statt curl-Subprozess: gemessen 0,17ms gegen 5,75ms.
     # Der Multipart-Upload in transcribe() läuft ebenfalls ohne Proxy direkt
     # über die Loopback-Verbindung.
     # ACHTUNG Timeout-Semantik: urllib's timeout gilt je Socket-Operation
@@ -158,8 +158,8 @@ def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
       auto   -> automatische Erkennung (kein language-Feld)
       mixed  -> automatische Erkennung + zweisprachiger Prompt-Anstoß (#23)
       de/en  -> feste Sprache.
-    prompt_extra: zusätzlicher Bias-Text (z.B. das Wake-Word), wird dem Prompt
-    vorangestellt, damit Whisper z.B. das Kunstwort 'Quassel' eher ausgibt.
+    prompt_extra: zusätzlicher Bias-Text (z.B. das Wake-Word), steht am
+    Promptende, damit Whisper z.B. das Kunstwort 'Quassel' nicht wegkürzt.
     Kurze Aufnahmen (< AUDIO_CTX_MAX_SECONDS) bekommen audio_ctx=AUDIO_CTX_SHORT
     mit -- gilt auch für Teiltranskript-Fenster (PartialLoop), dieselbe
     Längenregel dort ist gewollt und billiger."""
@@ -237,8 +237,8 @@ def _post_multipart(body, content_type, timeout):
         conn.close()
 
 
-def transcribe(wavpath, cfg, timeout=120, prompt_extra=None):
-    """Transkribiert eine WAV-Datei; None bei Fehler."""
+def _transcribe_wav(wavpath, cfg, timeout=120, prompt_extra=None):
+    """Bestehende whisper.cpp-Übertragung; intern vom Backend verwendet."""
     words = config.dictionary_words()
     try:
         body, content_type = _multipart_body(
@@ -254,3 +254,24 @@ def transcribe(wavpath, cfg, timeout=120, prompt_extra=None):
     r = subprocess.run(args, capture_output=True, text=True, check=False,
                        encoding="utf-8", errors="replace", **NOWIN)
     return r.stdout if r.returncode == 0 else None
+
+
+_backend = None
+
+
+def speech_backend():
+    """Die heutige Backend-Wahl, zentral für spätere austauschbare Engines."""
+    global _backend
+    if _backend is None:
+        from .backends import WhisperServerBackend
+        _backend = WhisperServerBackend()
+    return _backend
+
+
+def transcribe(wavpath, cfg, timeout=120, prompt_extra=None):
+    """Abwärtskompatible dünne Hülle um das Standard-Sprachbackend."""
+    from .backends import TranscriptionOptions
+    opts = TranscriptionOptions(
+        cfg=cfg, timeout=timeout, prompt_extra=prompt_extra,
+        language_hint=getattr(cfg, "language", None))
+    return speech_backend().transcribe(wavpath, opts).text
