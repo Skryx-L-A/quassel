@@ -1,7 +1,7 @@
 """Tests des Programmierer-Diktiermodus (gesprochene Worte -> Code-Text)."""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from quassel.progmode import SYMBOLS, to_identifier, apply
+from quassel.progmode import SYMBOLS, to_identifier, apply, apply_if_addressed
 
 
 def test_to_identifier_all_styles():
@@ -87,6 +87,11 @@ def test_apply_spacing_rules():
 
 def test_apply_unknown_words_passthrough():
     assert apply("hello world") == "hello world"
+
+
+def test_programmer_mode_requires_code_address():
+    assert apply_if_addressed("Punkt gleich wichtig") == "Punkt gleich wichtig"
+    assert apply_if_addressed("Code: Punkt gleich wichtig") == ".= wichtig"
 
 
 if __name__ == "__main__":
