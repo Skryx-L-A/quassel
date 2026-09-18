@@ -219,8 +219,9 @@ say "5/8  Qt-Oberfläche einrichten (PySide6 in eigener venv, ~150 MB einmalig)"
 if [[ ! -x "$VENV/bin/python3" ]]; then
     "$APP_PY" -m venv "$VENV"
 fi
-"$VENV/bin/pip" install --quiet --upgrade pip PySide6 || die "PySide6-Installation fehlgeschlagen"
-ok "PySide6 bereit"
+"$VENV/bin/python3" -m pip install --quiet --requirement "$SRC/requirements.txt" \
+    || die "Python-Abhängigkeiten konnten nicht installiert werden"
+ok "Python-Abhängigkeiten bereit"
 
 # ----------------------------------------------------------------------------
 say "6/8  Quassel installieren"

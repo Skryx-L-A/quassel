@@ -38,3 +38,14 @@ def test_python_launchers_use_the_version_checked_helper():
     for name in ("quasseld", "quassel-type", "quassel-pill", "quassel-mac"):
         content = (ROOT / "bin" / name).read_text(encoding="utf-8")
         assert "quassel-python" in content
+
+
+def test_requirements_are_pinned_and_used_by_the_linux_installer():
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    dependencies = [line for line in requirements.splitlines()
+                    if line and not line.startswith("#")]
+    assert dependencies
+    assert all("==" in dependency for dependency in dependencies)
+
+    installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+    assert '--requirement "$SRC/requirements.txt"' in installer

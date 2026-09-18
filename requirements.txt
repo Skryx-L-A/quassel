@@ -1,0 +1,9 @@
+# Runtime dependencies. Platform markers keep each installer on its own OS.
+PySide6==6.11.1
+numpy==2.5.1
+sounddevice==0.5.5
+PyObjC==12.2.1 ; sys_platform == "darwin"
+comtypes==1.4.16 ; sys_platform == "win32"
+pycaw==20251023 ; sys_platform == "win32"
+winrt-Windows.Foundation==3.2.1 ; sys_platform == "win32"
+winrt-Windows.Media.Control==3.2.1 ; sys_platform == "win32"
