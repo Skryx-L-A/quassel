@@ -63,6 +63,11 @@ def test_auto_capitalize_supports_unicode_letters():
     assert textproc.auto_capitalize("élan. niño. øresund.") == "Élan. Niño. Øresund."
 
 
+def test_punctuation_rules_follow_selected_language():
+    assert textproc.apply_punctuation("hello punkt", language="en") == "hello punkt"
+    assert textproc.apply_punctuation("hallo comma welt", language="de") == "hallo comma welt"
+
+
 def test_commands_disabled_passes_through():
     class C:
         punctuation = True

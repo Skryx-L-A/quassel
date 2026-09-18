@@ -17,16 +17,22 @@ COMMANDS = {
 # Rückwärtskompatibilität: Menge aller Kommando-Phrasen
 COMMAND_WORDS = set(COMMANDS)
 
-# Reihenfolge wichtig: längere Phrasen zuerst
-PUNCT_RULES = [
+# Reihenfolge wichtig: längere Phrasen zuerst. Bei einer fest gewählten Sprache
+# gelten nur deren Regeln; ``auto``/``mixed`` behalten die bisherige zweisprachige
+# Behandlung, weil der Textprozessor die Whisper-Erkennung noch nicht erhält.
+DE_PUNCT_RULES = [
     (r"neuer absatz", "\n\n"), (r"neue zeile", "\n"), (r"zeilenumbruch", "\n"),
-    (r"new paragraph", "\n\n"), (r"new line", "\n"), (r"newline", "\n"),
     (r"fragezeichen", "?"), (r"ausrufezeichen", "!"), (r"doppelpunkt", ":"),
     (r"semikolon", ";"),
+]
+EN_PUNCT_RULES = [
+    (r"new paragraph", "\n\n"), (r"new line", "\n"), (r"newline", "\n"),
     (r"question mark", "?"), (r"exclamation (?:mark|point)", "!"),
     (r"full stop", "."),
     (r"colon", ":"), (r"semicolon", ";"),
 ]
+# Rückwärtskompatibilität für Aufrufer, die die gemeinsame Regelmenge lesen.
+PUNCT_RULES = DE_PUNCT_RULES + EN_PUNCT_RULES
 
 _NUMBER_WORDS = {
     "null", "eins", "ein", "eine", "einen", "einem", "einer", "zwei", "drei",
@@ -64,8 +70,20 @@ def is_command(text):
     return COMMANDS.get(norm)
 
 
-def apply_punctuation(text):
-    for pat, repl in PUNCT_RULES:
+def _rules_for_language(language):
+    language = language.lower() if isinstance(language, str) else "auto"
+    if language == "de":
+        return DE_PUNCT_RULES, ("punkt",), ("komma",)
+    if language == "en":
+        return EN_PUNCT_RULES, ("period",), ("comma",)
+    if language in ("auto", "mixed"):
+        return PUNCT_RULES, ("punkt", "period"), ("komma", "comma")
+    return (), (), ()
+
+
+def apply_punctuation(text, *, language="auto"):
+    rules, terminal_words, comma_words = _rules_for_language(language)
+    for pat, repl in rules:
         if repl.startswith("\n"):
             # Umbruch ersetzt das Wort samt umgebender Leerzeichen/Satzzeichen
             text = re.sub(rf"\s*\b{pat}\b[\s,.]*", repl, text, flags=re.IGNORECASE)
@@ -75,11 +93,15 @@ def apply_punctuation(text):
     # "Punkt" und "period" sind normale Wörter. Als Satzzeichen gelten sie
     # deshalb nur am Ende der Äußerung; sonst bleibt z. B. "wichtiger Punkt"
     # unverändert.
-    text = re.sub(r"\s*\b(?:punkt|period)\b[\s,.!?]*$", ".", text,
-                  flags=re.IGNORECASE)
+    if terminal_words:
+        terminal_pattern = "|".join(re.escape(word) for word in terminal_words)
+        text = re.sub(rf"\s*\b(?:{terminal_pattern})\b[\s,.!?]*$", ".", text,
+                      flags=re.IGNORECASE)
     # "zwei Komma fünf" beschreibt eine Zahl, kein Satzzeichen.
-    text = re.sub(r"\s*\b(?:komma|comma)\b", _replace_spoken_comma, text,
-                  flags=re.IGNORECASE)
+    if comma_words:
+        comma_pattern = "|".join(re.escape(word) for word in comma_words)
+        text = re.sub(rf"\s*\b(?:{comma_pattern})\b", _replace_spoken_comma, text,
+                      flags=re.IGNORECASE)
     return text
 
 
@@ -100,7 +122,7 @@ def postprocess(raw_text, cfg):
         if cmd:
             return "command", cmd
     if cfg.punctuation:
-        text = apply_punctuation(text)
+        text = apply_punctuation(text, language=getattr(cfg, "language", "auto"))
         text = auto_capitalize(text)
         # Nur vor einem Großbuchstaben beginnt sicher ein neuer Satz. So bleiben
         # Domains, Dateinamen und Abkürzungen wie github.com oder e.g. ganz.

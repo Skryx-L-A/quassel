@@ -28,6 +28,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keeps ordinary sentence openings such as "Formal gesehen …" intact.
 - The one-word commands "Enter" and "Undo" are now ordinary dictation unless
   they are addressed as "Quassel, Enter" or "Quassel, Undo".
+- When German or English is selected for speech, spoken punctuation now uses
+  only that language's rules.
 
 ## [2.7.0] - 2026-08-04
 
