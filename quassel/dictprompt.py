@@ -15,18 +15,15 @@ PARTIAL_DICTIONARY_TOKEN_BUDGET = 72
 # Häufige whisper-Halluzinationen bei Stille; nur nach Normalisierung exakt
 # passende Ausgaben werden verworfen. Das ist absichtlich keine unscharfe
 # Sprachkorrektur.
-SILENCE_HALLUCINATIONS = frozenset({
-    "danke fürs zuschauen",
-    "danke fürs zuhören",
-    "vielen dank",
-    "vielen dank fürs zuschauen",
+UNAMBIGUOUS_SILENCE_HALLUCINATIONS = frozenset({
+    "danke fürs zuschauen", "danke fürs zuhören", "vielen dank fürs zuschauen",
     "untertitel der amara org community",
     "untertitel im auftrag des zdf für funk 2017",
-    "thank you",
     "thank you for watching",
     "thanks for watching",
     "subtitles by the amara org community",
 })
+AMBIGUOUS_SILENCE_HALLUCINATIONS = frozenset({"vielen dank", "danke", "thank you"})
 
 
 def estimated_tokens(text):
@@ -80,7 +77,13 @@ def _normalized_words(text):
     return tuple(re.findall(r"[^\W_]+", text.casefold(), flags=re.UNICODE))
 
 
-def is_silence_hallucination(text, prompt_words=()):
+def has_speech_energy(pcm, threshold=500):
+    """Konservativ: im Zweifel war Sprache im 16-kHz-s16le-PCM vorhanden."""
+    from .vad import frame_rms
+    return frame_rms(pcm) >= threshold
+
+
+def is_silence_hallucination(text, prompt_words=(), pcm=None):
     """Ob ``text`` eine bekannte Stille-Halluzination oder ein Prompt-Echo ist.
 
     Die Funktion ist rein: Aufrufer entscheiden anhand von VAD/Clipdauer, ob
@@ -90,8 +93,10 @@ def is_silence_hallucination(text, prompt_words=()):
     normalized = " ".join(_normalized_words(text))
     if not normalized:
         return False
-    if normalized in SILENCE_HALLUCINATIONS:
+    if normalized in UNAMBIGUOUS_SILENCE_HALLUCINATIONS:
         return True
+    if normalized in AMBIGUOUS_SILENCE_HALLUCINATIONS:
+        return pcm is not None and not has_speech_energy(pcm)
     prompt_tokens = {token for word in prompt_words
                      for token in _normalized_words(word)}
     text_tokens = set(_normalized_words(text))

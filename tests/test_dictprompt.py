@@ -39,9 +39,15 @@ def test_suffix_reservation_keeps_total_within_whisper_limit():
     assert dictprompt.estimated_tokens(prompt) <= dictprompt.PROMPT_TOKEN_LIMIT
 
 
-def test_known_german_and_english_silence_hallucinations_are_rejected():
+def test_unambiguous_silence_hallucinations_are_rejected():
     assert dictprompt.is_silence_hallucination("Untertitel der Amara.org-Community")
     assert dictprompt.is_silence_hallucination("Thank you for watching.")
+
+
+def test_ambiguous_thanks_need_silent_audio():
+    speech = (1000).to_bytes(2, "little", signed=True) * 1600
+    assert not dictprompt.is_silence_hallucination("Vielen Dank", pcm=speech)
+    assert dictprompt.is_silence_hallucination("Vielen Dank", pcm=b"\0\0" * 1600)
 
 
 def test_dictionary_prompt_echo_is_rejected_without_matching_real_text():

@@ -30,8 +30,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - macOS can again copy history and file-transcription results without relying
   on the Linux-only `xclip` command.
-- Known Whisper silence hallucinations, such as “Thank you for watching”, are
-  now discarded instead of being inserted as dictated text.
+- Known Whisper subtitle and “for watching” silence artifacts are discarded;
+  ordinary “thank you” and “vielen Dank” dictations stay intact when speech is present.
 - Automatic dictionary learning no longer picks up junk or deletes your own
   words. It used to learn things like `2nd`, `10pm`, `5EUR`, `100km`, `20er`,
   `3D` and `OK`; numbers with a unit or ordinal ending and a few everyday

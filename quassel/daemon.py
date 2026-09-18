@@ -68,9 +68,9 @@ PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
 PARTIAL_MAX_WAIT = 10.0
 
 
-def postprocess_transcript(raw_text, cfg, language=None):
+def postprocess_transcript(raw_text, cfg, language=None, pcm=None):
     """Bekannte Stille-Antworten wie ein leeres Diktat behandeln."""
-    if dictprompt.is_silence_hallucination(raw_text):
+    if dictprompt.is_silence_hallucination(raw_text, pcm=pcm):
         return None, None
     if language is None:
         return textproc.postprocess(raw_text, cfg)
@@ -464,7 +464,7 @@ class Daemon:
             state_set("idle")
             return
         kind, value = postprocess_transcript(raw_text, self.cfg,
-                                              result.language or getattr(self.cfg, "language", "auto"))
+                                              result.language or getattr(self.cfg, "language", "auto"), data)
         if kind is None:
             if streamer is not None:
                 streaming_restore(clip_backup)
