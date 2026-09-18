@@ -31,9 +31,41 @@ def test_not_a_command():
     assert k == "text"
 
 
+def test_one_word_commands_require_address():
+    assert textproc.is_command("undo") is None
+    assert textproc.is_command("enter") is None
+    assert textproc.is_command("Quassel, undo") == "undo"
+    assert textproc.is_command("Quassel, enter") == "enter"
+
+
 def test_punctuation_and_caps():
     k, v = textproc.postprocess("hallo komma welt punkt", Cfg())
     assert (k, v) == ("text", "Hallo, welt."), (k, v)
+
+
+def test_spoken_punctuation_keeps_ordinary_words():
+    assert textproc.apply_punctuation("Das ist ein wichtiger Punkt, den wir klaeren") == \
+        "Das ist ein wichtiger Punkt, den wir klaeren"
+    assert textproc.apply_punctuation("zwei komma fuenf Prozent") == \
+        "zwei komma fuenf Prozent"
+
+
+def test_sentence_spacing_keeps_domains_files_and_abbreviations():
+    _, value = textproc.postprocess("github.com config.json Node.js e.g.", Cfg())
+    assert "Github.com" in value
+    assert "config.json" in value
+    assert "Node.js" in value
+    assert "e.g." in value
+    assert textproc.postprocess("Hello.World", Cfg()) == ("text", "Hello. World")
+
+
+def test_auto_capitalize_supports_unicode_letters():
+    assert textproc.auto_capitalize("élan. niño. øresund.") == "Élan. Niño. Øresund."
+
+
+def test_punctuation_rules_follow_selected_language():
+    assert textproc.apply_punctuation("hello punkt", language="en") == "hello punkt"
+    assert textproc.apply_punctuation("hallo comma welt", language="de") == "hallo comma welt"
 
 
 def test_commands_disabled_passes_through():

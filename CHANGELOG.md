@@ -49,6 +49,21 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   part of the request, and `curl` read such a word as the name of a local file;
   the transcription then failed and only the "server not reachable" message
   showed. All text fields are now sent as plain text.
+- Spoken punctuation no longer turns ordinary uses of "Punkt", "period", or
+  decimal commas into punctuation. "Punkt" and "period" now mark a sentence
+  only at the end of a dictation.
+- Quassel no longer inserts spaces inside spoken domains, file names, or
+  abbreviations such as `github.com`, `config.json`, and `e.g.`.
+- Automatic sentence capitalization now also handles non-ASCII letters such as
+  `é`, `ñ`, and `ø`.
+- Text replacements now run once per dictation. An expansion can no longer
+  accidentally activate a second replacement rule.
+- Voice-triggered AI modes now require the explicit address "Quassel,". This
+  keeps ordinary sentence openings such as "Formal gesehen …" intact.
+- The one-word commands "Enter" and "Undo" are now ordinary dictation unless
+  they are addressed as "Quassel, Enter" or "Quassel, Undo".
+- When German or English is selected for speech, spoken punctuation now uses
+  only that language's rules.
 
 ### Security
 - The dictation history file (`history.jsonl`) is now readable by you only.

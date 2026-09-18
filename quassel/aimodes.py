@@ -8,6 +8,7 @@ nichts (oder ist der Modus unbekannt, oder der Text leer), bleibt der
 Original-Text erhalten -- es geht NIE ein Wort verloren, und es wird NIE geworfen.
 Nur Standardbibliothek. Das ai-Modul wird faul importiert.
 """
+import re
 
 # key -> {"label_en", "label_de", "system"}. Jeder System-Prompt weist an:
 # die Sprache des Nutzers beibehalten; NUR den Ergebnistext ausgeben (kein
@@ -164,6 +165,15 @@ def _norm(s: str) -> str:
     return s.lower().translate(_UMLAUT_MAP)
 
 
+_VOICE_ADDRESS = re.compile(r"^\s*quassel\b\s*[,:-]\s*", re.IGNORECASE)
+
+
+def _strip_voice_address(text: str) -> str | None:
+    """Text nach der eindeutigen Anrede ``Quassel,`` oder None liefern."""
+    match = _VOICE_ADDRESS.match(text)
+    return text[match.end():] if match else None
+
+
 # Trigger nach normalisierter Laenge absteigend, damit der LAENGSTE zuerst greift.
 _NORM_TRIGGERS: list[tuple[str, str]] = sorted(
     ((_norm(phrase), key) for phrase, key in _VOICE_TRIGGERS.items()),
@@ -173,7 +183,7 @@ _NORM_TRIGGERS: list[tuple[str, str]] = sorted(
 
 
 def detect_voice_mode(text: str) -> tuple[str | None, str]:
-    """Eroeffnet das Diktat mit einer Trigger-Phrase, liefere
+    """Nach ``Quassel,`` mit einer Trigger-Phrase, liefere
     (mode_key, Resttext ohne Trigger und ein folgendes Komma/Doppelpunkt).
 
     Match case-insensitiv (EN + DE), laengster Trigger zuerst, mit Wortgrenze:
@@ -184,7 +194,10 @@ def detect_voice_mode(text: str) -> tuple[str | None, str]:
     """
     if not isinstance(text, str) or not text:
         return (None, text)
-    norm = _norm(text)
+    addressed = _strip_voice_address(text)
+    if addressed is None:
+        return (None, text)
+    norm = _norm(addressed)
     for trig, key in _NORM_TRIGGERS:
         if not norm.startswith(trig):
             continue
@@ -198,14 +211,42 @@ def detect_voice_mode(text: str) -> tuple[str | None, str]:
         # Laenge == Original-Laenge, da die Umlaut-Map 1->2 Zeichen abbildet?
         # Nein: ae/oe/ue/ss sind 2 Zeichen. Deshalb ueber den Original-String
         # zeichenweise zaehlen statt ueber die normalisierte Laenge.)
-        cut = _orig_cut(text, len(trig))
-        rest = text[cut:]
+        cut = _orig_cut(addressed, len(trig))
+        rest = addressed[cut:]
         # Fuehrenden Trenner (genau ein Komma/Doppelpunkt und/oder Leerraum)
         # entfernen, dann den Rest links trimmen.
         rest = rest.lstrip()
         if rest[:1] in (",", ":"):
             rest = rest[1:].lstrip()
         return (key, rest)
+    return (None, text)
+
+
+def detect_custom_voice_mode(text: str, custom_text: str) -> tuple[str | None, str]:
+    """Eigenen, adressierten Modus mit Wortgrenze erkennen.
+
+    Die Funktion gehört hierher statt in die Plattform-Aufrufer, damit eigene
+    Modi dieselben Anrede- und Grenzregeln wie eingebaute Modi verwenden.
+    """
+    if not isinstance(text, str) or not text:
+        return (None, text)
+    addressed = _strip_voice_address(text)
+    if addressed is None:
+        return (None, text)
+    custom = parse_custom(custom_text)
+    norm = _norm(addressed)
+    for name in sorted(custom, key=lambda item: len(_norm(item)), reverse=True):
+        trigger = _norm(name)
+        if not norm.startswith(trigger):
+            continue
+        remainder = norm[len(trigger):]
+        if remainder and remainder[0] not in " \t\r\n,:":
+            continue
+        cut = _orig_cut(addressed, len(trigger))
+        rest = addressed[cut:].lstrip()
+        if rest[:1] in (",", ":"):
+            rest = rest[1:].lstrip()
+        return (name, rest)
     return (None, text)
 
 

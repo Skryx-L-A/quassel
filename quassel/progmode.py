@@ -42,6 +42,7 @@ Grammar
 
 The transform is deterministic and side-effect free.
 """
+import re
 
 # ---------------------------------------------------------------------------
 # Spoken token -> literal symbol. EN + DE. Multi-word keys are matched before
@@ -220,3 +221,17 @@ def apply(text: str) -> str:
 
     flush_span()  # sentence end closes any open span
     return _join(pieces)
+
+
+_CODE_ADDRESS = re.compile(r"^\s*code\b\s*[:,-]\s*", re.IGNORECASE)
+
+
+def apply_if_addressed(text: str) -> str:
+    """Code-Diktat nur nach der eindeutigen Anrede ``Code:`` umformen.
+
+    Der Rückgabewert bleibt bei nicht adressiertem Text unverändert, damit die
+    Plattform-Aufrufer diesen Schutz mit einem einzelnen Funktionsaufruf nutzen
+    können.
+    """
+    match = _CODE_ADDRESS.match(text)
+    return apply(text[match.end():]) if match else text

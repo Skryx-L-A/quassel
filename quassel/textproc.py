@@ -17,40 +17,99 @@ COMMANDS = {
 # Rückwärtskompatibilität: Menge aller Kommando-Phrasen
 COMMAND_WORDS = set(COMMANDS)
 
-# Reihenfolge wichtig: längere Phrasen zuerst
-PUNCT_RULES = [
+# Reihenfolge wichtig: längere Phrasen zuerst. Bei einer fest gewählten Sprache
+# gelten nur deren Regeln; ``auto``/``mixed`` behalten die bisherige zweisprachige
+# Behandlung, weil der Textprozessor die Whisper-Erkennung noch nicht erhält.
+DE_PUNCT_RULES = [
     (r"neuer absatz", "\n\n"), (r"neue zeile", "\n"), (r"zeilenumbruch", "\n"),
-    (r"new paragraph", "\n\n"), (r"new line", "\n"), (r"newline", "\n"),
     (r"fragezeichen", "?"), (r"ausrufezeichen", "!"), (r"doppelpunkt", ":"),
-    (r"semikolon", ";"), (r"komma", ","), (r"punkt", "."),
+    (r"semikolon", ";"),
+]
+EN_PUNCT_RULES = [
+    (r"new paragraph", "\n\n"), (r"new line", "\n"), (r"newline", "\n"),
     (r"question mark", "?"), (r"exclamation (?:mark|point)", "!"),
-    (r"full stop", "."), (r"period", "."), (r"comma", ","),
+    (r"full stop", "."),
     (r"colon", ":"), (r"semicolon", ";"),
 ]
+# Rückwärtskompatibilität für Aufrufer, die die gemeinsame Regelmenge lesen.
+PUNCT_RULES = DE_PUNCT_RULES + EN_PUNCT_RULES
+
+_NUMBER_WORDS = {
+    "null", "eins", "ein", "eine", "einen", "einem", "einer", "zwei", "drei",
+    "vier", "fuenf", "fünf", "sechs", "sieben", "acht", "neun", "zehn",
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+    "nine", "ten",
+}
+
+
+def _is_number_word(word):
+    return word.isdigit() or word.lower() in _NUMBER_WORDS
+
+
+def _replace_spoken_comma(match):
+    """Replace a comma word unless it is the decimal separator in spoken prose."""
+    text = match.string
+    before = re.search(r"(\w+)\W*$", text[:match.start()])
+    after = re.match(r"\W*(\w+)", text[match.end():])
+    if before and after and _is_number_word(before.group(1)) and _is_number_word(after.group(1)):
+        return match.group(0)
+    return ","
 
 
 def is_command(text):
     """-> action ('undo' | 'enter') wenn das ganze Diktat ein Kommando ist, sonst None."""
     norm = re.sub(r"[^\wäöüß ]", "", text.lower()).strip()
     norm = " ".join(norm.split())
+    addressed = norm.startswith("quassel ")
+    if addressed:
+        norm = norm.removeprefix("quassel ")
+    # Nackte Einzelwörter sind normale Sprache. Nur mit der Anrede dürfen sie
+    # eine Eingabe auslösen oder das letzte Diktat löschen.
+    if norm in {"undo", "enter"} and not addressed:
+        return None
     return COMMANDS.get(norm)
 
 
-def apply_punctuation(text):
-    for pat, repl in PUNCT_RULES:
+def _rules_for_language(language):
+    language = language.lower() if isinstance(language, str) else "auto"
+    if language == "de":
+        return DE_PUNCT_RULES, ("punkt",), ("komma",)
+    if language == "en":
+        return EN_PUNCT_RULES, ("period",), ("comma",)
+    if language in ("auto", "mixed"):
+        return PUNCT_RULES, ("punkt", "period"), ("komma", "comma")
+    return (), (), ()
+
+
+def apply_punctuation(text, *, language="auto"):
+    rules, terminal_words, comma_words = _rules_for_language(language)
+    for pat, repl in rules:
         if repl.startswith("\n"):
             # Umbruch ersetzt das Wort samt umgebender Leerzeichen/Satzzeichen
             text = re.sub(rf"\s*\b{pat}\b[\s,.]*", repl, text, flags=re.IGNORECASE)
         else:
             # Satzzeichen hängt sich ans vorherige Wort
             text = re.sub(rf"\s*\b{pat}\b", repl, text, flags=re.IGNORECASE)
+    # "Punkt" und "period" sind normale Wörter. Als Satzzeichen gelten sie
+    # deshalb nur am Ende der Äußerung; sonst bleibt z. B. "wichtiger Punkt"
+    # unverändert.
+    if terminal_words:
+        terminal_pattern = "|".join(re.escape(word) for word in terminal_words)
+        text = re.sub(rf"\s*\b(?:{terminal_pattern})\b[\s,.!?]*$", ".", text,
+                      flags=re.IGNORECASE)
+    # "zwei Komma fünf" beschreibt eine Zahl, kein Satzzeichen.
+    if comma_words:
+        comma_pattern = "|".join(re.escape(word) for word in comma_words)
+        text = re.sub(rf"\s*\b(?:{comma_pattern})\b", _replace_spoken_comma, text,
+                      flags=re.IGNORECASE)
     return text
 
 
 def auto_capitalize(text):
     def up(m):
         return m.group(1) + m.group(2).upper()
-    return re.sub(r"(^|[.!?]\s+|\n\s*)([a-zäöü])", up, text)
+    # Unicode: every letter may start a sentence, not only a-z/äöü.
+    return re.sub(r"(^|[.!?]\s+|\n\s*)([^\W\d_])", up, text)
 
 
 def postprocess(raw_text, cfg):
@@ -63,9 +122,10 @@ def postprocess(raw_text, cfg):
         if cmd:
             return "command", cmd
     if cfg.punctuation:
-        text = apply_punctuation(text)
+        text = apply_punctuation(text, language=getattr(cfg, "language", "auto"))
         text = auto_capitalize(text)
-        # Leerzeichen hinter Satzzeichen sicherstellen, Zeilen sauber trimmen
-        text = re.sub(r"([,.!?:;])(?=[A-Za-zÄÖÜäöü])", r"\1 ", text)
+        # Nur vor einem Großbuchstaben beginnt sicher ein neuer Satz. So bleiben
+        # Domains, Dateinamen und Abkürzungen wie github.com oder e.g. ganz.
+        text = re.sub(r"([,.!?:;])(?=[A-ZÀ-ÖØ-Þ])", r"\1 ", text)
         text = "\n".join(line.strip() for line in text.split("\n"))
     return "text", text

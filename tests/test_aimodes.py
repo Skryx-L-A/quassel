@@ -50,21 +50,36 @@ def test_system_for():
 
 
 def test_detect_voice_mode():
-    assert aimodes.detect_voice_mode("as an email, dear team we ship friday") == (
+    assert aimodes.detect_voice_mode("Quassel, as an email, dear team we ship friday") == (
         "email", "dear team we ship friday")
-    assert aimodes.detect_voice_mode("als Liste: Milch Eier Brot")[0] == "bullets"
-    assert aimodes.detect_voice_mode("als Liste: Milch Eier Brot")[1] == "Milch Eier Brot"
+    assert aimodes.detect_voice_mode("Quassel, als Liste: Milch Eier Brot")[0] == "bullets"
+    assert aimodes.detect_voice_mode("Quassel, als Liste: Milch Eier Brot")[1] == "Milch Eier Brot"
     assert aimodes.detect_voice_mode("just normal text") == (None, "just normal text")
     # Umlaut-Trigger und ASCII-Variante sind gleichwertig.
-    assert aimodes.detect_voice_mode("foermlich der Bericht")[0] == "formal"
-    assert aimodes.detect_voice_mode("förmlich der Bericht")[0] == "formal"
-    assert aimodes.detect_voice_mode("förmlich der Bericht")[1] == "der Bericht"
+    assert aimodes.detect_voice_mode("Quassel, foermlich der Bericht")[0] == "formal"
+    assert aimodes.detect_voice_mode("Quassel, förmlich der Bericht")[0] == "formal"
+    assert aimodes.detect_voice_mode("Quassel, förmlich der Bericht")[1] == "der Bericht"
     # Wortgrenze: "formality report" darf NICHT als "formal" matchen.
-    assert aimodes.detect_voice_mode("formality report") == (None, "formality report")
+    assert aimodes.detect_voice_mode("Quassel, formality report") == (None, "Quassel, formality report")
     # Laengster Trigger zuerst: "as an email" schlaegt "as email"-Praefix nicht,
     # aber "turn this into an email" wird ganz konsumiert.
-    assert aimodes.detect_voice_mode("turn this into an email hi there") == (
+    assert aimodes.detect_voice_mode("Quassel, turn this into an email hi there") == (
         "email", "hi there")
+
+
+def test_detect_voice_mode_requires_address():
+    text = "Formal gesehen ist das richtig"
+    assert aimodes.detect_voice_mode(text) == (None, text)
+    assert aimodes.detect_voice_mode("Quassel, formal: der Bericht") == (
+        "formal", "der Bericht")
+
+
+def test_detect_custom_voice_mode_needs_address_and_word_boundary():
+    custom = "tweet=Write a tweet"
+    text = "Quassel, Tweeted yesterday about lunch"
+    assert aimodes.detect_custom_voice_mode(text, custom) == (None, text)
+    assert aimodes.detect_custom_voice_mode("Quassel, tweet: lunch", custom) == (
+        "tweet", "lunch")
 
 
 def test_detect_voice_mode_empty():
