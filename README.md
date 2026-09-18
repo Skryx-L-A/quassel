@@ -4,12 +4,12 @@
 
 **Hold `Ctrl+Meta` (Ctrl+Windows key), speak, release — your words are typed
 wherever your cursor is.** A clean, minimal pill at the bottom of your screen
-shows a live waveform and a live transcript while you speak — inspired by the
+shows an animated listening indicator and a live transcript while you speak — inspired by the
 best commercial dictation apps, but **100 % offline and open source**: speech
 recognition runs locally via [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
 No cloud, no account, no subscription, no telemetry.
 
-**Linux**, **Windows** and **macOS** (Apple Silicon) — Windows build is fresh, see
+**Linux**, **Windows** and **macOS** (Apple Silicon) — Windows build instructions are in
 [windows/build.md](windows/build.md); macOS ships as a DMG, Homebrew cask or
 one-line installer (unsigned — building from source is still available too, see
 [Install → macOS](#macos-apple-silicon) below). Fully offline, no cloud, no account.
@@ -21,7 +21,7 @@ one-line installer (unsigned — building from source is still available too, se
 - **Push-to-talk:** hold `Ctrl+Meta`, talk, release → text is pasted at the cursor
 - **Hands-free mode:** double-tap `Ctrl+Meta`, speak freely, press once → text is pasted
 - **Live preview:** see the transcript in the pill *while* you're still speaking
-- **Minimal pill overlay** with a real microphone waveform — click it to open
+- **Minimal pill overlay** with an animated listening indicator — click it to open
   the control center; resizable, translucent, movable, or turn it off entirely
 - **Control center** for everything — no config files needed: hotkey, language,
   Whisper model (with in-app download), microphone, personal dictionary,
@@ -59,6 +59,7 @@ record → transcribe locally → paste.
 
 - Linux with **systemd** (Fedora/Nobara, Ubuntu/Debian, Arch, openSUSE, …)
 - **PipeWire** (or PulseAudio), **Wayland or X11**, a microphone
+- **Python 3.10 or newer**
 - Optional: NVIDIA GPU (CUDA toolkit) or any Vulkan-capable GPU → much faster
 
 ## Install
@@ -132,7 +133,7 @@ models — nothing is ever downloaded. Runs on x86_64 with glibc ≥ 2.28.
 
 > **Note:** the offline all-in-one package is currently **v2.2.0** (an older
 > build); the quick installer / `git clone … && ./install.sh` above give the
-> latest (**v2.6.0**).
+> latest (**v2.7.0**).
 
 > **Tested:** Fedora / Nobara (daily driver). **Untested but prepared:**
 > Ubuntu/Debian/Mint, Arch and openSUSE — the package lists are verified in
@@ -210,7 +211,8 @@ existing audio files that are not WAV.
 
 Tips: a single short tap cancels; any other key while holding cancels (your
 normal shortcuts keep working); say "scratch that" / „lösch das" to delete the
-last dictation; turning Quassel off frees the GPU memory — handy before gaming.
+last dictation. On macOS, turning Quassel off stops dictation while the speech
+server remains loaded for a quick restart.
 
 ## Uninstall
 

@@ -40,12 +40,14 @@ command -v tar  >/dev/null || { echo "tar wird benötigt.";  exit 1; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 printf '\n\033[1;36m==> Quassel herunterladen…\033[0m\n'
-# Neuesten Release-Tag ermitteln (Fallback: main)
+# Neuesten Release-Tag ermitteln. Eine Installation darf nie still auf
+# unveröffentlichten Branch-Code wechseln.
 TAG="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$REPO/releases/latest" 2>/dev/null | sed 's#.*/##')"
+[[ "$TAG" =~ ^v?[0-9]+(\.[0-9]+){1,3}([.-][A-Za-z0-9]+)?$ ]] \
+    || { echo "Release-Tag konnte nicht sicher ermittelt werden."; exit 1; }
 SRC_URL="$REPO/archive/refs/tags/$TAG.tar.gz"
-[[ -n "$TAG" ]] && curl -fsSL "$SRC_URL" -o "$TMP/src.tgz" 2>/dev/null \
-    || curl -fsSL "$REPO/archive/refs/heads/main.tar.gz" -o "$TMP/src.tgz" \
-    || { echo "Download fehlgeschlagen."; exit 1; }
+curl -fsSL "$SRC_URL" -o "$TMP/src.tgz" \
+    || { echo "Download des Release $TAG fehlgeschlagen."; exit 1; }
 
 tar -xzf "$TMP/src.tgz" -C "$TMP"
 DIR="$(find "$TMP" -maxdepth 1 -type d -name 'quassel-*' | head -1)"

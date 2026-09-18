@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Gibt den ersten ausführbaren Python-Interpreter ab 3.10 aus.
+set -u
+
+for candidate in "$@"; do
+    if [[ -x "$candidate" ]]; then
+        python="$candidate"
+    else
+        python="$(command -v "$candidate" 2>/dev/null || true)"
+    fi
+    [[ -n "$python" ]] || continue
+    if "$python" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' \
+            >/dev/null 2>&1; then
+        printf '%s\n' "$python"
+        exit 0
+    fi
+done
+
+echo "FEHLER/ERROR: Quassel benötigt Python 3.10 oder neuer. Bitte einen passenden Python-Interpreter installieren." >&2
+exit 1

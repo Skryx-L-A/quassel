@@ -183,7 +183,7 @@ Categories=Utility;AudioVideo;
 EOF
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "$ICONS" 2>/dev/null || true
 command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" 2>/dev/null || true
-ok "App „Quassel" im Startmenü"
+ok 'App „Quassel“ im Startmenü'
 
 echo
 ok "Fertig! Engine=$ENGINE, Modell=$MODEL — KEIN Internet nötig."

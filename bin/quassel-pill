@@ -8,4 +8,6 @@ for p in /usr/lib64/libgtk4-layer-shell.so.0 \
     [[ -e "$p" ]] && export LD_PRELOAD="$p" && break
 done
 export PYTHONPATH="$HOME/.local/lib/quassel${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m quassel.pill
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$("$HERE/quassel-python" python3.13 python3.12 python3.11 python3.10 python3)"
+exec "$PY" -m quassel.pill

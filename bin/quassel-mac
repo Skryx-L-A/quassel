@@ -2,7 +2,7 @@
 # Quassel für macOS: whisper-server + Hotkey-Daemon + Pille + Menüleisten-Icon
 # in einem Aufruf (Gegenstück zu den systemd-Units auf Linux).
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PY="$HERE/.venv/bin/python3"
-[[ -x "$PY" ]] || PY=python3
+PY="$("$HERE/bin/quassel-python" "$HERE/.venv/bin/python3" \
+    python3.13 python3.12 python3.11 python3.10 python3)"
 cd "$HERE"
 exec "$PY" -m quassel.mac_app "$@"

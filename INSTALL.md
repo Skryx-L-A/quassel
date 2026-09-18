@@ -8,6 +8,7 @@
   Ubuntu / Debian, Arch / Manjaro, openSUSE
 - **Wayland or X11** desktop (KDE, GNOME, etc.) and **PipeWire** or PulseAudio
 - A working microphone
+- **Python 3.10 or newer**
 - ~2 GB free disk space (whisper.cpp build + speech model)
 - Optional but recommended: a GPU — **NVIDIA** (CUDA toolkit installed) or any **Vulkan-capable**
   AMD/Intel/NVIDIA card → much faster transcription and a better default model
@@ -37,20 +38,27 @@ password), sets up keyboard permissions, builds whisper.cpp, downloads a
 speech model, and installs the app. It is safe to re-run; finished steps are
 skipped.
 
-Optional: choose the speech model yourself (default is automatic —
-`large-v3-turbo` with a GPU, `small` on CPU):
+Optional: choose the speech model yourself. The automatic choice uses
+`large-v3-turbo` or `medium` with NVIDIA, `large-v3-turbo-q5_0` on Apple
+Silicon, `small-q5_1` on CPUs with four or more cores, and `base-q5_1` on
+smaller CPUs:
 
 ```bash
-./install.sh --model base    # tiny | base | small | medium | large-v3-turbo
+./install.sh --model small-q5_1
 ```
 
 | Model | Size | Quality | CPU-friendly? |
 |---|---|---|---|
 | tiny | 75 MB | low | yes |
 | base | 142 MB | okay | yes |
+| base-q5_1 | quantized base | good | yes |
 | small | 466 MB | good | yes |
+| small-q5_1 | quantized small | good | yes |
 | medium | 1.5 GB | very good | slow |
+| medium-q5_0 | quantized medium | very good | limited |
 | large-v3-turbo | 1.6 GB | best | needs GPU for speed |
+| large-v3-turbo-q5_0 | quantized turbo | best | limited |
+| large-v3 | full-size model | best | no |
 
 ### 4. Log out and back in (only if the script says so)
 
@@ -94,6 +102,7 @@ loading); after that it is fast.
 - Linux mit **systemd** (Fedora/Nobara, Ubuntu/Debian, Arch, openSUSE)
 - **Wayland oder X11** (KDE, GNOME, …) und **PipeWire** oder PulseAudio
 - Funktionierendes Mikrofon, ~2 GB freier Speicherplatz
+- **Python 3.10 oder neuer**
 - Optional: **NVIDIA-GPU mit CUDA-Toolkit** (`nvcc`) → deutlich schneller
 
 ### 2. Herunterladen
@@ -113,7 +122,9 @@ cd quassel
 
 Das Skript erledigt alles (Pakete, Berechtigungen, whisper.cpp-Build,
 Modell-Download, App). Es kann gefahrlos erneut ausgeführt werden.
-Modellwahl optional: `./install.sh --model base` (siehe Tabelle oben).
+Modellwahl optional, zum Beispiel: `./install.sh --model small-q5_1`.
+Die vollständige Liste mit quantisierten q5-Modellen steht in der englischen
+Tabelle oben.
 
 ### 4. Einmal ab- und anmelden
 

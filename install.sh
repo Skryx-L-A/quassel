@@ -81,13 +81,16 @@ else
 fi
 
 MISSING=""
-for c in git cmake curl ydotool ydotoold notify-send python3; do
+for c in git cmake curl ydotool ydotoold notify-send; do
     command -v "$c" >/dev/null || MISSING="$MISSING $c"
 done
 command -v pw-record >/dev/null || command -v parecord >/dev/null || MISSING="$MISSING pw-record/parecord"
-python3 -c "import gi; gi.require_version('Gtk','4.0')" 2>/dev/null || MISSING="$MISSING python3-gobject+gtk4"
+if ! APP_PY="$("$SRC/bin/quassel-python" python3.13 python3.12 python3.11 python3.10 python3)"; then
+    die "Python 3.10 oder neuer fehlt. Bitte einen passenden Python-Interpreter installieren."
+fi
+"$APP_PY" -c "import gi; gi.require_version('Gtk','4.0')" 2>/dev/null || MISSING="$MISSING python3-gobject+gtk4"
 [[ -n "$MISSING" ]] && die "Fehlende Abhängigkeiten:$MISSING – bitte nachinstallieren, dann Skript erneut starten."
-ok "Alle Pflicht-Abhängigkeiten vorhanden"
+ok "Alle Pflicht-Abhängigkeiten vorhanden (Python: $($APP_PY --version))"
 
 # ----------------------------------------------------------------------------
 say "2/8  Berechtigungen (Tastatur lesen + virtuelle Tastatur)"
@@ -173,11 +176,13 @@ say "4/8  Sprachmodell(e) laden"
 mkdir -p "$DATA/models"
 HF="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 dl_model() {
-    local m="$1" f="ggml-$1.bin"
-    [[ -s "$DATA/models/$f" ]] && return 0
+    local m="$1" f="ggml-$1.bin" target="$DATA/models/$f" part="$DATA/models/$f.part"
+    [[ -s "$target" ]] && return 0
     echo "    Lade Modell '$m' (75 MB – 1,6 GB)…"
-    curl -L --fail --progress-bar -o "$DATA/models/$f" "$HF/$f" \
-        || die "Modell-Download fehlgeschlagen: $m"
+    rm -f "$part"
+    curl -L --fail --progress-bar -o "$part" "$HF/$f" \
+        || { rm -f "$part"; die "Modell-Download fehlgeschlagen: $m"; }
+    mv "$part" "$target"
 }
 # Standardmodell: mit GPU das volle large-v3-turbo; ohne GPU ein QUANTISIERTES
 # Modell passend zur CPU (hwdetect: medium-q5/small-q5/base-q5) — auf CPU klar
@@ -186,7 +191,7 @@ if [[ -z "$MODEL" ]]; then
     if [[ "$HAS_GPU" -eq 1 ]]; then
         MODEL="large-v3-turbo"
     else
-        MODEL=$(PYTHONPATH="$SRC" python3 -c \
+        MODEL=$(PYTHONPATH="$SRC" "$APP_PY" -c \
             "from quassel.hwdetect import default_model_for_hardware as d; print(d())" \
             2>/dev/null || echo "small-q5_1")
     fi
@@ -204,9 +209,12 @@ ok "Modell: $MODELFILE  (Standard für diese Hardware)"
 # ohne VAD weiter.
 VAD_PATH="$DATA/models/ggml-silero-v5.1.2.bin"
 if [[ ! -s "$VAD_PATH" ]]; then
-    curl -L --fail -s -o "$VAD_PATH" \
+    VAD_PART="$VAD_PATH.part"
+    rm -f "$VAD_PART"
+    curl -L --fail -s -o "$VAD_PART" \
         "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin" \
-        || { warn "VAD-Modell-Download fehlgeschlagen — VAD bleibt aus"; VAD_PATH=""; }
+        || { rm -f "$VAD_PART"; warn "VAD-Modell-Download fehlgeschlagen — VAD bleibt aus"; VAD_PATH=""; }
+    [[ -n "$VAD_PATH" ]] && mv "$VAD_PART" "$VAD_PATH"
 fi
 [[ -n "$VAD_PATH" ]] && ok "VAD-Modell bereit (Stille wird übersprungen)"
 
@@ -214,10 +222,11 @@ fi
 say "5/8  Qt-Oberfläche einrichten (PySide6 in eigener venv, ~150 MB einmalig)"
 # ----------------------------------------------------------------------------
 if [[ ! -x "$VENV/bin/python3" ]]; then
-    python3 -m venv "$VENV"
+    "$APP_PY" -m venv "$VENV"
 fi
-"$VENV/bin/pip" install --quiet --upgrade pip PySide6 || die "PySide6-Installation fehlgeschlagen"
-ok "PySide6 bereit"
+"$VENV/bin/python3" -m pip install --quiet --requirement "$SRC/requirements.txt" \
+    || die "Python-Abhängigkeiten konnten nicht installiert werden"
+ok "Python-Abhängigkeiten bereit"
 
 # ----------------------------------------------------------------------------
 say "6/8  Quassel installieren"
@@ -227,7 +236,7 @@ cp -r "$SRC/quassel" "$LIB/quassel"
 rm -rf "$LIB/assets"
 cp -r "$SRC/assets" "$LIB/assets"        # Icon-Fallback + Ton-Dateien (beep)
 install -m 755 "$SRC/bin/quasseld" "$SRC/bin/quassel-type" "$SRC/bin/quassel-pill" \
-               "$SRC/bin/quassel-ctl" "$BIN/"
+               "$SRC/bin/quassel-ctl" "$SRC/bin/quassel-python" "$BIN/"
 mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/share/applications" \
          "$HOME/.config/quassel"
 install -m 644 "$SRC"/systemd/*.service "$HOME/.config/systemd/user/"
