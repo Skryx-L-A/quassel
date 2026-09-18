@@ -49,3 +49,11 @@ def test_requirements_are_pinned_and_used_by_the_linux_installer():
 
     installer = (ROOT / "install.sh").read_text(encoding="utf-8")
     assert '--requirement "$SRC/requirements.txt"' in installer
+
+
+def test_ci_has_the_supported_platform_and_python_matrix():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8")
+    assert "ubuntu-latest, macos-latest, windows-latest" in workflow
+    assert 'python: ["3.10", "3.11", "3.12", "3.13"]' in workflow
+    assert "actions/setup-python@v6" in workflow
