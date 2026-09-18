@@ -101,3 +101,12 @@ def test_model_downloads_only_publish_complete_files():
     assert 'mv "$part" "$target"' in installer
     assert 'VAD_PART="$VAD_PATH.part"' in installer
     assert 'mv "$VAD_PART" "$VAD_PATH"' in installer
+
+
+def test_macos_installer_requires_a_checksum_unless_explicitly_overridden():
+    installer = (ROOT / "scripts" / "quassel-install-macos.sh").read_text(
+        encoding="utf-8")
+    assert "ALLOW_UNVERIFIED=0" in installer
+    assert "--allow-unverified" in installer
+    assert 'if [[ "$ALLOW_UNVERIFIED" -eq 1 ]]' in installer
+    assert "Prüfsummendatei fehlt" in installer

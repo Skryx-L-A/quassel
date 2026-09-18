@@ -13,12 +13,32 @@
 #  Auch als heruntergeladene Datei lauffähig:
 #     bash quassel-install-macos.sh
 #
+#  Fehlt die Prüfsumme, bricht das Skript ab. Nur nach unabhängiger Prüfung
+#  darf dies bewusst übergangen werden:
+#     bash quassel-install-macos.sh --allow-unverified
+#
 #  Für Tests/Entwicklung kann die Quelle überschrieben werden (kein Download
 #  vom Internet nötig):
 #     QUASSEL_DMG_URL="file:///pfad/zu/Quassel-macOS-arm64.dmg" bash quassel-install-macos.sh
 # ============================================================================
 set -euo pipefail
 REPO="https://github.com/Skryx-L-A/quassel"
+ALLOW_UNVERIFIED=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --allow-unverified) ALLOW_UNVERIFIED=1 ;;
+        -h|--help)
+            sed -n '2,25p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "FEHLER: Unbekannte Option: $1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
 
 command -v curl >/dev/null || { echo "curl wird benötigt."; exit 1; }
 command -v hdiutil >/dev/null || { echo "hdiutil wird benötigt (nur auf macOS vorhanden)."; exit 1; }
@@ -76,7 +96,13 @@ if fetch "$SHA_URL" "$TMP/Quassel.dmg.sha256" 2>/dev/null; then
     fi
     echo "SHA256 geprüft: OK"
 else
-    echo "Hinweis: keine Prüfsummendatei gefunden — SHA256-Prüfung übersprungen."
+    if [[ "$ALLOW_UNVERIFIED" -eq 1 ]]; then
+        echo "WARNUNG: keine Prüfsummendatei gefunden; Installation auf ausdrücklichen Wunsch unbestätigt."
+    else
+        echo "FEHLER: Prüfsummendatei fehlt. Abbruch zum Schutz vor einer unbestätigten DMG."
+        echo "       Nur nach unabhängiger Prüfung erneut mit --allow-unverified ausführen."
+        exit 1
+    fi
 fi
 
 printf '\033[1;36m==> Image mounten…\033[0m\n'
