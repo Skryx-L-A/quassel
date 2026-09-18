@@ -15,6 +15,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Programmer dictation no longer rewrites ordinary prose. With the mode on, "Punkt gleich
+  wichtig" became ".= wichtig" and "at" became "@" in every sentence. Code is now only
+  formatted when you start the dictation with "Code:". If you relied on the mode being
+  always active, say "Code:" first.
+- Your own AI modes are only triggered by their full name. A mode called "tweet" used to
+  fire on "Tweeted yesterday …" and ate the first five letters.
 - With the AI clean-up on, Ollama now keeps the model loaded for 30 minutes
   after each use instead of its default five. Anyone who dictates with pauses
   of more than five minutes used to pay the cold start again, which takes 20 to

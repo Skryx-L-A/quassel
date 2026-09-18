@@ -554,7 +554,7 @@ class Daemon:
     def _refine_mechanical(self, text):
         """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
         if self.cfg.programmer_mode:
-            text = progmode.apply(text)
+            text = progmode.apply_if_addressed(text)
         if self.cfg.text_replace:
             rules = config.replacement_rules()
             if rules:
@@ -588,13 +588,8 @@ class Daemon:
 
     def _detect_custom_voice(self, text):
         """Eigenen Modusnamen als Eröffnungsphrase erkennen ('tweet: …')."""
-        custom = aimodes.parse_custom(getattr(self.cfg, "ai_modes_text", "") or "")
-        low = text.lower().strip()
-        for name in sorted(custom, key=len, reverse=True):
-            if low.startswith(name):
-                rest = text.strip()[len(name):].lstrip(" ,:").strip()
-                return name, rest
-        return None, text
+        return aimodes.detect_custom_voice_mode(
+            text, getattr(self.cfg, "ai_modes_text", "") or "")
 
     def _after_insert(self, value, seconds=0.0):
         """Nach dem Einfügen: Verlauf, Statistik, Wörterbuch-Lernen."""
