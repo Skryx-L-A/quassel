@@ -26,6 +26,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   accidentally activate a second replacement rule.
 - Voice-triggered AI modes now require the explicit address "Quassel,". This
   keeps ordinary sentence openings such as "Formal gesehen …" intact.
+- The one-word commands "Enter" and "Undo" are now ordinary dictation unless
+  they are addressed as "Quassel, Enter" or "Quassel, Undo".
 
 ## [2.7.0] - 2026-08-04
 

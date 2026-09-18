@@ -54,6 +54,13 @@ def is_command(text):
     """-> action ('undo' | 'enter') wenn das ganze Diktat ein Kommando ist, sonst None."""
     norm = re.sub(r"[^\wäöüß ]", "", text.lower()).strip()
     norm = " ".join(norm.split())
+    addressed = norm.startswith("quassel ")
+    if addressed:
+        norm = norm.removeprefix("quassel ")
+    # Nackte Einzelwörter sind normale Sprache. Nur mit der Anrede dürfen sie
+    # eine Eingabe auslösen oder das letzte Diktat löschen.
+    if norm in {"undo", "enter"} and not addressed:
+        return None
     return COMMANDS.get(norm)
 
 

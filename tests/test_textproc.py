@@ -31,6 +31,13 @@ def test_not_a_command():
     assert k == "text"
 
 
+def test_one_word_commands_require_address():
+    assert textproc.is_command("undo") is None
+    assert textproc.is_command("enter") is None
+    assert textproc.is_command("Quassel, undo") == "undo"
+    assert textproc.is_command("Quassel, enter") == "enter"
+
+
 def test_punctuation_and_caps():
     k, v = textproc.postprocess("hallo komma welt punkt", Cfg())
     assert (k, v) == ("text", "Hallo, welt."), (k, v)
