@@ -42,11 +42,18 @@ PARTIAL_WINDOW = 15
 PARTIAL_MAX_WAIT = 10.0
 
 
-def postprocess_transcript(raw_text, cfg):
+def postprocess_transcript(raw_text, cfg, language=None):
     """Bekannte Stille-Antworten wie ein leeres Diktat behandeln."""
     if dictprompt.is_silence_hallucination(raw_text):
         return None, None
-    return textproc.postprocess(raw_text, cfg)
+    if language is None:
+        return textproc.postprocess(raw_text, cfg)
+    cfg_with_language = type("CfgWithLanguage", (), {
+        "commands": getattr(cfg, "commands", True),
+        "punctuation": getattr(cfg, "punctuation", True),
+        "language": language,
+    })()
+    return textproc.postprocess(raw_text, cfg_with_language)
 
 
 DEBUG_LOG_MAX = 1_000_000   # ab ~1 MB eine Generation wegrotieren
@@ -132,7 +139,8 @@ class PartialWorker(threading.Thread):
                 if self.stop_event.is_set() or not self.rec.active:
                     return
                 t = time.monotonic()
-                text = whisperclient.transcribe(PARTWAV, self.cfg, timeout=20)
+                result = whisperclient.transcribe_result(PARTWAV, self.cfg, timeout=20)
+                text = result.text
                 dlog("partial: transcribe %.2fs (%d Bytes Audio)"
                      % (time.monotonic() - t, len(data)))
                 # Ehrlich bleiben: die HTTP-Anfrage lässt sich clientseitig
@@ -140,7 +148,8 @@ class PartialWorker(threading.Thread):
                 # das Finale wartet trotzdem dahinter. Hier wird nur noch das
                 # ERGEBNIS verworfen, kein Zeitgewinn erzielt.
                 if text is not None and not self.stop_event.is_set() and self.rec.active:
-                    kind, clean = postprocess_transcript(text, self.cfg)
+                    kind, clean = postprocess_transcript(text, self.cfg,
+                                                         result.language or getattr(self.cfg, "language", "auto"))
                     if kind == "text":
                         self.on_partial(clean)
             finally:
@@ -590,14 +599,16 @@ class WinApp(QObject):
         dlog("transcribe: ensure_server %.2fs" % (time.monotonic() - t))
         wav_from_raw(data, WAV)
         t = time.monotonic()
-        raw = whisperclient.transcribe(WAV, self.cfg)
+        result = whisperclient.transcribe_result(WAV, self.cfg)
+        raw = result.text
         dlog("transcribe: inference %.2fs (%d Bytes Audio)"
              % (time.monotonic() - t, len(data)))
         if raw is None:
             self.sig_state.emit("error", tr("no_server"))
             return
         from .paste import streaming_restore
-        kind, value = postprocess_transcript(raw, self.cfg)
+        kind, value = postprocess_transcript(raw, self.cfg,
+                                              result.language or getattr(self.cfg, "language", "auto"))
         if kind is None:
             if self.streamer is not None:
                 streaming_restore(self._clip_backup)

@@ -270,8 +270,26 @@ def speech_backend():
 
 def transcribe(wavpath, cfg, timeout=120, prompt_extra=None):
     """Abwärtskompatible dünne Hülle um das Standard-Sprachbackend."""
+    return transcribe_result(wavpath, cfg, timeout, prompt_extra).text
+
+
+_transcribe_compat = transcribe
+
+
+def transcribe_result(wavpath, cfg, timeout=120, prompt_extra=None):
+    """Backend-Ergebnis einschließlich erkannter Sprache."""
+    # Bestehende Integrationen und Tests dürfen weiterhin nur ``transcribe``
+    # ersetzen. Sie liefern noch Text statt SpeechResult; die konfigurierte
+    # Sprache bleibt dort der sichere Rückfall.
+    if transcribe is not _transcribe_compat:
+        from .backends import SpeechResult
+        kwargs = {"timeout": timeout}
+        if prompt_extra is not None:
+            kwargs["prompt_extra"] = prompt_extra
+        return SpeechResult(transcribe(wavpath, cfg, **kwargs),
+                            language=getattr(cfg, "language", None))
     from .backends import TranscriptionOptions
     opts = TranscriptionOptions(
         cfg=cfg, timeout=timeout, prompt_extra=prompt_extra,
         language_hint=getattr(cfg, "language", None))
-    return speech_backend().transcribe(wavpath, opts).text
+    return speech_backend().transcribe(wavpath, opts)

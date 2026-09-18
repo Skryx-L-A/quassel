@@ -82,6 +82,14 @@ def test_daemon_treats_known_silence_hallucinations_as_no_text():
         (None, None)
 
 
+def test_daemon_uses_detected_language_for_punctuation():
+    from quassel import daemon
+    cfg = Cfg()
+    cfg.language = "de"
+    assert daemon.postprocess_transcript("hello question mark", cfg, "en") == \
+        ("text", "Hello?")
+
+
 if __name__ == "__main__":
     for fn in [test_command_undo, test_command_enter, test_not_a_command,
                test_punctuation_and_caps, test_commands_disabled_passes_through]:

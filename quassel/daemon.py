@@ -68,11 +68,18 @@ PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
 PARTIAL_MAX_WAIT = 10.0
 
 
-def postprocess_transcript(raw_text, cfg):
+def postprocess_transcript(raw_text, cfg, language=None):
     """Bekannte Stille-Antworten wie ein leeres Diktat behandeln."""
     if dictprompt.is_silence_hallucination(raw_text):
         return None, None
-    return textproc.postprocess(raw_text, cfg)
+    if language is None:
+        return textproc.postprocess(raw_text, cfg)
+    cfg_with_language = type("CfgWithLanguage", (), {
+        "commands": getattr(cfg, "commands", True),
+        "punctuation": getattr(cfg, "punctuation", True),
+        "language": language,
+    })()
+    return textproc.postprocess(raw_text, cfg_with_language)
 
 # Eigene Roh-/WAV-Dateien für den Wake-Listener (getrennt vom Tastatur-Pfad)
 WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
@@ -142,14 +149,16 @@ class PartialLoop(threading.Thread):
                 # ihm in die Warteschlange des Servers stellen.
                 if self.stop_event.is_set() or not self.rec.active:
                     return
-                raw = whisperclient.transcribe(PARTWAV, self.cfg, timeout=20)
+                result = whisperclient.transcribe_result(PARTWAV, self.cfg, timeout=20)
+                raw = result.text
                 # Ehrlich bleiben: die HTTP-Anfrage selbst lässt sich
                 # clientseitig nicht abbrechen, sie läuft am Server so oder so
                 # durch, und das Finale wartet trotzdem dahinter. Hier wird
                 # nur noch das ERGEBNIS verworfen, kein Zeitgewinn erzielt.
                 if raw is None or self.stop_event.is_set() or not self.rec.active:
                     continue
-                kind, text = postprocess_transcript(raw, self.cfg)
+                kind, text = postprocess_transcript(
+                    raw, self.cfg, result.language or getattr(self.cfg, "language", "auto"))
                 if kind != "text":
                     continue
                 streamer = self.owner.streamer
@@ -441,7 +450,8 @@ class Daemon:
             self._fail_with_rescue(data, streamer, clip_backup)
             return
         wav_from_raw(data, WAV)
-        raw_text = whisperclient.transcribe(WAV, self.cfg)
+        result = whisperclient.transcribe_result(WAV, self.cfg)
+        raw_text = result.text
         if raw_text is None:
             self._fail_with_rescue(data, streamer, clip_backup)
             return
@@ -453,7 +463,8 @@ class Daemon:
                 streaming_restore(clip_backup)
             state_set("idle")
             return
-        kind, value = postprocess_transcript(raw_text, self.cfg)
+        kind, value = postprocess_transcript(raw_text, self.cfg,
+                                              result.language or getattr(self.cfg, "language", "auto"))
         if kind is None:
             if streamer is not None:
                 streaming_restore(clip_backup)
