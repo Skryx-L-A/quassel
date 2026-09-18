@@ -28,6 +28,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- macOS can again copy history and file-transcription results without relying
+  on the Linux-only `xclip` command.
 - Known Whisper silence hallucinations, such as “Thank you for watching”, are
   now discarded instead of being inserted as dictated text.
 - Automatic dictionary learning no longer picks up junk or deletes your own

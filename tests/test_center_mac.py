@@ -134,6 +134,19 @@ def test_restart_server_uses_server_mac(mac, monkeypatch):
     assert calls == ["kill", "start"]
 
 
+def test_history_and_file_copy_use_mac_clipboard(mac, monkeypatch, qapp, isolated_cfg):
+    copied = []
+    monkeypatch.setattr(center, "clip_copy", copied.append)
+    c = center.Center()
+    try:
+        item = type("Item", (), {"data": lambda self, role: "again"})()
+        c.on_hist_click(item)
+        c.on_file_done("ok", "file result")
+    finally:
+        c.close()
+    assert copied == ["again", "file result"]
+
+
 # --------------------------------- Signaltoene: Ausgabegeraet (nur macOS)
 
 def test_beep_out_combo_lists_system_first(mac, qapp, isolated_cfg, fake_outputs):

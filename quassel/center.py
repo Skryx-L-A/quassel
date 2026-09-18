@@ -33,6 +33,9 @@ from .state import RUNDIR
 if os.name == "nt":
     from .win.audio_win import list_mics
     from .win.paste import clip_copy
+elif sys.platform == "darwin":
+    from .audio import list_mics, record_command
+    from .platform_mac import clip_copy
 else:
     from .audio import list_mics, record_command
     from .platform_linux import clip_copy
