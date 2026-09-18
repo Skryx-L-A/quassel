@@ -93,6 +93,12 @@ def test_learn_returns_full_dict_and_added_subset():
     assert added == ["NASA", "GPU"]   # PyTorch war schon da
 
 
+def test_learn_needs_two_occurrences_when_given_a_counter_file(tmp_path):
+    counter = tmp_path / "dictionary-counts.json"
+    assert learn.learn("PyTorch", [], counter_path=str(counter))[1] == []
+    assert learn.learn("PyTorch", [], counter_path=str(counter))[1] == ["PyTorch"]
+
+
 if __name__ == "__main__":
     for fn in [
         test_camelcase_allcaps_detected_not_sentence_start,

@@ -11,7 +11,10 @@ gelernt -- nur Tokens, die klar nach Namen/Bezeichnern/Jargon aussehen.
 Reine Funktionen ohne Datei-IO; der Aufrufer kuemmert sich um die Persistenz
 (config.dictionary_learn liest frisch, fuehrt zusammen und schreibt atomar).
 """
+import json
 import re
+
+from . import fsutil
 
 # Zeichen, die rund um ein Token entfernt werden (Satzzeichen, Klammern, Quotes).
 # Bindestrich/Apostroph/Slash bleiben im Wortinneren erhalten.
@@ -128,13 +131,36 @@ def merge_into_dictionary(new_words: list[str], existing: list[str],
     return result
 
 
-def learn(text: str, existing: list[str],
-          cap: int = 500) -> tuple[list[str], list[str]]:
+def _confirmed_words(words, counter_path):
+    """Wörter erst beim zweiten Vorkommen freigeben; Datei enthält nur Wörter."""
+    try:
+        with open(counter_path, encoding="utf-8") as f:
+            counts = json.load(f)
+        if not isinstance(counts, dict):
+            counts = {}
+    except (OSError, ValueError, TypeError):
+        counts = {}
+    confirmed = []
+    for word in words:
+        counts[word] = min(int(counts.get(word, 0)) + 1, 2)
+        if counts[word] >= 2:
+            confirmed.append(word)
+    while len(counts) > 500:
+        counts.pop(next(iter(counts)))
+    fsutil.atomic_write(counter_path, json.dumps(counts, ensure_ascii=False) + "\n")
+    return confirmed
+
+
+def learn(text: str, existing: list[str], cap: int = 500,
+          counter_path=None) -> tuple[list[str], list[str]]:
     """Bequemlichkeit: erkennt Jargon und fuehrt ihn ins Woerterbuch ein.
 
     Liefert (neues_vollstaendiges_woerterbuch, tatsaechlich_hinzugefuegte_woerter);
     passt wegen cap nicht alles hinein, steht in der zweiten Liste nur, was
     wirklich aufgenommen wurde.
     """
-    merged = merge_into_dictionary(jargon_words(text), existing, cap)
+    words = jargon_words(text)
+    if counter_path is not None:
+        words = _confirmed_words(words, counter_path)
+    merged = merge_into_dictionary(words, existing, cap)
     return merged, merged[len(existing):]

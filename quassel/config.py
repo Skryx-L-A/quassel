@@ -40,6 +40,7 @@ MODELDIR = os.path.join(SHARED_DATADIR, "models")
 CONFIG = os.path.join(CONFDIR, "config.ini")
 SERVERENV = os.path.join(CONFDIR, "server.env")
 DICTIONARY = os.path.join(CONFDIR, "dictionary.txt")
+LEARN_COUNTS = os.path.join(CONFDIR, "dictionary-counts.json")
 REPLACEMENTS = os.path.join(CONFDIR, "replacements.txt")
 AI_MODES = os.path.join(CONFDIR, "ai_modes.txt")
 HISTORY = os.path.join(DATADIR, "history.jsonl")
@@ -302,7 +303,8 @@ def dictionary_learn(text, cap=500):
     from . import learn      # erst hier: learn kennt config nicht
     with _dictionary_lock:
         _dictionary_cache["key"] = None
-        merged, added = learn.learn(text, dictionary_words(), cap)
+        merged, added = learn.learn(text, dictionary_words(), cap,
+                                    counter_path=LEARN_COUNTS)
         if added:
             dictionary_save("\n".join(merged))
     return added

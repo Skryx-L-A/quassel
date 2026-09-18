@@ -15,6 +15,7 @@ from quassel import config
 def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
     monkeypatch.setattr(config, "DICTIONARY", str(tmp_path / "dictionary.txt"))
+    monkeypatch.setattr(config, "LEARN_COUNTS", str(tmp_path / "dictionary-counts.json"))
     config._dictionary_cache["key"] = None
     config._dictionary_cache["words"] = []
 
@@ -287,6 +288,7 @@ def test_learning_reads_the_file_fresh_and_keeps_what_was_added_meanwhile(tmp_pa
     with open(config.DICTIONARY, "w", encoding="utf-8") as f:   # von außen ersetzt
         f.write("Alpha\nGamma")                                # gleiche Länge
     os.utime(config.DICTIONARY, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert config.dictionary_learn("Ich nutze PyTorch") == []
     assert config.dictionary_learn("Ich nutze PyTorch") == ["PyTorch"]
     assert config.dictionary_words() == ["Alpha", "Gamma", "PyTorch"]
 
@@ -315,6 +317,7 @@ def test_two_learners_at_once_lose_no_word(tmp_path, monkeypatch):
 
     def learn_many(prefix):
         for i in range(25):
+            config.dictionary_learn("Wort %sX%d" % (prefix, i))
             config.dictionary_learn("Wort %sX%d" % (prefix, i))
     threads = [threading.Thread(target=learn_many, args=(p,)) for p in ("a", "b")]
     for t in threads:
