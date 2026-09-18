@@ -76,6 +76,12 @@ def test_commands_disabled_passes_through():
     assert k == "text", (k, v)
 
 
+def test_daemon_treats_known_silence_hallucinations_as_no_text():
+    from quassel import daemon
+    assert daemon.postprocess_transcript("Thank you for watching.", Cfg()) == \
+        (None, None)
+
+
 if __name__ == "__main__":
     for fn in [test_command_undo, test_command_enter, test_not_a_command,
                test_punctuation_and_caps, test_commands_disabled_passes_through]:

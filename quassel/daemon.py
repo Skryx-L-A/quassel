@@ -19,7 +19,7 @@ import threading
 import time
 
 from . import __version__
-from . import (aimodes, beep, config, i18n, learn, progmode, stats, textproc,
+from . import (aimodes, beep, config, dictprompt, i18n, learn, progmode, stats, textproc,
                textreplace, vad, wakeword, whisperclient)
 from .mediacontrol import AudioDucker
 from .streaming import StreamTyper
@@ -66,6 +66,13 @@ PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
 # Mindestabstands -- genug Puffer für eine kurze Verlangsamung, aber die
 # Vorschau meldet sich spätestens nach 10 s wieder.
 PARTIAL_MAX_WAIT = 10.0
+
+
+def postprocess_transcript(raw_text, cfg):
+    """Bekannte Stille-Antworten wie ein leeres Diktat behandeln."""
+    if dictprompt.is_silence_hallucination(raw_text):
+        return None, None
+    return textproc.postprocess(raw_text, cfg)
 
 # Eigene Roh-/WAV-Dateien für den Wake-Listener (getrennt vom Tastatur-Pfad)
 WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
@@ -142,7 +149,7 @@ class PartialLoop(threading.Thread):
                 # nur noch das ERGEBNIS verworfen, kein Zeitgewinn erzielt.
                 if raw is None or self.stop_event.is_set() or not self.rec.active:
                     continue
-                kind, text = textproc.postprocess(raw, self.cfg)
+                kind, text = postprocess_transcript(raw, self.cfg)
                 if kind != "text":
                     continue
                 streamer = self.owner.streamer
@@ -446,7 +453,7 @@ class Daemon:
                 streaming_restore(clip_backup)
             state_set("idle")
             return
-        kind, value = textproc.postprocess(raw_text, self.cfg)
+        kind, value = postprocess_transcript(raw_text, self.cfg)
         if kind is None:
             if streamer is not None:
                 streaming_restore(clip_backup)
@@ -685,7 +692,7 @@ class Daemon:
         return text
 
     def _wake_insert(self, raw_text):
-        kind, value = textproc.postprocess(raw_text, self.cfg)
+        kind, value = postprocess_transcript(raw_text, self.cfg)
         if kind != "text" or not value.strip():
             return
         value = self._refine(value)

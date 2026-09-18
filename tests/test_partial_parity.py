@@ -34,3 +34,19 @@ def test_partial_loop_constants_match_between_daemon_and_win_app():
         f"win/app.py fehlen Konstanten: {set(CONSTANTS) - set(win_consts)}"
     assert daemon_consts == win_consts, \
         f"Werte weichen ab: daemon.py={daemon_consts} win/app.py={win_consts}"
+
+
+def test_b37_silence_filter_is_wired_on_both_dictation_paths():
+    """Die Windows-Kopie folgt dem Daemon, ohne sie auf Linux importieren zu müssen."""
+    for path in (DAEMON, WIN_APP):
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=path)
+        helper = next(node for node in tree.body
+                      if isinstance(node, ast.FunctionDef)
+                      and node.name == "postprocess_transcript")
+        assert any(isinstance(node, ast.Call)
+                   and isinstance(node.func, ast.Attribute)
+                   and isinstance(node.func.value, ast.Name)
+                   and node.func.value.id == "dictprompt"
+                   and node.func.attr == "is_silence_hallucination"
+                   for node in ast.walk(helper))

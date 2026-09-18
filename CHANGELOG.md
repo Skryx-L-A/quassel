@@ -28,6 +28,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Known Whisper silence hallucinations, such as “Thank you for watching”, are
+  now discarded instead of being inserted as dictated text.
 - Automatic dictionary learning no longer picks up junk or deletes your own
   words. It used to learn things like `2nd`, `10pm`, `5EUR`, `100km`, `20er`,
   `3D` and `OK`; numbers with a unit or ordinal ending and a few everyday

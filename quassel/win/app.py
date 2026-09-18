@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from .. import (__version__, aimodes, beep, config, i18n, learn, progmode, stats,
+from .. import (__version__, aimodes, beep, config, dictprompt, i18n, learn, progmode, stats,
                 textproc, textreplace, vad, wakeword, whisperclient)
 from ..audio import RATE, SAMPLE_BYTES, wav_from_raw
 from ..config import CHORDS
@@ -40,6 +40,13 @@ PARTIAL_WINDOW = 15
 # Mindestabstands, ein einzelner langsamer Durchlauf verstummt die Vorschau
 # nicht minutenlang).
 PARTIAL_MAX_WAIT = 10.0
+
+
+def postprocess_transcript(raw_text, cfg):
+    """Bekannte Stille-Antworten wie ein leeres Diktat behandeln."""
+    if dictprompt.is_silence_hallucination(raw_text):
+        return None, None
+    return textproc.postprocess(raw_text, cfg)
 
 
 DEBUG_LOG_MAX = 1_000_000   # ab ~1 MB eine Generation wegrotieren
@@ -133,7 +140,7 @@ class PartialWorker(threading.Thread):
                 # das Finale wartet trotzdem dahinter. Hier wird nur noch das
                 # ERGEBNIS verworfen, kein Zeitgewinn erzielt.
                 if text is not None and not self.stop_event.is_set() and self.rec.active:
-                    kind, clean = textproc.postprocess(text, self.cfg)
+                    kind, clean = postprocess_transcript(text, self.cfg)
                     if kind == "text":
                         self.on_partial(clean)
             finally:
@@ -590,7 +597,7 @@ class WinApp(QObject):
             self.sig_state.emit("error", tr("no_server"))
             return
         from .paste import streaming_restore
-        kind, value = textproc.postprocess(raw, self.cfg)
+        kind, value = postprocess_transcript(raw, self.cfg)
         if kind is None:
             if self.streamer is not None:
                 streaming_restore(self._clip_backup)
@@ -754,7 +761,7 @@ class WinApp(QObject):
         return whisperclient.transcribe(WAV, self.cfg, timeout=30)
 
     def _wake_insert(self, raw_text):
-        kind, value = textproc.postprocess(raw_text, self.cfg)
+        kind, value = postprocess_transcript(raw_text, self.cfg)
         if kind != "text" or not value.strip():
             return
         value = self._refine(value)
