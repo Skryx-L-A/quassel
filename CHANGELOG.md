@@ -22,6 +22,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- A hand-edited or unusual `config.ini` can no longer stop Quassel. A `%` in a
+  setting (a wake phrase, the AI address) made saving the settings fail and
+  reading them fail with an error, and a decimal comma such as `hold_min = 0,5`
+  kept the dictation service from starting at all, so it restarted over and
+  over. The comma is now read as a decimal point; a value that is not a number,
+  is out of range, or is not a yes/no answer falls back to its default instead
+  of raising an error. An unreadable settings file no longer blocks saving new
+  settings either.
 - A dictionary word starting with `@` or `<` (a handle, `<3`) no longer breaks
   every dictation. The first dictionary word is sent to the speech engine as
   part of the request, and `curl` read such a word as the name of a local file;

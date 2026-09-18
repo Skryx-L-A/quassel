@@ -140,3 +140,94 @@ def test_write_leaves_no_temp_file_behind(tmp_path, monkeypatch):
     _isolate_serverenv(tmp_path, monkeypatch)
     config.write_serverenv({"WHISPER_DECODE": "-bs 1"})
     assert sorted(p.name for p in tmp_path.iterdir()) == ["server.env"]
+
+
+# ------------------------------------------------- config.ini robust (B29)
+def _cfg_file(tmp_path, monkeypatch, text=None):
+    _isolate_cfg(tmp_path, monkeypatch)
+    if text is not None:
+        (tmp_path / "config.ini").write_text(text, encoding="utf-8")
+    return tmp_path / "config.ini"
+
+
+def test_a_percent_sign_survives_save_and_read(tmp_path, monkeypatch):
+    """"%" ist bei ConfigParser die Interpolation: Speichern warf ValueError,
+    Lesen InterpolationSyntaxError -- mit Wake-Phrase oder KI-Endpunkt darin."""
+    _cfg_file(tmp_path, monkeypatch)
+    config.save({("wakeword", "phrase"): "100% Quassel",
+                 ("ai", "endpoint"): "http://127.0.0.1:11434/%25x"})
+    cfg = config.Cfg()
+    assert cfg.wakeword_phrase == "100% Quassel"
+    assert cfg.ai_endpoint == "http://127.0.0.1:11434/%25x"
+
+
+def test_a_percent_sign_typed_by_hand_is_read(tmp_path, monkeypatch):
+    _cfg_file(tmp_path, monkeypatch, "[wakeword]\nphrase = Hallo %s Welt\n")
+    assert config.Cfg().wakeword_phrase == "Hallo %s Welt"
+
+
+def test_decimal_comma_is_read_as_a_number(tmp_path, monkeypatch):
+    """`hold_min = 0,5` warf ValueError in Cfg(): der Daemon startete nicht."""
+    _cfg_file(tmp_path, monkeypatch, "[hotkey]\nhold_min = 0,7\ndouble_window = 0,3\n")
+    cfg = config.Cfg()
+    assert cfg.hold_min == 0.7 and cfg.double_window == 0.3
+
+
+def test_nonsense_numbers_fall_back_to_the_default(tmp_path, monkeypatch):
+    _cfg_file(tmp_path, monkeypatch,
+              "[hotkey]\nhold_min = abc\ndouble_window = nan\n"
+              "[pill]\nscale = \npos_x = 1,5\npos_y = x\n"
+              "[ai]\ntimeout = -5\n")
+    cfg = config.Cfg()
+    assert cfg.hold_min == 0.5
+    assert cfg.double_window == 0.45
+    assert cfg.pill_scale == 1.0
+    assert (cfg.pill_pos_x, cfg.pill_pos_y) == (-1, -1)
+    assert cfg.ai_timeout == 60.0
+
+
+def test_out_of_range_numbers_are_rejected_or_clamped(tmp_path, monkeypatch):
+    _cfg_file(tmp_path, monkeypatch,
+              "[hotkey]\nhold_min = -1\ndouble_window = 1e9\n"
+              "[pill]\nscale = 9\nopacity = 0\n"
+              "[ai]\ntimeout = inf\n")
+    cfg = config.Cfg()
+    assert cfg.hold_min == 0.5 and cfg.double_window == 0.45   # unsinnig -> Vorgabe
+    assert cfg.pill_scale == 2.0 and cfg.pill_opacity == 0.15  # wie die Pille selbst
+    assert cfg.ai_timeout == 60.0
+
+
+def test_valid_numbers_pass_through_unchanged(tmp_path, monkeypatch):
+    _cfg_file(tmp_path, monkeypatch,
+              "[hotkey]\nhold_min = 0.8\ndouble_window = 0.6\n"
+              "[pill]\nscale = 1.5\nopacity = 0.5\npos_x = 120\npos_y = -3\n"
+              "[ai]\ntimeout = 120\n")
+    cfg = config.Cfg()
+    assert (cfg.hold_min, cfg.double_window) == (0.8, 0.6)
+    assert (cfg.pill_scale, cfg.pill_opacity) == (1.5, 0.5)
+    assert (cfg.pill_pos_x, cfg.pill_pos_y) == (120, -3)
+    assert cfg.ai_timeout == 120.0
+
+
+def test_a_garbled_boolean_falls_back(tmp_path, monkeypatch):
+    _cfg_file(tmp_path, monkeypatch,
+              "[speech]\npunctuation = vielleicht\n[history]\nenabled = off\n")
+    cfg = config.Cfg()
+    assert cfg.punctuation is True          # Vorgabe
+    assert cfg.history_enabled is False     # gültiger Wert bleibt
+
+
+def test_an_unreadable_config_gives_the_defaults_and_can_be_saved(tmp_path, monkeypatch):
+    path = _cfg_file(tmp_path, monkeypatch)
+    path.write_bytes(b"\xff\xfe\x00 kein INI \x80")
+    assert config.Cfg().hold_min == 0.5
+    config.save({("hotkey", "chord"): "alt+meta"})     # darf nicht werfen
+    assert config.Cfg().chord == "alt+meta"
+
+
+def test_non_ascii_values_round_trip(tmp_path, monkeypatch):
+    """save() schreibt UTF-8; gelesen wurde in der Sprache des Systems (unter
+    Windows cp1252) -- Umlaute in der Wake-Phrase kamen als Zeichensalat zurück."""
+    _cfg_file(tmp_path, monkeypatch)
+    config.save({("wakeword", "phrase"): "Hallo Größe Ärger"})
+    assert config.Cfg().wakeword_phrase == "Hallo Größe Ärger"

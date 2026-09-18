@@ -8,6 +8,7 @@ Dateien:
 """
 import configparser
 import json
+import math
 import os
 import sys
 
@@ -64,6 +65,62 @@ VAD_MODEL_FILE = "ggml-silero-v5.1.2.bin"
 VAD_MODEL_URL = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/" + VAD_MODEL_FILE
 
 
+def _new_parser():
+    # interpolation=None: "%" ist sonst ein Sonderzeichen. Ein Wert wie eine
+    # Wake-Phrase oder ein KI-Endpunkt mit "%" warf beim Speichern ValueError
+    # und beim Lesen InterpolationSyntaxError.
+    return configparser.ConfigParser(interpolation=None)
+
+
+def _read_parser():
+    """config.ini gelesen; bei unlesbarer oder kaputter Datei, was sich noch
+    lesen liess (schlimmstenfalls nichts). Wirft nie."""
+    p = _new_parser()
+    try:
+        p.read(CONFIG, encoding="utf-8")
+    except (configparser.Error, OSError, ValueError):
+        pass       # ValueError deckt UnicodeDecodeError ab
+    return p
+
+
+# Die Getter der Einstellungen werfen nie: eine von Hand falsch getippte Zahl
+# ("abc", "0,5 s") oder ein unsinniger Wahrheitswert darf den Daemon nicht am
+# Start hindern (systemd startete ihn sonst in einer Schleife neu).
+def _getbool(p, section, key, fallback):
+    try:
+        return p.getboolean(section, key, fallback=fallback)
+    except ValueError:
+        return fallback
+
+
+def _getint(p, section, key, fallback):
+    try:
+        return p.getint(section, key, fallback=fallback)
+    except ValueError:
+        return fallback
+
+
+def _getfloat(p, section, key, fallback, lo, hi, clamp=False):
+    """Zahl aus config.ini. Ein Dezimalkomma ("0,5") wird als Punkt gelesen.
+    Nicht lesbar oder NaN/unendlich -> fallback. Ausserhalb von [lo, hi] ->
+    fallback, oder bei clamp=True der naechste Randwert."""
+    raw = p.get(section, key, fallback=None)
+    if raw is None:
+        return fallback
+    raw = raw.strip()
+    if "," in raw and "." not in raw:
+        raw = raw.replace(",", ".", 1)
+    try:
+        v = float(raw)
+    except ValueError:
+        return fallback
+    if not math.isfinite(v):
+        return fallback
+    if lo <= v <= hi:
+        return v
+    return min(max(v, lo), hi) if clamp else fallback
+
+
 class Cfg:
     """Konfig-Zugriff mit automatischem Reload bei Dateiänderung."""
 
@@ -79,35 +136,31 @@ class Cfg:
         if not force and mtime == self.mtime:
             return False
         self.mtime = mtime
-        p = configparser.ConfigParser()
-        try:
-            p.read(CONFIG)
-        except (configparser.Error, OSError):
-            pass
+        p = _read_parser()
         g = p.get
         self.chord = g("hotkey", "chord", fallback="ctrl+meta")
         if self.chord not in CHORDS:
             self.chord = "ctrl+meta"
-        self.hold_min = p.getfloat("hotkey", "hold_min", fallback=0.5)
-        self.double_window = p.getfloat("hotkey", "double_window", fallback=0.45)
+        self.hold_min = _getfloat(p, "hotkey", "hold_min", 0.5, 0.0, 10.0)
+        self.double_window = _getfloat(p, "hotkey", "double_window", 0.45, 0.0, 10.0)
         self.language = g("speech", "language", fallback="auto")
-        self.punctuation = p.getboolean("speech", "punctuation", fallback=True)
-        self.commands = p.getboolean("speech", "commands", fallback=True)
+        self.punctuation = _getbool(p, "speech", "punctuation", True)
+        self.commands = _getbool(p, "speech", "commands", True)
         self.mic = g("speech", "mic", fallback="default")
-        self.pill_enabled = p.getboolean("pill", "enabled", fallback=True)
-        self.pill_scale = p.getfloat("pill", "scale", fallback=1.0)
-        self.pill_opacity = p.getfloat("pill", "opacity", fallback=0.85)
-        self.pill_preview = p.getboolean("pill", "show_preview", fallback=True)
+        self.pill_enabled = _getbool(p, "pill", "enabled", True)
+        self.pill_scale = _getfloat(p, "pill", "scale", 1.0, 0.6, 2.0, clamp=True)
+        self.pill_opacity = _getfloat(p, "pill", "opacity", 0.85, 0.15, 1.0, clamp=True)
+        self.pill_preview = _getbool(p, "pill", "show_preview", True)
         # Freies Verschieben per Ziehen; Position -1/-1 = automatisch (unten mittig)
-        self.pill_movable = p.getboolean("pill", "movable", fallback=False)
+        self.pill_movable = _getbool(p, "pill", "movable", False)
         # Linksklick auf die Pille öffnet das Kontrollzentrum (Standard an)
-        self.pill_click_opens_center = p.getboolean("pill", "click_opens_center", fallback=True)
-        self.pill_pos_x = p.getint("pill", "pos_x", fallback=-1)
-        self.pill_pos_y = p.getint("pill", "pos_y", fallback=-1)
-        self.history_enabled = p.getboolean("history", "enabled", fallback=True)
+        self.pill_click_opens_center = _getbool(p, "pill", "click_opens_center", True)
+        self.pill_pos_x = _getint(p, "pill", "pos_x", -1)
+        self.pill_pos_y = _getint(p, "pill", "pos_y", -1)
+        self.history_enabled = _getbool(p, "history", "enabled", True)
         self.ui_language = g("ui", "language", fallback="auto")
         # Streaming-Tippen (nur Freihand-Modus; Standard aus = heutiges Verhalten)
-        self.streaming = p.getboolean("streaming", "enabled", fallback=False)
+        self.streaming = _getbool(p, "streaming", "enabled", False)
         # Standard "word": Wort für Wort tippen (statt Wortblöcke)
         self.streaming_mode = g("streaming", "mode", fallback="word")
         if self.streaming_mode not in ("word", "stable", "aggressive"):
@@ -117,43 +170,42 @@ class Cfg:
         if self.mute_mode not in ("off", "music", "all"):
             self.mute_mode = "off"
         # Textersetzung / Snippets anwenden (Regeln in replacements.txt)
-        self.text_replace = p.getboolean("behavior", "text_replace", fallback=True)
+        self.text_replace = _getbool(p, "behavior", "text_replace", True)
         # Lokale Nutzungsstatistik sammeln (nur auf diesem PC)
-        self.stats_enabled = p.getboolean("behavior", "stats_enabled", fallback=True)
+        self.stats_enabled = _getbool(p, "behavior", "stats_enabled", True)
         # Kurzer Ton bei Aufnahme-Start/-Ende (Standard an)
-        self.beep = p.getboolean("behavior", "beep", fallback=True)
+        self.beep = _getbool(p, "behavior", "beep", True)
         # Ausgabegeraet fuer die Signaltoene: "system" = dem System-Standard
         # folgen, sonst der gespeicherte Geraetename (nur auf macOS waehlbar)
         self.beep_output = g("behavior", "beep_output", fallback="system")
         # Programmier-Diktat: gesprochene Symbole/Bezeichner in Code wandeln
-        self.programmer_mode = p.getboolean("speech", "programmer_mode", fallback=False)
+        self.programmer_mode = _getbool(p, "speech", "programmer_mode", False)
         # Auffällige Fachwörter/Namen automatisch ins Wörterbuch lernen
-        self.auto_learn = p.getboolean("speech", "auto_learn", fallback=False)
+        self.auto_learn = _getbool(p, "speech", "auto_learn", False)
         # Wake-Word (Freisprechen): standardmäßig AUS
-        self.wakeword_enabled = p.getboolean("wakeword", "enabled", fallback=False)
+        self.wakeword_enabled = _getbool(p, "wakeword", "enabled", False)
         self.wakeword_phrase = g("wakeword", "phrase", fallback=WAKEWORD_DEFAULT).strip() \
             or WAKEWORD_DEFAULT
         # Beim Start auf neue Version prüfen (Standard AUS)
-        self.update_check = p.getboolean("system", "update_check", fallback=False)
+        self.update_check = _getbool(p, "system", "update_check", False)
         # Erst-Einrichtung schon gesehen?
-        self.onboarded = p.getboolean("system", "onboarded", fallback=False)
+        self.onboarded = _getbool(p, "system", "onboarded", False)
         # Lokale KI-Nachbearbeitung (Ollama, opt-in, Standard AUS — bleibt lokal)
-        self.ai_enabled = p.getboolean("ai", "enabled", fallback=False)
+        self.ai_enabled = _getbool(p, "ai", "enabled", False)
         self.ai_endpoint = g("ai", "endpoint", fallback=OLLAMA_DEFAULT).strip() or OLLAMA_DEFAULT
         self.ai_model = g("ai", "model", fallback="").strip()
-        self.ai_post_process = p.getboolean("ai", "post_process", fallback=False)
+        self.ai_post_process = _getbool(p, "ai", "post_process", False)
         self.ai_post_mode = g("ai", "post_mode", fallback="cleanup").strip() or "cleanup"
-        self.ai_voice_modes = p.getboolean("ai", "voice_modes", fallback=True)
+        self.ai_voice_modes = _getbool(p, "ai", "voice_modes", True)
         # großzügiger Default: größere Modelle brauchen beim ersten Aufruf
         # (Kaltstart/Laden in den Speicher) gut 20-30 s.
-        self.ai_timeout = p.getfloat("ai", "timeout", fallback=60.0)
+        self.ai_timeout = _getfloat(p, "ai", "timeout", 60.0, 1.0, 3600.0)
         return True
 
 
 def save(values):
     """values: dict {(section, key): value} — schreibt config.ini komplett neu."""
-    p = configparser.ConfigParser()
-    p.read(CONFIG)
+    p = _read_parser()
     for (sec, key), val in values.items():
         if not p.has_section(sec):
             p.add_section(sec)
