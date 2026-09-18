@@ -43,6 +43,32 @@ def is_loopback(endpoint: str) -> bool:
     return addr.is_loopback
 
 
+def endpoint_warning(endpoint: str):
+    """Beurteilt, ob ein KI-Endpunkt den Diktattext aus dem Rechner schickt.
+
+    None  -> unbedenklich: Loopback (auch per http) oder leer (dann gilt der
+             Standard-Endpunkt, siehe config.Cfg.ai_endpoint).
+    Sonst ein Kurzcode, den die Oberflaeche in einen Warntext uebersetzt:
+      "invalid"      keine nutzbare http(s)-URL (kein Schema, kein Host)
+      "remote_plain" fremder Host per http: der Text verlaesst den Rechner
+                     UNVERSCHLUESSELT
+      "remote"       fremder Host per https: der Text verlaesst den Rechner
+    Nur die Beurteilung; Bestaetigung oder Sperre liegen beim Aufrufer."""
+    endpoint = (endpoint or "").strip()
+    if not endpoint:
+        return None
+    try:
+        parts = urllib.parse.urlsplit(endpoint)
+        host = parts.hostname
+    except ValueError:
+        return "invalid"
+    if parts.scheme not in ("http", "https") or not host:
+        return "invalid"
+    if is_loopback(endpoint):
+        return None
+    return "remote" if parts.scheme == "https" else "remote_plain"
+
+
 def _open(req, endpoint, timeout):
     """urlopen fuer den Endpunkt: Loopback ohne Proxy, alles andere wie bisher."""
     if is_loopback(endpoint):

@@ -177,6 +177,28 @@ def test_a_remote_endpoint_keeps_the_normal_opener(monkeypatch):
     assert seen
 
 
+# ------------------------------------------------------- Warnung (A8)
+@pytest.mark.parametrize("endpoint,expected", [
+    ("", None), ("   ", None),
+    ("http://127.0.0.1:11434", None), ("https://localhost:11434", None),
+    ("http://[::1]:11434", None),
+    ("http://192.168.1.5:11434", "remote_plain"),
+    ("http://ollama.example.com", "remote_plain"),
+    ("https://ollama.example.com", "remote"),
+    ("http://127.0.0.1@evil.example.com/", "remote_plain"),
+    ("http://localhost.evil.example.com", "remote_plain"),
+    ("127.0.0.1:11434", "invalid"), ("ftp://127.0.0.1", "invalid"),
+    ("http://", "invalid"), ("http://[", "invalid"), ("nonsense", "invalid"),
+])
+def test_endpoint_warning(endpoint, expected):
+    assert ai.endpoint_warning(endpoint) == expected
+
+
+def test_endpoint_warning_accepts_the_shipped_default():
+    assert ai.endpoint_warning(ai.OLLAMA_DEFAULT) is None
+    assert ai.endpoint_warning(None) is None
+
+
 if __name__ == "__main__":
     for fn in [test_parse_tags, test_parse_generate, test_clean_output,
                test_build_generate_payload, test_available_dead_port,
