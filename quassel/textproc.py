@@ -79,7 +79,8 @@ def apply_punctuation(text):
 def auto_capitalize(text):
     def up(m):
         return m.group(1) + m.group(2).upper()
-    return re.sub(r"(^|[.!?]\s+|\n\s*)([a-zäöü])", up, text)
+    # Unicode: every letter may start a sentence, not only a-z/äöü.
+    return re.sub(r"(^|[.!?]\s+|\n\s*)([^\W\d_])", up, text)
 
 
 def postprocess(raw_text, cfg):

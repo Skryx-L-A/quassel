@@ -52,6 +52,10 @@ def test_sentence_spacing_keeps_domains_files_and_abbreviations():
     assert textproc.postprocess("Hello.World", Cfg()) == ("text", "Hello. World")
 
 
+def test_auto_capitalize_supports_unicode_letters():
+    assert textproc.auto_capitalize("élan. niño. øresund.") == "Élan. Niño. Øresund."
+
+
 def test_commands_disabled_passes_through():
     class C:
         punctuation = True
