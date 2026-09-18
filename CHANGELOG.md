@@ -18,6 +18,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Spoken punctuation no longer turns ordinary uses of "Punkt", "period", or
   decimal commas into punctuation. "Punkt" and "period" now mark a sentence
   only at the end of a dictation.
+- Quassel no longer inserts spaces inside spoken domains, file names, or
+  abbreviations such as `github.com`, `config.json`, and `e.g.`.
 
 ## [2.7.0] - 2026-08-04
 

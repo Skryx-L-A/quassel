@@ -94,7 +94,8 @@ def postprocess(raw_text, cfg):
     if cfg.punctuation:
         text = apply_punctuation(text)
         text = auto_capitalize(text)
-        # Leerzeichen hinter Satzzeichen sicherstellen, Zeilen sauber trimmen
-        text = re.sub(r"([,.!?:;])(?=[A-Za-zÄÖÜäöü])", r"\1 ", text)
+        # Nur vor einem Großbuchstaben beginnt sicher ein neuer Satz. So bleiben
+        # Domains, Dateinamen und Abkürzungen wie github.com oder e.g. ganz.
+        text = re.sub(r"([,.!?:;])(?=[A-ZÀ-ÖØ-Þ])", r"\1 ", text)
         text = "\n".join(line.strip() for line in text.split("\n"))
     return "text", text
