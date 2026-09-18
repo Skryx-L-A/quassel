@@ -225,11 +225,11 @@ class Daemon:
                 missing = "pw-record/parecord"
             notify("Fehler: %s fehlt" % missing)
             return False
+        if self.cfg.beep:
+            beep.start()                 # aufsteigender Ton: jetzt sprechen
         self._bt = mic_is_bluetooth(self.cfg.mic)
         self._vad = bool(config.read_serverenv().get("VAD_MODEL"))
         self.ducker.apply(self.cfg.mute_mode)
-        if self.cfg.beep:
-            beep.start()                 # aufsteigender Ton: jetzt sprechen
         self.streamer = None
         self.partial = PartialLoop(self.rec, self.cfg, self)
         self.partial.start()

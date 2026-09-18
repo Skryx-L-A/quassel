@@ -510,9 +510,9 @@ class WinApp(QObject):
             self.sig_state.emit("error", tr("no_mic"))
             return
         dlog("on_start: rec.start %.2fs" % (time.monotonic() - t))
-        self.ducker.apply(self.cfg.mute_mode)   # Musik pausieren / Ton stumm
         if self.cfg.beep:
             beep.start()                        # aufsteigender Ton: jetzt sprechen
+        self.ducker.apply(self.cfg.mute_mode)   # Musik pausieren / Ton stumm
         self._capturing = True
         self.streamer = None
         self._clip_backup = None
