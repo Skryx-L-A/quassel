@@ -77,10 +77,23 @@ def _normalized_words(text):
     return tuple(re.findall(r"[^\W_]+", text.casefold(), flags=re.UNICODE))
 
 
-def has_speech_energy(pcm, threshold=500):
-    """Konservativ: im Zweifel war Sprache im 16-kHz-s16le-PCM vorhanden."""
+def has_speech_energy(pcm, threshold=500, frame_ms=20, min_frames=5):
+    """Konservativ: im Zweifel war Sprache im 16-kHz-s16le-PCM vorhanden.
+
+    Gezählt werden laute 20-ms-Frames, nicht der Mittelwert über den Clip:
+    ein kurzes, leises „Vielen Dank" inmitten von Stille läge im Mittel unter
+    jeder Schwelle und würde sonst als Halluzination verworfen. Fünf laute
+    Frames (0,1 s) genügen als Beleg für Sprache.
+    """
     from .vad import frame_rms
-    return frame_rms(pcm) >= threshold
+    size = 16000 * 2 * frame_ms // 1000
+    loud = 0
+    for i in range(0, len(pcm) - size + 1, size):
+        if frame_rms(pcm[i:i + size]) >= threshold:
+            loud += 1
+            if loud >= min_frames:
+                return True
+    return False
 
 
 def is_silence_hallucination(text, prompt_words=(), pcm=None):

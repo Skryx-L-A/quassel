@@ -55,3 +55,23 @@ def test_dictionary_prompt_echo_is_rejected_without_matching_real_text():
                                                ["PyTorch", "Kubernetes"])
     assert not dictprompt.is_silence_hallucination("PyTorch wird genutzt.",
                                                     ["PyTorch", "Kubernetes"])
+
+
+def test_short_quiet_thanks_amid_silence_counts_as_speech():
+    """Mittelwert über den Clip läge unter der Schwelle; laute Frames zählen."""
+    import struct
+    from quassel import dictprompt
+    silence = struct.pack("<%dh" % 48000, *([0] * 48000))          # 3 s Stille
+    speech = struct.pack("<%dh" % 4800, *([900, -900] * 2400))      # 0,3 s, RMS 900
+    pcm = silence + speech + silence
+    assert dictprompt.has_speech_energy(pcm)
+    assert not dictprompt.is_silence_hallucination("Vielen Dank.", pcm=pcm)
+    assert dictprompt.is_silence_hallucination("Vielen Dank.", pcm=silence)
+
+
+def test_single_click_is_not_speech():
+    import struct
+    from quassel import dictprompt
+    click = struct.pack("<%dh" % 320, *([20000, -20000] * 160))     # 20 ms Knacken
+    pcm = struct.pack("<%dh" % 16000, *([0] * 16000)) + click
+    assert not dictprompt.has_speech_energy(pcm)
