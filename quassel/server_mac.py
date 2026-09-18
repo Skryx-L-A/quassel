@@ -21,10 +21,10 @@ import socket
 import subprocess
 import sys
 
-from . import config, hwdetect
+from . import config, hwdetect, profile
 
-MODEL_DIR = os.path.join(config.DATADIR, "models")
-HOST, PORT = "127.0.0.1", "8765"
+MODEL_DIR = config.MODELDIR
+HOST, PORT = "127.0.0.1", str(profile.port())
 
 _proc = None
 

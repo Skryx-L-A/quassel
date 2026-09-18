@@ -1086,7 +1086,7 @@ class Center(QMainWindow):
         model = self.model.currentData()
         env = config.read_serverenv()
         modeldir = os.path.dirname(env.get("MODEL_PATH", "")) or \
-            os.path.join(config.DATADIR, "models")
+            config.MODELDIR
         target = os.path.join(modeldir, f"ggml-{model}.bin")
         if os.path.exists(target) and os.path.getsize(target) > 1024:
             self.switch_model(target, model)

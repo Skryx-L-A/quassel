@@ -4,17 +4,20 @@ import os
 import sys
 import time
 
+from . import profile
+
 if os.name == "nt":
     RUNDIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-                          "Quassel", "run")
+                          profile.dirname("Quassel"), "run")
 elif sys.platform == "darwin":
     # macOS kennt kein XDG_RUNTIME_DIR. Nicht in ~/Library/Caches: das darf
     # das System bei Plattenplatzdruck jederzeit leeren — auch mitten in
     # einer laufenden Aufnahme (rec.raw).
-    RUNDIR = os.path.expanduser("~/Library/Application Support/Quassel/run")
+    RUNDIR = os.path.expanduser(
+        "~/Library/Application Support/" + profile.dirname("Quassel") + "/run")
 else:
     XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    RUNDIR = os.path.join(XDG_RUNTIME, "quassel")
+    RUNDIR = os.path.join(XDG_RUNTIME, profile.dirname("quassel"))
 RAW = os.path.join(RUNDIR, "rec.raw")
 WAV = os.path.join(RUNDIR, "rec.wav")
 PARTWAV = os.path.join(RUNDIR, "partial.wav")

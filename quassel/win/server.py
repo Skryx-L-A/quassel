@@ -18,12 +18,12 @@ import sys
 import time
 import zipfile
 
-from .. import config, hwdetect
+from .. import config, hwdetect, profile
 from ..net import download
 from ..whisperclient import server_up
 
 BIN_DIR = os.path.join(config.DATADIR, "whisper-bin")
-MODEL_DIR = os.path.join(config.DATADIR, "models")
+MODEL_DIR = config.MODELDIR
 ENGINES_DIR = os.path.join(config.DATADIR, "engines")
 WHISPER_RELEASE = "https://github.com/ggml-org/whisper.cpp/releases/latest/download/{}"
 # Engine-Art -> Zip-Name. cublas: NVIDIA (CUDA-DLLs im Zip); blas: OpenBLAS
@@ -295,7 +295,7 @@ def start():
     threads = str(min(8, os.cpu_count() or 4))
     decode = ["-bs", "1"] if has_nvidia() else ["-nf"]
     args = [exe, "-m", model, "-t", threads, *decode,
-            "--host", "127.0.0.1", "--port", "8765", "-l", "auto", "-nt"]
+            "--host", "127.0.0.1", "--port", str(profile.port()), "-l", "auto", "-nt"]
     vad = vad_model_path()
     if vad:                                   # Stille überspringen + keine Halluzinationen
         args += ["--vad", "--vad-model", vad]

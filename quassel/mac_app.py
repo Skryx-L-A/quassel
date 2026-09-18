@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 
-from . import audio, server_mac
+from . import audio, profile, server_mac
 from .state import state_read
 
 DAEMON_STOP_TIMEOUT = 5
@@ -114,7 +114,7 @@ class MacApp:
         # (erwischt auch Kinder des Daemons wie ffmpeg).
         # stderr/stdout in Logdatei: bei Start über Finder/open ginge die
         # Ausgabe (u.a. fehlende TCC-Freigaben) sonst verloren.
-        log_dir = os.path.expanduser("~/Library/Logs/Quassel")
+        log_dir = os.path.expanduser("~/Library/Logs/" + profile.dirname("Quassel"))
         os.makedirs(log_dir, exist_ok=True)
         with open(os.path.join(log_dir, "daemon.log"), "ab") as log_f:
             self.daemon = subprocess.Popen(daemon_command(), cwd=self._repo,

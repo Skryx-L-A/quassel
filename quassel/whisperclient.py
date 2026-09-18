@@ -7,12 +7,12 @@ import urllib.error
 import urllib.request
 import wave
 
-from . import config
+from . import config, profile
 
 # Windows öffnet sonst für jeden curl-Aufruf kurz ein Konsolenfenster
 NOWIN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
-SERVER = "http://127.0.0.1:8765"
+SERVER = f"http://127.0.0.1:{profile.port()}"
 SERVICE = "quassel-server.service"
 
 

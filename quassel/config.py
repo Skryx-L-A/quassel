@@ -11,17 +11,29 @@ import json
 import os
 import sys
 
+from . import profile
+
 if os.name == "nt":
-    CONFDIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Quassel")
-    DATADIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Quassel")
+    CONFDIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
+                           profile.dirname("Quassel"))
+    DATADIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+                           profile.dirname("Quassel"))
+    SHARED_DATADIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+                                  "Quassel")
 elif sys.platform == "darwin":
     # macOS: Konfiguration + Daten (models/, history) unter Application Support
-    CONFDIR = DATADIR = os.path.expanduser("~/Library/Application Support/Quassel")
+    CONFDIR = DATADIR = os.path.expanduser(
+        "~/Library/Application Support/" + profile.dirname("Quassel"))
+    SHARED_DATADIR = os.path.expanduser("~/Library/Application Support/Quassel")
 else:
     CONFDIR = os.path.join(os.environ.get("XDG_CONFIG_HOME",
-                                          os.path.expanduser("~/.config")), "quassel")
+                                          os.path.expanduser("~/.config")), profile.dirname("quassel"))
     DATADIR = os.path.join(os.environ.get("XDG_DATA_HOME",
-                                          os.path.expanduser("~/.local/share")), "quassel")
+                                          os.path.expanduser("~/.local/share")), profile.dirname("quassel"))
+    SHARED_DATADIR = os.path.join(os.environ.get("XDG_DATA_HOME",
+                                                 os.path.expanduser("~/.local/share")), "quassel")
+# Modelle sind groß und profilunabhängig: ein Profil liest die der Standardinstanz.
+MODELDIR = os.path.join(SHARED_DATADIR, "models")
 CONFIG = os.path.join(CONFDIR, "config.ini")
 SERVERENV = os.path.join(CONFDIR, "server.env")
 DICTIONARY = os.path.join(CONFDIR, "dictionary.txt")
