@@ -67,3 +67,10 @@ def test_ci_checks_every_shell_entrypoint_without_masking_shellcheck():
     assert 'shellcheck -S warning "$script"' in workflow
     assert "shellcheck -S warning install.sh uninstall.sh bin/quassel-ctl || true" \
         not in workflow
+
+
+def test_ci_runs_the_full_offline_pytest_suite():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8")
+    assert "python -m pytest -q tests --ignore=tests/test_coreaudio_mac.py" \
+        in workflow
