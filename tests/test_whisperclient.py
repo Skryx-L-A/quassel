@@ -119,6 +119,75 @@ def test_threshold_stays_within_the_measured_range():
     assert wc.AUDIO_CTX_SHORT == 768
 
 
+# ------------------------------------------------- Textfelder ohne Dateiverweis
+def _text_fields_by_flag(args):
+    """{Flag: [Werte]} für die Argumente hinter -F / --form-string."""
+    out = {"-F": [], "--form-string": []}
+    for flag, value in zip(args, args[1:]):
+        if flag in out:
+            out[flag].append(value)
+    return out
+
+
+def test_only_the_wav_goes_through_the_file_form_flag(tmp_path):
+    """curl -F deutet '@datei' und '<datei' als Dateiverweis, egal wo im Wert.
+    Nur die WAV darf so gesendet werden; jedes Textfeld muss --form-string sein."""
+    wavpath = _make_wav(tmp_path / "s.wav", 3.0)
+    args = wc.build_inference_args(wavpath, Cfg("de"), ["@handle"], prompt_extra="<3")
+    fields = _text_fields_by_flag(args)
+    assert fields["-F"] == [f"file=@{wavpath}"]
+    names = {v.split("=", 1)[0] for v in fields["--form-string"]}
+    assert {"response_format", "temperature", "audio_ctx", "language", "prompt"} <= names
+
+
+def _fake_whisper_server(monkeypatch):
+    """Loopback-Server auf einem freien Port, der den rohen Multipart-Körper
+    aufzeichnet. Kein Netz, kein echter whisper-server."""
+    import http.server
+    import threading
+    bodies = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", "0"))
+            bodies.append(self.rfile.read(n))
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+    monkeypatch.setattr(wc, "SERVER", "http://127.0.0.1:%d" % srv.server_port)
+    return srv, bodies
+
+
+def test_a_prompt_starting_with_at_or_lt_is_sent_as_text(tmp_path, monkeypatch):
+    """Ein Wörterbucheintrag wie '@handle' oder '<3' ganz oben ließ curl eine
+    lokale Datei suchen (Fehler 26): jede Transkription scheiterte."""
+    import shutil
+    if not shutil.which("curl"):
+        import pytest
+        pytest.skip("curl fehlt")
+    srv, bodies = _fake_whisper_server(monkeypatch)
+    try:
+        wavpath = _make_wav(tmp_path / "s.wav", 1.0)
+        monkeypatch.setattr(wc.config, "dictionary_words", lambda: ["@handle", "Foo"])
+        assert wc.transcribe(wavpath, Cfg("auto"), timeout=10) == "ok"
+        assert b"@handle, Foo" in bodies[-1]
+        monkeypatch.setattr(wc.config, "dictionary_words", lambda: ["<3"])
+        assert wc.transcribe(wavpath, Cfg("auto"), timeout=10) == "ok"
+        assert b"<3" in bodies[-1]
+    finally:
+        srv.shutdown()
+
+
 def test_ensure_server_returns_at_once_when_up(monkeypatch):
     started = []
     monkeypatch.setattr(wc, "server_up", lambda timeout=2: True)

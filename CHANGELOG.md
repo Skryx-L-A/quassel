@@ -14,6 +14,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- A dictionary word starting with `@` or `<` (a handle, `<3`) no longer breaks
+  every dictation. The first dictionary word is sent to the speech engine as
+  part of the request, and `curl` read such a word as the name of a local file;
+  the transcription then failed and only the "server not reachable" message
+  showed. All text fields are now sent as plain text.
+
 ### Security
 - With the wake word switched on, the log no longer contains what was heard.
   The listener transcribes everything said in the room, and every sentence used

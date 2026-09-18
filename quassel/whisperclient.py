@@ -158,15 +158,19 @@ def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
     Kurze Aufnahmen (< AUDIO_CTX_MAX_SECONDS) bekommen audio_ctx=AUDIO_CTX_SHORT
     mit -- gilt auch für Teiltranskript-Fenster (PartialLoop), dieselbe
     Längenregel dort ist gewollt und billiger."""
+    # Nur die WAV geht als Dateiverweis (-F). Alle Textfelder laufen über
+    # --form-string: -F deutet einen Wert, der mit "@" oder "<" beginnt, als
+    # lokale Datei, und dann scheitert jede Transkription (curl-Fehler 26).
     args = ["curl", "-fsS", "-m", str(timeout), SERVER + "/inference",
             "-F", f"file=@{wavpath}",
-            "-F", "response_format=text", "-F", "temperature=0.0"]
+            "--form-string", "response_format=text",
+            "--form-string", "temperature=0.0"]
     duration = wav_duration_s(wavpath)
     if duration is not None and duration < AUDIO_CTX_MAX_SECONDS:
-        args += ["-F", f"audio_ctx={AUDIO_CTX_SHORT}"]
+        args += ["--form-string", f"audio_ctx={AUDIO_CTX_SHORT}"]
     lang = getattr(cfg, "language", "auto")
     if lang not in ("auto", "mixed"):
-        args += ["-F", f"language={lang}"]
+        args += ["--form-string", f"language={lang}"]
     prompt_bits = []
     if prompt_extra:
         prompt_bits.append(prompt_extra)
@@ -175,7 +179,7 @@ def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
     if words:
         prompt_bits.append(", ".join(words[:80]))
     if prompt_bits:
-        args += ["-F", "prompt=" + " ".join(prompt_bits)]
+        args += ["--form-string", "prompt=" + " ".join(prompt_bits)]
     return args
 
 
