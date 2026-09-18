@@ -171,13 +171,12 @@ def _fake_whisper_server(monkeypatch):
 def test_a_prompt_starting_with_at_or_lt_is_sent_as_text(tmp_path, monkeypatch):
     """Ein Wörterbucheintrag wie '@handle' oder '<3' ganz oben ließ curl eine
     lokale Datei suchen (Fehler 26): jede Transkription scheiterte."""
-    import shutil
-    if not shutil.which("curl"):
-        import pytest
-        pytest.skip("curl fehlt")
     srv, bodies = _fake_whisper_server(monkeypatch)
     try:
         wavpath = _make_wav(tmp_path / "s.wav", 1.0)
+        monkeypatch.setattr(wc.subprocess, "run",
+                            lambda *a, **k: (_ for _ in ()).throw(
+                                AssertionError("direkter Upload darf curl nicht starten")))
         monkeypatch.setattr(wc.config, "dictionary_words", lambda: ["@handle", "Foo"])
         assert wc.transcribe(wavpath, Cfg("auto"), timeout=10) == "ok"
         assert b"@handle, Foo" in bodies[-1]
@@ -186,6 +185,18 @@ def test_a_prompt_starting_with_at_or_lt_is_sent_as_text(tmp_path, monkeypatch):
         assert b"<3" in bodies[-1]
     finally:
         srv.shutdown()
+
+
+def test_transcribe_falls_back_to_curl_when_direct_upload_fails(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    wavpath = _make_wav(tmp_path / "s.wav", 1.0)
+    monkeypatch.setattr(wc.config, "dictionary_words", lambda: [])
+    monkeypatch.setattr(wc, "_post_multipart", lambda *a: None)
+    calls = []
+    monkeypatch.setattr(wc.subprocess, "run", lambda args, **kwargs:
+                        calls.append(args) or SimpleNamespace(returncode=0, stdout="ok"))
+    assert wc.transcribe(wavpath, Cfg("de"), timeout=10) == "ok"
+    assert calls and "language=de" in calls[0]
 
 
 def test_ensure_server_returns_at_once_when_up(monkeypatch):

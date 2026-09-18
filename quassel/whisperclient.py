@@ -1,10 +1,13 @@
 """Client für den lokalen whisper.cpp-Server (quassel-server.service)."""
+import http.client
 import os
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
+import uuid
 import wave
 
 from . import config, dictprompt, profile
@@ -162,15 +165,21 @@ def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
     # --form-string: -F deutet einen Wert, der mit "@" oder "<" beginnt, als
     # lokale Datei, und dann scheitert jede Transkription (curl-Fehler 26).
     args = ["curl", "-fsS", "-m", str(timeout), SERVER + "/inference",
-            "-F", f"file=@{wavpath}",
-            "--form-string", "response_format=text",
-            "--form-string", "temperature=0.0"]
+            "-F", f"file=@{wavpath}"]
+    for name, value in inference_fields(wavpath, cfg, words, timeout, prompt_extra):
+        args += ["--form-string", f"{name}={value}"]
+    return args
+
+
+def inference_fields(wavpath, cfg, words, timeout=120, prompt_extra=None):
+    """Textfelder für curl- und Speicher-Multipart identisch bestimmen."""
+    fields = [("response_format", "text"), ("temperature", "0.0")]
     duration = wav_duration_s(wavpath)
     if duration is not None and duration < AUDIO_CTX_MAX_SECONDS:
-        args += ["--form-string", f"audio_ctx={AUDIO_CTX_SHORT}"]
+        fields.append(("audio_ctx", str(AUDIO_CTX_SHORT)))
     lang = getattr(cfg, "language", "auto")
     if lang not in ("auto", "mixed"):
-        args += ["--form-string", f"language={lang}"]
+        fields.append(("language", lang))
     # Der PartialLoop ruft mit genau 20 s auf. Sein kleineres Wörterbuch spart
     # Dekodierzeit, ohne eine Änderung des kompatiblen transcribe()-Aufrufs.
     prompt, _ = dictprompt.build_prompt(
@@ -178,14 +187,68 @@ def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
         mixed_primer=MIXED_PRIMER if lang == "mixed" else None,
         partial=timeout == 20)
     if prompt:
-        args += ["--form-string", "prompt=" + prompt]
-    return args
+        fields.append(("prompt", prompt))
+    return fields
+
+
+def _multipart_body(wavpath, fields):
+    """Multipart-Body aus WAV und Textfeldern im Speicher erzeugen."""
+    boundary = "----quassel-" + uuid.uuid4().hex
+    marker = boundary.encode("ascii")
+    body = []
+    for name, value in fields:
+        body += [b"--" + marker + b"\r\n",
+                 (f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                  ).encode("utf-8"),
+                 value.encode("utf-8"), b"\r\n"]
+    filename = os.path.basename(wavpath).replace('"', "")
+    with open(wavpath, "rb") as f:
+        wav = f.read()
+    body += [b"--" + marker + b"\r\n",
+             (f'Content-Disposition: form-data; name="file"; '
+              f'filename="{filename}"\r\n').encode("utf-8"),
+             b"Content-Type: audio/wav\r\n\r\n", wav, b"\r\n",
+             b"--" + marker + b"--\r\n"]
+    return b"".join(body), "multipart/form-data; boundary=" + boundary
+
+
+def _post_multipart(body, content_type, timeout):
+    """Ohne Proxy direkt mit dem lokalen whisper.cpp-Server sprechen."""
+    parsed = urllib.parse.urlsplit(SERVER)
+    if parsed.scheme != "http" or not parsed.hostname:
+        return None
+    path = (parsed.path.rstrip("/") or "") + "/inference"
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port or 80,
+                                      timeout=timeout)
+    try:
+        conn.request("POST", path, body=body, headers={
+            "Content-Type": content_type,
+            "Content-Length": str(len(body)),
+        })
+        response = conn.getresponse()
+        if not 200 <= response.status < 300:
+            return None
+        return response.read().decode("utf-8", errors="replace")
+    except (OSError, http.client.HTTPException, UnicodeError):
+        return None
+    finally:
+        conn.close()
 
 
 def transcribe(wavpath, cfg, timeout=120, prompt_extra=None):
     """Transkribiert eine WAV-Datei; None bei Fehler."""
-    args = build_inference_args(wavpath, cfg, config.dictionary_words(),
-                                timeout, prompt_extra)
+    words = config.dictionary_words()
+    try:
+        body, content_type = _multipart_body(
+            wavpath, inference_fields(wavpath, cfg, words, timeout, prompt_extra))
+    except OSError:
+        return None
+    result = _post_multipart(body, content_type, timeout)
+    if result is not None:
+        return result
+    # Kompatibler Rückfall, falls die direkte HTTP-Verbindung auf einer alten
+    # Installation scheitert. Die Felder bleiben über inference_fields gleich.
+    args = build_inference_args(wavpath, cfg, words, timeout, prompt_extra)
     r = subprocess.run(args, capture_output=True, text=True, check=False,
                        encoding="utf-8", errors="replace", **NOWIN)
     return r.stdout if r.returncode == 0 else None
