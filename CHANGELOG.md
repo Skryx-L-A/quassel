@@ -22,6 +22,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   abbreviations such as `github.com`, `config.json`, and `e.g.`.
 - Automatic sentence capitalization now also handles non-ASCII letters such as
   `é`, `ñ`, and `ø`.
+- Text replacements now run once per dictation. An expansion can no longer
+  accidentally activate a second replacement rule.
 
 ## [2.7.0] - 2026-08-04
 

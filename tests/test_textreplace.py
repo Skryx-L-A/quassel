@@ -60,6 +60,11 @@ def test_longer_trigger_precedence():
     assert apply_rules("I love new york", rules) == "I love NY"
 
 
+def test_expansions_do_not_trigger_following_rules():
+    rules = [("omw", "on my way"), ("way", "road")]
+    assert apply_rules("omw now", rules) == "on my way now"
+
+
 if __name__ == "__main__":
     for fn in [
         test_parse_ignores_comments_blanks_and_trims,

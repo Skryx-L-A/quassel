@@ -75,7 +75,9 @@ def apply_rules(text, rules, *, case_insensitive=True):
     ordered = sorted(resolved.items(), key=lambda kv: (-len(kv[0]), kv[0]))
 
     flags = re.IGNORECASE if case_insensitive else 0
-    for trigger, expansion in ordered:
+    alternatives = []
+    expansions = {}
+    for index, (trigger, expansion) in enumerate(ordered):
         if not trigger:
             continue
         # \b funktioniert nur an Wort-/Nichtwort-Uebergaengen. Trigger koennen mit
@@ -84,15 +86,21 @@ def apply_rules(text, rules, *, case_insensitive=True):
         esc = re.escape(trigger)
         left = r"(?<!\w)" if trigger[0].isalnum() or trigger[0] == "_" else ""
         right = r"(?!\w)" if trigger[-1].isalnum() or trigger[-1] == "_" else ""
-        pattern = re.compile(left + esc + right, flags)
+        name = f"rule_{index}"
+        alternatives.append(f"(?P<{name}>{left}{esc}{right})")
+        expansions[name] = expansion
 
-        def _sub(match, _expansion=expansion):
-            # Funktion als Ersetzung -> Rueckgabe wird literal eingesetzt,
-            # Backslashes/Gruppen-Refs werden NICHT interpretiert (kein Maskieren).
-            return _carry_capitalization(match.group(0), _expansion)
+    if not alternatives:
+        return text
 
-        text = pattern.sub(_sub, text)
-    return text
+    pattern = re.compile("|".join(alternatives), flags)
+
+    def _sub(match):
+        # Funktion als Ersetzung -> Rueckgabe wird literal eingesetzt,
+        # Backslashes/Gruppen-Refs werden NICHT interpretiert (kein Maskieren).
+        return _carry_capitalization(match.group(0), expansions[match.lastgroup])
+
+    return pattern.sub(_sub, text)
 
 
 def expand(text, rules_text, **kw):
