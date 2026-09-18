@@ -12,7 +12,7 @@ import json
 import os
 import time
 
-from quassel import config
+from quassel import config, fsutil
 
 
 def _stats_path():
@@ -77,12 +77,7 @@ def _local_day(ts):
 
 
 def _save(data):
-    path = _stats_path()
-    d = os.path.dirname(path)
-    if d:
-        os.makedirs(d, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    fsutil.atomic_write(_stats_path(), json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def record(text, *, seconds=0.0, typing_wpm=40):

@@ -7,12 +7,13 @@ Dateien:
   ~/.local/share/quassel/history.jsonl  letzte Diktate (lokal, abschaltbar)
 """
 import configparser
+import io
 import json
 import math
 import os
 import sys
 
-from . import profile
+from . import fsutil, profile
 
 if os.name == "nt":
     CONFDIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
@@ -210,9 +211,9 @@ def save(values):
         if not p.has_section(sec):
             p.add_section(sec)
         p.set(sec, key, str(val))
-    os.makedirs(CONFDIR, exist_ok=True)
-    with open(CONFIG, "w", encoding="utf-8") as f:
-        p.write(f)
+    buf = io.StringIO()
+    p.write(buf)
+    fsutil.atomic_write(CONFIG, buf.getvalue())
 
 
 def reset_defaults():
@@ -239,22 +240,15 @@ def read_serverenv():
 
 
 def write_serverenv(env):
-    """Atomar schreiben (Temp-Datei + os.replace, wie state.py).
+    """Atomar schreiben (siehe fsutil.atomic_write).
 
     Ein einfaches open(..., "w") kürzt die Datei sofort auf null und füllt sie
     erst danach. Stirbt der Prozess in diesem Fenster — oder geht der Strom
     weg —, bleibt eine leere oder halbe server.env zurück, und der nächste
     Start sucht sich Modell und Binary neu zusammen: die getroffene Modellwahl
-    wäre still weg. Der Umweg über die Temp-Datei macht das unmöglich; sichtbar
-    wird immer entweder die alte oder die vollständige neue Datei."""
-    os.makedirs(CONFDIR, exist_ok=True)
-    tmp = SERVERENV + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        for k, v in env.items():
-            f.write(f"{k}={v}\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, SERVERENV)
+    wäre still weg. Sichtbar wird immer entweder die alte oder die vollständige
+    neue Datei."""
+    fsutil.atomic_write(SERVERENV, "".join(f"{k}={v}\n" for k, v in env.items()))
 
 
 # ----------------------------------------------------------------- Wörterbuch
@@ -287,9 +281,7 @@ def dictionary_words():
 
 
 def dictionary_save(text):
-    os.makedirs(CONFDIR, exist_ok=True)
-    with open(DICTIONARY, "w", encoding="utf-8") as f:
-        f.write(text.strip() + "\n" if text.strip() else "")
+    fsutil.atomic_write(DICTIONARY, text.strip() + "\n" if text.strip() else "")
     _dictionary_cache["key"] = None
 
 
@@ -304,9 +296,7 @@ def replacement_text():
 
 
 def replacement_save(text):
-    os.makedirs(CONFDIR, exist_ok=True)
-    with open(REPLACEMENTS, "w", encoding="utf-8") as f:
-        f.write(text.strip() + "\n" if text.strip() else "")
+    fsutil.atomic_write(REPLACEMENTS, text.strip() + "\n" if text.strip() else "")
 
 
 def replacement_rules():
@@ -326,20 +316,16 @@ def ai_modes_text():
 
 
 def ai_modes_save(text):
-    os.makedirs(CONFDIR, exist_ok=True)
-    with open(AI_MODES, "w", encoding="utf-8") as f:
-        f.write(text.strip() + "\n" if text.strip() else "")
+    fsutil.atomic_write(AI_MODES, text.strip() + "\n" if text.strip() else "")
 
 
 # ----------------------------------------------------------------- Verlauf
 def history_append(text):
-    os.makedirs(DATADIR, exist_ok=True)
     entries = history_read()
     entries.append({"text": text, "ts": __import__("time").time()})
     entries = entries[-HISTORY_MAX:]
-    with open(HISTORY, "w", encoding="utf-8") as f:
-        for e in entries:
-            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    fsutil.atomic_write(
+        HISTORY, "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries))
 
 
 def history_read():

@@ -22,6 +22,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Settings, dictionary, text replacements, AI modes, history and statistics are
+  now saved atomically. Each of them used to be emptied first and refilled
+  afterwards, so a crash or a power cut in that moment left an empty file, and
+  everything in it was silently gone. Only the speech-engine settings file had
+  this protection so far. Now you see either the old file or the complete new
+  one, and a failed save leaves the old one in place.
 - A hand-edited or unusual `config.ini` can no longer stop Quassel. A `%` in a
   setting (a wake phrase, the AI address) made saving the settings fail and
   reading them fail with an error, and a decimal comma such as `hold_min = 0,5`
