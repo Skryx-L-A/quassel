@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 import wave
 
-from . import config, profile
+from . import config, dictprompt, profile
 
 # Windows öffnet sonst für jeden curl-Aufruf kurz ein Konsolenfenster
 NOWIN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
@@ -171,15 +171,14 @@ def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
     lang = getattr(cfg, "language", "auto")
     if lang not in ("auto", "mixed"):
         args += ["--form-string", f"language={lang}"]
-    prompt_bits = []
-    if prompt_extra:
-        prompt_bits.append(prompt_extra)
-    if lang == "mixed":
-        prompt_bits.append(MIXED_PRIMER)
-    if words:
-        prompt_bits.append(", ".join(words[:80]))
-    if prompt_bits:
-        args += ["--form-string", "prompt=" + " ".join(prompt_bits)]
+    # Der PartialLoop ruft mit genau 20 s auf. Sein kleineres Wörterbuch spart
+    # Dekodierzeit, ohne eine Änderung des kompatiblen transcribe()-Aufrufs.
+    prompt, _ = dictprompt.build_prompt(
+        words, prompt_extra=prompt_extra,
+        mixed_primer=MIXED_PRIMER if lang == "mixed" else None,
+        partial=timeout == 20)
+    if prompt:
+        args += ["--form-string", "prompt=" + prompt]
     return args
 
 
