@@ -14,6 +14,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- With the AI clean-up on, Ollama now keeps the model loaded for 30 minutes
+  after each use instead of its default five. Anyone who dictates with pauses
+  of more than five minutes used to pay the cold start again, which takes 20 to
+  30 seconds with a larger model. The model holds its memory for that long; it
+  is released afterwards, as before.
+
 ### Fixed
 - A dictionary word starting with `@` or `<` (a handle, `<3`) no longer breaks
   every dictation. The first dictionary word is sent to the speech engine as

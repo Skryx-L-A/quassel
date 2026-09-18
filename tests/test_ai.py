@@ -199,6 +199,25 @@ def test_endpoint_warning_accepts_the_shipped_default():
     assert ai.endpoint_warning(None) is None
 
 
+# ----------------------------------------------------------- keep_alive (C51)
+def test_payload_carries_keep_alive_only_when_given():
+    assert "keep_alive" not in ai.build_generate_payload("m", "p")
+    assert ai.build_generate_payload("m", "p", keep_alive="10m")["keep_alive"] == "10m"
+    assert "keep_alive" not in ai.build_generate_payload("m", "p", keep_alive="")
+
+
+def test_generate_keeps_the_model_loaded(fake_ollama):
+    """Ollama entlaedt ein Modell nach fuenf Minuten; der naechste Aufruf zahlt
+    dann den Kaltstart (20 bis 30 s). generate() bittet um mehr."""
+    assert ai.generate("hallo", model="m1", endpoint=fake_ollama.endpoint,
+                       timeout=3) == "ok"
+    body = fake_ollama.requests[-1][2]
+    assert body["keep_alive"] == ai.KEEP_ALIVE_DEFAULT == "30m"
+    assert ai.generate("hallo", model="m1", endpoint=fake_ollama.endpoint,
+                       timeout=3, keep_alive="2h") == "ok"
+    assert fake_ollama.requests[-1][2]["keep_alive"] == "2h"
+
+
 if __name__ == "__main__":
     for fn in [test_parse_tags, test_parse_generate, test_clean_output,
                test_build_generate_payload, test_available_dead_port,

@@ -13,6 +13,10 @@ import urllib.parse
 import urllib.request
 
 OLLAMA_DEFAULT = "http://127.0.0.1:11434"
+# Ollama entlaedt ein Modell nach fuenf Minuten Ruhe, der naechste Aufruf zahlt
+# den Kaltstart (gut 20-30 s, siehe config.Cfg.ai_timeout). Wer diktiert, ruft
+# die KI in Abstaenden auf: die Frist wird bei jedem Aufruf neu gesetzt.
+KEEP_ALIVE_DEFAULT = "30m"
 
 # Opener OHNE Proxy fuer Loopback-Endpunkte: urlopen wuerde sonst die
 # Proxy-Einstellungen des Systems auch fuer 127.0.0.1 anwenden. Hinter einem
@@ -149,10 +153,12 @@ def clean_output(text: str) -> str:
 
 
 def build_generate_payload(model: str, prompt: str, system: str | None = None,
-                           options: dict | None = None) -> dict:
+                           options: dict | None = None,
+                           keep_alive: str | None = None) -> dict:
     """JSON-Body fuer POST /api/generate (non-stream) bauen.
 
-    "system" wird nur aufgenommen, wenn es ein nicht-leerer String ist."""
+    "system" und "keep_alive" werden nur aufgenommen, wenn sie ein nicht-leerer
+    String sind."""
     payload = {
         "model": model,
         "prompt": prompt,
@@ -161,6 +167,8 @@ def build_generate_payload(model: str, prompt: str, system: str | None = None,
     }
     if isinstance(system, str) and system:
         payload["system"] = system
+    if isinstance(keep_alive, str) and keep_alive:
+        payload["keep_alive"] = keep_alive
     return payload
 
 
@@ -188,15 +196,18 @@ def list_models(endpoint: str = OLLAMA_DEFAULT, timeout: float = 4.0) -> list[st
 
 def generate(prompt: str, *, model: str, system: str | None = None,
              endpoint: str = OLLAMA_DEFAULT, timeout: float = 30.0,
-             options: dict | None = None) -> str | None:
+             options: dict | None = None,
+             keep_alive: str | None = KEEP_ALIVE_DEFAULT) -> str | None:
     """POST {endpoint}/api/generate mit build_generate_payload(...) als JSON.
     Bei HTTP 200 parse_generate -> clean_output. None bei jedem
-    Fehler/Timeout/leer (wirft nie). Falsy model -> None."""
+    Fehler/Timeout/leer (wirft nie). Falsy model -> None. keep_alive: wie
+    lange Ollama das Modell danach geladen haelt (nur der Parameter, es wird
+    nichts vorgewaermt)."""
     if not model:
         return None
     url = endpoint.rstrip("/") + "/api/generate"
     body = json.dumps(
-        build_generate_payload(model, prompt, system, options)
+        build_generate_payload(model, prompt, system, options, keep_alive)
     ).encode("utf-8")
     req = urllib.request.Request(
         url, data=body, method="POST",
@@ -217,13 +228,15 @@ def generate(prompt: str, *, model: str, system: str | None = None,
 
 
 def generate_async(prompt, callback, *, model, system=None,
-                   endpoint=OLLAMA_DEFAULT, timeout=30.0, options=None) -> None:
+                   endpoint=OLLAMA_DEFAULT, timeout=30.0, options=None,
+                   keep_alive=KEEP_ALIVE_DEFAULT) -> None:
     """generate(...) in einem Daemon-Thread ausfuehren und callback(result_oder_None)
     aufrufen. Fuer die GUI, damit der Netzwerk-Aufruf die UI nie blockiert."""
     def _run():
         callback(generate(
             prompt, model=model, system=system,
             endpoint=endpoint, timeout=timeout, options=options,
+            keep_alive=keep_alive,
         ))
 
     threading.Thread(target=_run, daemon=True).start()
