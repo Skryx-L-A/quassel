@@ -85,3 +85,11 @@ def test_uninstaller_removes_every_user_file_and_asks_before_system_changes():
     assert "quassel-voice.png" in uninstaller
     assert "read -r -p" in uninstaller
     assert "gpasswd -d" in uninstaller
+
+
+def test_online_installer_refuses_to_fall_back_to_main():
+    installer = (ROOT / "scripts" / "quassel-install.sh").read_text(
+        encoding="utf-8")
+    assert "archive/refs/tags/$TAG.tar.gz" in installer
+    assert "archive/refs/heads/main.tar.gz" not in installer
+    assert "Release-Tag konnte nicht sicher ermittelt werden." in installer
