@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import (__version__, ai, aimodes, beep, config, i18n, stats, transcribe_file,
+from . import (__version__, ai, aimodes, beep, config, dictprompt, i18n, stats, transcribe_file,
                updatecheck, whisperclient)
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
@@ -601,18 +601,32 @@ class Center(QMainWindow):
         g = self.group(tr("sec_dict"), lay)
         self.desc(tr("dict_hint"), g)
         self.dict_edit = QPlainTextEdit("\n".join(config.dictionary_words()))
+        self.dict_effective = QLabel()
+        self.dict_effective.setObjectName("desc")
+        self.dict_effective.setWordWrap(True)
         self.dict_timer = QTimer(self)
         self.dict_timer.setSingleShot(True)
         self.dict_timer.timeout.connect(
             lambda: config.dictionary_save(self.dict_edit.toPlainText()))
+        self.dict_edit.textChanged.connect(self._update_dict_effective)
         self.dict_edit.textChanged.connect(lambda: self.dict_timer.start(800))
         g.addWidget(self.dict_edit)
+        g.addWidget(self.dict_effective)
+        self._update_dict_effective()
         self.auto_learn = QCheckBox(tr("auto_learn"))
         self.auto_learn.setChecked(self.cfg.auto_learn)
         self.auto_learn.toggled.connect(self.save_settings)
         g.addWidget(self.auto_learn)
         self.desc(tr("auto_learn_hint"), g)
         return scroll
+
+    def _update_dict_effective(self):
+        words = [word.strip() for word in self.dict_edit.toPlainText().splitlines()
+                 if word.strip()]
+        effective = dictprompt.effective_words(
+            words, dictprompt.FULL_DICTIONARY_TOKEN_BUDGET)
+        self.dict_effective.setText(tr("dict_effective", count=len(effective),
+                                       words=", ".join(effective) or "—"))
 
     # ------------------------------------------------ Seite: Textersetzungen
     def page_replace(self):

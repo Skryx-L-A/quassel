@@ -74,6 +74,8 @@ STRINGS = {
     "sec_dict": ("Personal dictionary", "Persönliches Wörterbuch"),
     "dict_hint": ("One word or name per line — improves recognition of names and jargon.",
                   "Ein Wort/Name pro Zeile — verbessert die Erkennung von Namen und Fachwörtern."),
+    "dict_effective": ("Words currently used ({count}): {words}",
+                       "Wörter, die derzeit wirken ({count}): {words}"),
     "sec_history": ("History", "Verlauf"),
     "history_enable": ("Keep history (stored only on this computer)", "Verlauf speichern (nur lokal auf diesem PC)"),
     "history_copy": ("Click an entry to copy it again", "Eintrag anklicken, um ihn erneut zu kopieren"),

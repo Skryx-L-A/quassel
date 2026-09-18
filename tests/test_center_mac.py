@@ -147,6 +147,16 @@ def test_history_and_file_copy_use_mac_clipboard(mac, monkeypatch, qapp, isolate
     assert copied == ["again", "file result"]
 
 
+def test_dictionary_shows_effective_words(mac, qapp, isolated_cfg):
+    c = center.Center()
+    try:
+        c.dict_edit.setPlainText("old\nnewest")
+        assert "newest" in c.dict_effective.text()
+        assert "(2)" in c.dict_effective.text()
+    finally:
+        c.close()
+
+
 # --------------------------------- Signaltoene: Ausgabegeraet (nur macOS)
 
 def test_beep_out_combo_lists_system_first(mac, qapp, isolated_cfg, fake_outputs):
