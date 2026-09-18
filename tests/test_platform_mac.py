@@ -460,8 +460,11 @@ def test_ducking_stays_harmless_when_osascript_hangs(monkeypatch):
 # ------------------------------------------------------- Echte mac-Integration
 # Nur ausführen, wenn tatsächlich auf macOS mit pyobjc-Frameworks getestet wird.
 
-@pytest.mark.skipif(not (_HAS_MAC_FRAMEWORKS and sys.platform == "darwin"),
-                    reason="benötigt echtes macOS mit pyobjc-Frameworks")
+# Greift in die echte Zwischenablage des Nutzers: ein kopiertes Bild oder eine
+# Datei ist danach weg (nur Text wird zurückgelegt). Deshalb nur auf Wunsch.
+@pytest.mark.skipif(not (_HAS_MAC_FRAMEWORKS and sys.platform == "darwin"
+                         and os.environ.get("QUASSEL_LIVE_TESTS") == "1"),
+                    reason="echtes Pasteboard: nur mit QUASSEL_LIVE_TESTS=1")
 def test_clip_roundtrip_real_pasteboard():
     old = pm.clip_read()
     try:
