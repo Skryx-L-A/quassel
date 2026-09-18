@@ -5,11 +5,28 @@ keinen Tokenizer zur Laufzeit und rechnet deutsche Komposita absichtlich zu
 teuer, damit Primer und Wake-Phrase am Ende des Prompts erhalten bleiben.
 """
 import math
+import re
 
 
 PROMPT_TOKEN_LIMIT = 224
 FULL_DICTIONARY_TOKEN_BUDGET = 160
 PARTIAL_DICTIONARY_TOKEN_BUDGET = 72
+
+# Häufige whisper-Halluzinationen bei Stille; nur nach Normalisierung exakt
+# passende Ausgaben werden verworfen. Das ist absichtlich keine unscharfe
+# Sprachkorrektur.
+SILENCE_HALLUCINATIONS = frozenset({
+    "danke fürs zuschauen",
+    "danke fürs zuhören",
+    "vielen dank",
+    "vielen dank fürs zuschauen",
+    "untertitel der amara org community",
+    "untertitel im auftrag des zdf für funk 2017",
+    "thank you",
+    "thank you for watching",
+    "thanks for watching",
+    "subtitles by the amara org community",
+})
 
 
 def estimated_tokens(text):
@@ -57,3 +74,25 @@ def build_prompt(words, prompt_extra=None, mixed_primer=None, partial=False):
     active_words = effective_words(words, min(dictionary_limit, available))
     parts = [", ".join(active_words), *suffix]
     return " ".join(part for part in parts if part), active_words
+
+
+def _normalized_words(text):
+    return tuple(re.findall(r"[^\W_]+", text.casefold(), flags=re.UNICODE))
+
+
+def is_silence_hallucination(text, prompt_words=()):
+    """Ob ``text`` eine bekannte Stille-Halluzination oder ein Prompt-Echo ist.
+
+    Die Funktion ist rein: Aufrufer entscheiden anhand von VAD/Clipdauer, ob
+    sie das Ergebnis verwerfen. Ein Echo zählt nur, wenn jedes ausgegebene Wort
+    bereits im tatsächlich verwendeten Prompt-Wörterbuch steht.
+    """
+    normalized = " ".join(_normalized_words(text))
+    if not normalized:
+        return False
+    if normalized in SILENCE_HALLUCINATIONS:
+        return True
+    prompt_tokens = {token for word in prompt_words
+                     for token in _normalized_words(word)}
+    text_tokens = set(_normalized_words(text))
+    return bool(prompt_tokens and text_tokens and text_tokens <= prompt_tokens)

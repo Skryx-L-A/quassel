@@ -37,3 +37,15 @@ def test_suffix_reservation_keeps_total_within_whisper_limit():
                                         prompt_extra="Wake " * 20,
                                         mixed_primer="Mixed " * 20)
     assert dictprompt.estimated_tokens(prompt) <= dictprompt.PROMPT_TOKEN_LIMIT
+
+
+def test_known_german_and_english_silence_hallucinations_are_rejected():
+    assert dictprompt.is_silence_hallucination("Untertitel der Amara.org-Community")
+    assert dictprompt.is_silence_hallucination("Thank you for watching.")
+
+
+def test_dictionary_prompt_echo_is_rejected_without_matching_real_text():
+    assert dictprompt.is_silence_hallucination("PyTorch, Kubernetes!",
+                                               ["PyTorch", "Kubernetes"])
+    assert not dictprompt.is_silence_hallucination("PyTorch wird genutzt.",
+                                                    ["PyTorch", "Kubernetes"])
