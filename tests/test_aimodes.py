@@ -74,6 +74,14 @@ def test_detect_voice_mode_requires_address():
         "formal", "der Bericht")
 
 
+def test_detect_custom_voice_mode_needs_address_and_word_boundary():
+    custom = "tweet=Write a tweet"
+    text = "Quassel, Tweeted yesterday about lunch"
+    assert aimodes.detect_custom_voice_mode(text, custom) == (None, text)
+    assert aimodes.detect_custom_voice_mode("Quassel, tweet: lunch", custom) == (
+        "tweet", "lunch")
+
+
 def test_detect_voice_mode_empty():
     assert aimodes.detect_voice_mode("") == (None, "")
 

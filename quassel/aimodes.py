@@ -222,6 +222,34 @@ def detect_voice_mode(text: str) -> tuple[str | None, str]:
     return (None, text)
 
 
+def detect_custom_voice_mode(text: str, custom_text: str) -> tuple[str | None, str]:
+    """Eigenen, adressierten Modus mit Wortgrenze erkennen.
+
+    Die Funktion gehört hierher statt in die Plattform-Aufrufer, damit eigene
+    Modi dieselben Anrede- und Grenzregeln wie eingebaute Modi verwenden.
+    """
+    if not isinstance(text, str) or not text:
+        return (None, text)
+    addressed = _strip_voice_address(text)
+    if addressed is None:
+        return (None, text)
+    custom = parse_custom(custom_text)
+    norm = _norm(addressed)
+    for name in sorted(custom, key=lambda item: len(_norm(item)), reverse=True):
+        trigger = _norm(name)
+        if not norm.startswith(trigger):
+            continue
+        remainder = norm[len(trigger):]
+        if remainder and remainder[0] not in " \t\r\n,:":
+            continue
+        cut = _orig_cut(addressed, len(trigger))
+        rest = addressed[cut:].lstrip()
+        if rest[:1] in (",", ":"):
+            rest = rest[1:].lstrip()
+        return (name, rest)
+    return (None, text)
+
+
 def _orig_cut(text: str, norm_len: int) -> int:
     """Index im ORIGINAL-Text finden, der `norm_len` normalisierten Zeichen
     entspricht. Umlaute zaehlen normalisiert als 2 Zeichen (ae/oe/ue/ss)."""
