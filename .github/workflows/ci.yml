@@ -6,12 +6,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Shell syntax
+        shell: bash
         run: |
-          bash -n install.sh uninstall.sh bin/quassel-ctl bin/quasseld bin/quassel bin/quassel-pill
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find install.sh uninstall.sh bin scripts -type f \( -name '*.sh' -o -path 'bin/*' \) -print0)
       - name: ShellCheck
+        shell: bash
         run: |
-          sudo apt-get install -y shellcheck >/dev/null
-          shellcheck -S warning install.sh uninstall.sh bin/quassel-ctl || true
+          if command -v shellcheck >/dev/null; then
+            while IFS= read -r -d '' script; do
+              shellcheck -S warning "$script"
+            done < <(find install.sh uninstall.sh bin scripts -type f \( -name '*.sh' -o -path 'bin/*' \) -print0)
+          else
+            echo "shellcheck is not available on this runner; bash syntax was checked."
+          fi
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}

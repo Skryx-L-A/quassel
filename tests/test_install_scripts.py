@@ -57,3 +57,13 @@ def test_ci_has_the_supported_platform_and_python_matrix():
     assert "ubuntu-latest, macos-latest, windows-latest" in workflow
     assert 'python: ["3.10", "3.11", "3.12", "3.13"]' in workflow
     assert "actions/setup-python@v6" in workflow
+
+
+def test_ci_checks_every_shell_entrypoint_without_masking_shellcheck():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8")
+    assert "find install.sh uninstall.sh bin scripts" in workflow
+    assert 'bash -n "$script"' in workflow
+    assert 'shellcheck -S warning "$script"' in workflow
+    assert "shellcheck -S warning install.sh uninstall.sh bin/quassel-ctl || true" \
+        not in workflow
