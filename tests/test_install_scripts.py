@@ -110,3 +110,11 @@ def test_macos_installer_requires_a_checksum_unless_explicitly_overridden():
     assert "--allow-unverified" in installer
     assert 'if [[ "$ALLOW_UNVERIFIED" -eq 1 ]]' in installer
     assert "Prüfsummendatei fehlt" in installer
+
+
+def test_readme_matches_the_current_platform_behavior():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "real microphone waveform" not in readme
+    assert "turning Quassel off frees the GPU memory" not in readme
+    assert "Windows build is fresh" not in readme
+    assert "latest (**v2.7.0**)" in readme
