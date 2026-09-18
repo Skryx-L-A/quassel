@@ -272,3 +272,54 @@ def test_history_default_stays_on(tmp_path, monkeypatch):
     dieser Änderung: die Vorgabe bleibt wie sie war."""
     _isolate_cfg(tmp_path, monkeypatch)
     assert config.Cfg().history_enabled is True
+
+
+# ------------------------------------------- Auto-Wörterbuch schreibt mit Merge (B22)
+def test_learning_reads_the_file_fresh_and_keeps_what_was_added_meanwhile(tmp_path, monkeypatch):
+    """Der Daemon lernte aus seiner Kopie und schrieb sie über die Datei: ein
+    Eintrag, den der Nutzer im Kontrollzentrum inzwischen ergänzt hatte, war
+    weg. Selbst der mtime/size-Cache verrät das nicht, wenn der Austausch
+    dieselbe Länge hat und in dieselbe Zeitauflösung fällt."""
+    _isolate(tmp_path, monkeypatch)
+    config.dictionary_save("Alpha\nBeta")
+    assert config.dictionary_words() == ["Alpha", "Beta"]      # Cache gefüllt
+    st = os.stat(config.DICTIONARY)
+    with open(config.DICTIONARY, "w", encoding="utf-8") as f:   # von außen ersetzt
+        f.write("Alpha\nGamma")                                # gleiche Länge
+    os.utime(config.DICTIONARY, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert config.dictionary_learn("Ich nutze PyTorch") == ["PyTorch"]
+    assert config.dictionary_words() == ["Alpha", "Gamma", "PyTorch"]
+
+
+def test_learning_writes_nothing_when_nothing_is_new(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    assert config.dictionary_learn("Der Hund ist schnell") == []
+    assert not os.path.exists(config.DICTIONARY)
+    config.dictionary_save("PyTorch")
+    before = os.stat(config.DICTIONARY).st_mtime_ns
+    assert config.dictionary_learn("PyTorch und pytorch") == []
+    assert os.stat(config.DICTIONARY).st_mtime_ns == before
+
+
+def test_learning_never_drops_manual_entries(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    manual = ["Eigenname%d" % i for i in range(500)]
+    config.dictionary_save("\n".join(manual))
+    assert config.dictionary_learn("Ich nutze PyTorch und NASA") == []
+    assert config.dictionary_words() == manual
+
+
+def test_two_learners_at_once_lose_no_word(tmp_path, monkeypatch):
+    import threading
+    _isolate(tmp_path, monkeypatch)
+
+    def learn_many(prefix):
+        for i in range(25):
+            config.dictionary_learn("Wort %sX%d" % (prefix, i))
+    threads = [threading.Thread(target=learn_many, args=(p,)) for p in ("a", "b")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    words = config.dictionary_words()
+    assert len(words) == 50 and len(set(words)) == 50

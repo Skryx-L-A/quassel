@@ -22,6 +22,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Automatic dictionary learning no longer picks up junk or deletes your own
+  words. It used to learn things like `2nd`, `10pm`, `5EUR`, `100km`, `20er`,
+  `3D` and `OK`; numbers with a unit or ordinal ending and a few everyday
+  capitals are now skipped, while names and technical terms such as `K8s`,
+  `GPT4` or `PyTorch` are still learned. And once the dictionary reached 500
+  entries it cut off the oldest ones, which are the ones you typed yourself.
+  Now the limit only stops new words from being added; nothing that is already
+  in the dictionary is removed.
 - Settings, dictionary, text replacements, AI modes, history and statistics are
   now saved atomically. Each of them used to be emptied first and refilled
   afterwards, so a crash or a power cut in that moment left an empty file, and

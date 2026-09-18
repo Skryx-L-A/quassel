@@ -12,6 +12,7 @@ import json
 import math
 import os
 import sys
+import threading
 
 from . import fsutil, profile
 
@@ -283,6 +284,28 @@ def dictionary_words():
 def dictionary_save(text):
     fsutil.atomic_write(DICTIONARY, text.strip() + "\n" if text.strip() else "")
     _dictionary_cache["key"] = None
+
+
+_dictionary_lock = threading.Lock()
+
+
+def dictionary_learn(text, cap=500):
+    """Lernt Jargon aus einem Diktat ins Wörterbuch und gibt die neu
+    aufgenommenen Wörter zurück (leer, wenn nichts Neues dabei war).
+
+    Liest die Datei dazu FRISCH von der Platte (nicht aus dem Cache und nicht
+    aus einer Kopie, die der Aufrufer schon länger hält), führt zusammen und
+    schreibt atomar. Was der Nutzer inzwischen im Kontrollzentrum ergänzt
+    hat, geht so nicht verloren. Die Sperre schützt vor zwei Lernern im selben
+    Prozess; über Prozessgrenzen bleibt nur das Fenster zwischen Lesen und
+    Ersetzen, das nach Millisekunden zählt."""
+    from . import learn      # erst hier: learn kennt config nicht
+    with _dictionary_lock:
+        _dictionary_cache["key"] = None
+        merged, added = learn.learn(text, dictionary_words(), cap)
+        if added:
+            dictionary_save("\n".join(merged))
+    return added
 
 
 # ------------------------------------------------------------- Textersetzungen
