@@ -19,7 +19,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMainWindow, QPlainTextEdit, QProgressBar, QPushButton,
+    QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -748,8 +748,10 @@ class Center(QMainWindow):
         self.select_data(self.ai_mode, cur)
 
     def on_ai_refresh(self):
+        ep = self._confirmed_ai_endpoint()
+        if ep is None:
+            return
         self.ai_status.setText(tr("ai_testing"))
-        ep = self.ai_endpoint.text().strip() or config.OLLAMA_DEFAULT
 
         def run():
             avail = ai.available(ep)
@@ -776,9 +778,11 @@ class Center(QMainWindow):
                                    else tr("ai_unavailable"))
 
     def on_ai_test(self):
+        ep = self._confirmed_ai_endpoint()
+        if ep is None:
+            return
         self.ai_test_lbl.setText(tr("ai_testing"))
         model = self.ai_model.currentText().strip()
-        ep = self.ai_endpoint.text().strip() or config.OLLAMA_DEFAULT
         timeout = self.cfg.ai_timeout
         sample = "um so like we should uh ship it on friday yeah"
         system = aimodes.system_for("cleanup")
@@ -794,6 +798,25 @@ class Center(QMainWindow):
             self.ai_test_lbl.setText("✓ " + tr("ai_test_ok", text=out[:120]))
         else:
             self.ai_test_lbl.setText("✕ " + tr("ai_test_fail"))
+
+    def _confirmed_ai_endpoint(self):
+        endpoint = self.ai_endpoint.text().strip() or config.OLLAMA_DEFAULT
+        warning = ai.endpoint_warning(endpoint)
+        if warning == "invalid":
+            QMessageBox.warning(self, tr("ai_endpoint_invalid_title"),
+                                tr("ai_endpoint_invalid"))
+            self.ai_endpoint.setText(self.cfg.ai_endpoint)
+            return None
+        if warning in ("remote", "remote_plain"):
+            message = tr("ai_endpoint_remote_plain" if warning == "remote_plain"
+                         else "ai_endpoint_remote")
+            answer = QMessageBox.question(self, tr("ai_endpoint_warning_title"), message,
+                                          QMessageBox.Yes | QMessageBox.No,
+                                          QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                self.ai_endpoint.setText(self.cfg.ai_endpoint)
+                return None
+        return endpoint
 
     # ----------------------------------------------------- Seite: Verlauf
     def page_history(self):
@@ -912,6 +935,9 @@ class Center(QMainWindow):
 
     # ----------------------------------------------------------- Speichern
     def save_settings(self, *_a):
+        endpoint = self._confirmed_ai_endpoint()
+        if endpoint is None:
+            return
         if self._loading:
             return
         werte = {
@@ -939,7 +965,7 @@ class Center(QMainWindow):
             ("history", "enabled"): str(self.hist_enable.isChecked()).lower(),
             ("system", "update_check"): str(self.update_startup.isChecked()).lower(),
             ("ai", "enabled"): str(self.ai_on.isChecked()).lower(),
-            ("ai", "endpoint"): self.ai_endpoint.text().strip() or config.OLLAMA_DEFAULT,
+            ("ai", "endpoint"): endpoint,
             ("ai", "model"): self.ai_model.currentText().strip(),
             ("ai", "post_process"): str(self.ai_post.isChecked()).lower(),
             ("ai", "post_mode"): self.ai_mode.currentData() or "cleanup",
