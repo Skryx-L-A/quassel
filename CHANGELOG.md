@@ -24,6 +24,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `é`, `ñ`, and `ø`.
 - Text replacements now run once per dictation. An expansion can no longer
   accidentally activate a second replacement rule.
+- Voice-triggered AI modes now require the explicit address "Quassel,". This
+  keeps ordinary sentence openings such as "Formal gesehen …" intact.
 
 ## [2.7.0] - 2026-08-04
 
