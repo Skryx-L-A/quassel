@@ -212,14 +212,16 @@ class _FakeProbe:
     das, was server_up erwartet; ein blankes object() würde durchrutschen und
     die Probe stillschweigend an den echten Server auf 8765 schicken."""
 
-    def __init__(self, calls=None, exc=None):
-        self.calls, self.exc = calls if calls is not None else [], exc
+    def __init__(self, calls=None, exc=None, server="whisper.cpp"):
+        self.calls, self.exc, self.server = calls if calls is not None else [], exc, server
 
     def open(self, url, timeout=None):
         self.calls.append((url, timeout))
         if self.exc:
             raise self.exc
-        return contextlib.nullcontext()
+        return contextlib.nullcontext(type("Response", (), {
+            "headers": {"Server": self.server},
+        })())
 
 
 def test_server_up_true_when_probe_succeeds(monkeypatch):
@@ -232,6 +234,13 @@ def test_server_up_true_when_probe_succeeds(monkeypatch):
 
 def test_server_up_false_on_any_exception(monkeypatch):
     monkeypatch.setattr(wc, "_probe", _FakeProbe(exc=OSError("connection refused")))
+    wc._server_seen = False
+    assert wc.server_up() is False
+    assert wc.server_was_up() is False
+
+
+def test_server_up_rejects_an_unrelated_service_on_the_port(monkeypatch):
+    monkeypatch.setattr(wc, "_probe", _FakeProbe(server="nginx"))
     wc._server_seen = False
     assert wc.server_up() is False
     assert wc.server_was_up() is False

@@ -41,8 +41,8 @@ _probe = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 def server_up(timeout=2):
     # urllib statt curl-Subprozess: gemessen 0,17ms gegen 5,75ms. Der
-    # Multipart-Upload in transcribe() bleibt bei curl (Unterschied dort nur
-    # 0,8ms, Umbau riskanter).
+    # Der Multipart-Upload in transcribe() läuft ebenfalls ohne Proxy direkt
+    # über die Loopback-Verbindung.
     # ACHTUNG Timeout-Semantik: urllib's timeout gilt je Socket-Operation
     # (Connect, jeder einzelne Read), NICHT für die Gesamtdauer wie curls -m.
     # Auf 127.0.0.1 mit einer winzigen Antwort ist der Unterschied praktisch
@@ -51,9 +51,11 @@ def server_up(timeout=2):
     # irrt sich.
     global _server_seen
     try:
-        with _probe.open(SERVER + "/", timeout=timeout):
-            pass            # Verbindung sofort schließen, nur Erreichbarkeit zählt
-        ok = True
+        with _probe.open(SERVER + "/", timeout=timeout) as response:
+            server = response.headers.get("Server", "")
+        # Ein anderer Dienst auf diesem Port darf den echten Start nicht
+        # blockieren und auch nicht als warmer whisper.cpp-Server gelten.
+        ok = server.casefold().startswith("whisper.cpp")
     except Exception:  # noqa: BLE001 — jede Ausnahme (Timeout, Refused, HTTP-Fehler) = nicht erreichbar
         ok = False
     if ok:
