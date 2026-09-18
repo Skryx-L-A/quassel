@@ -22,11 +22,32 @@ PUNCT_RULES = [
     (r"neuer absatz", "\n\n"), (r"neue zeile", "\n"), (r"zeilenumbruch", "\n"),
     (r"new paragraph", "\n\n"), (r"new line", "\n"), (r"newline", "\n"),
     (r"fragezeichen", "?"), (r"ausrufezeichen", "!"), (r"doppelpunkt", ":"),
-    (r"semikolon", ";"), (r"komma", ","), (r"punkt", "."),
+    (r"semikolon", ";"),
     (r"question mark", "?"), (r"exclamation (?:mark|point)", "!"),
-    (r"full stop", "."), (r"period", "."), (r"comma", ","),
+    (r"full stop", "."),
     (r"colon", ":"), (r"semicolon", ";"),
 ]
+
+_NUMBER_WORDS = {
+    "null", "eins", "ein", "eine", "einen", "einem", "einer", "zwei", "drei",
+    "vier", "fuenf", "fünf", "sechs", "sieben", "acht", "neun", "zehn",
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+    "nine", "ten",
+}
+
+
+def _is_number_word(word):
+    return word.isdigit() or word.lower() in _NUMBER_WORDS
+
+
+def _replace_spoken_comma(match):
+    """Replace a comma word unless it is the decimal separator in spoken prose."""
+    text = match.string
+    before = re.search(r"(\w+)\W*$", text[:match.start()])
+    after = re.match(r"\W*(\w+)", text[match.end():])
+    if before and after and _is_number_word(before.group(1)) and _is_number_word(after.group(1)):
+        return match.group(0)
+    return ","
 
 
 def is_command(text):
@@ -44,6 +65,14 @@ def apply_punctuation(text):
         else:
             # Satzzeichen hängt sich ans vorherige Wort
             text = re.sub(rf"\s*\b{pat}\b", repl, text, flags=re.IGNORECASE)
+    # "Punkt" und "period" sind normale Wörter. Als Satzzeichen gelten sie
+    # deshalb nur am Ende der Äußerung; sonst bleibt z. B. "wichtiger Punkt"
+    # unverändert.
+    text = re.sub(r"\s*\b(?:punkt|period)\b[\s,.!?]*$", ".", text,
+                  flags=re.IGNORECASE)
+    # "zwei Komma fünf" beschreibt eine Zahl, kein Satzzeichen.
+    text = re.sub(r"\s*\b(?:komma|comma)\b", _replace_spoken_comma, text,
+                  flags=re.IGNORECASE)
     return text
 
 

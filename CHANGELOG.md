@@ -14,6 +14,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Spoken punctuation no longer turns ordinary uses of "Punkt", "period", or
+  decimal commas into punctuation. "Punkt" and "period" now mark a sentence
+  only at the end of a dictation.
+
 ## [2.7.0] - 2026-08-04
 
 > macOS only. Nothing in this release changes Linux or Windows; both keep playing

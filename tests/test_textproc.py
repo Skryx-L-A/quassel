@@ -36,6 +36,13 @@ def test_punctuation_and_caps():
     assert (k, v) == ("text", "Hallo, welt."), (k, v)
 
 
+def test_spoken_punctuation_keeps_ordinary_words():
+    assert textproc.apply_punctuation("Das ist ein wichtiger Punkt, den wir klaeren") == \
+        "Das ist ein wichtiger Punkt, den wir klaeren"
+    assert textproc.apply_punctuation("zwei komma fuenf Prozent") == \
+        "zwei komma fuenf Prozent"
+
+
 def test_commands_disabled_passes_through():
     class C:
         punctuation = True
