@@ -621,11 +621,9 @@ class Daemon:
                 stats.record(value, seconds=seconds)
             except Exception:    # noqa: BLE001 — Statistik darf nie stören
                 pass
-        if self.cfg.auto_learn:
+        if self.cfg.auto_learn and not self.cfg.programmer_mode:
             try:
-                merged, added = learn.learn(value, config.dictionary_words())
-                if added:
-                    config.dictionary_save("\n".join(merged))
+                config.dictionary_learn(value)
             except Exception:    # noqa: BLE001 — Lernen darf nie stören
                 pass
 
