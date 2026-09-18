@@ -5,12 +5,50 @@ Privatsphaere geht vor: alles bleibt lokal. Der Client wirft NIE an den Aufrufer
 und scheitert weich (None / [] / False), damit ein Diktat nie verloren geht oder
 blockiert wird. Nur Standardbibliothek (urllib, json, re, threading).
 """
+import ipaddress
 import json
 import re
 import threading
+import urllib.parse
 import urllib.request
 
 OLLAMA_DEFAULT = "http://127.0.0.1:11434"
+
+# Opener OHNE Proxy fuer Loopback-Endpunkte: urlopen wuerde sonst die
+# Proxy-Einstellungen des Systems auch fuer 127.0.0.1 anwenden. Hinter einem
+# Firmen- oder Systemproxy ginge der Diktattext dann an den Proxy, oder die
+# Bereinigung scheiterte still. (Wie _probe in whisperclient.py.)
+_local_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def is_loopback(endpoint: str) -> bool:
+    """True, wenn endpoint eine URL ist, deren Host dieser Rechner selbst ist:
+    localhost, 127.0.0.0/8 oder ::1. Es wird nichts aufgeloest, ein Name wie
+    "ollama.lan" gilt also immer als fremd. Kein Schema/kein Host -> False."""
+    try:
+        host = urllib.parse.urlsplit(endpoint).hostname
+    except ValueError:
+        return False
+    if not host:
+        return False
+    host = host.rstrip(".").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    return addr.is_loopback
+
+
+def _open(req, endpoint, timeout):
+    """urlopen fuer den Endpunkt: Loopback ohne Proxy, alles andere wie bisher."""
+    if is_loopback(endpoint):
+        return _local_opener.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
 
 # Eine einzelne Markdown-Code-Fence-Zeile am Anfang/Ende: ``` oder ```python o.ae.
 _FENCE_RE = re.compile(r"^```[^\n]*\n(.*)\n```$", re.DOTALL)
@@ -105,7 +143,7 @@ def available(endpoint: str = OLLAMA_DEFAULT, timeout: float = 2.0) -> bool:
     Jeder Fehler/Timeout -> False (wirft nie)."""
     url = endpoint.rstrip("/") + "/api/tags"
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
+        with _open(url, endpoint, timeout) as resp:
             return resp.status == 200
     except Exception:
         return False
@@ -115,7 +153,7 @@ def list_models(endpoint: str = OLLAMA_DEFAULT, timeout: float = 4.0) -> list[st
     """GET {endpoint}/api/tags -> parse_tags. [] bei jedem Fehler (wirft nie)."""
     url = endpoint.rstrip("/") + "/api/tags"
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
+        with _open(url, endpoint, timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         return parse_tags(data)
     except Exception:
@@ -139,7 +177,7 @@ def generate(prompt: str, *, model: str, system: str | None = None,
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _open(req, endpoint, timeout) as resp:
             if resp.status != 200:
                 return None
             data = json.loads(resp.read().decode("utf-8"))

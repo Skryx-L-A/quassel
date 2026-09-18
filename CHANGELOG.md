@@ -22,6 +22,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   showed. All text fields are now sent as plain text.
 
 ### Security
+- The AI clean-up no longer goes through the system proxy when Ollama runs on
+  this computer. Behind a company or system proxy, your dictated text was sent
+  to the proxy on its way to `127.0.0.1`, or the clean-up failed without a
+  message. Calls to this computer now go straight there; an endpoint elsewhere
+  on the network keeps using the proxy settings.
 - With the wake word switched on, the log no longer contains what was heard.
   The listener transcribes everything said in the room, and every sentence used
   to be written to the log in plain text. It now records only how long the
