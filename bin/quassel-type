@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Quassel-Kontrollzentrum (Qt) — bevorzugt das venv mit PySide6
 export PYTHONPATH="$HOME/.local/lib/quassel${PYTHONPATH:+:$PYTHONPATH}"
-PY="$HOME/.local/share/quassel/venv/bin/python3"
-[[ -x "$PY" ]] || PY=python3
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$("$HERE/quassel-python" "$HOME/.local/share/quassel/venv/bin/python3" \
+    python3.13 python3.12 python3.11 python3.10 python3)"
 exec "$PY" -m quassel.center
