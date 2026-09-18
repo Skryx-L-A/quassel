@@ -74,3 +74,14 @@ def test_ci_runs_the_full_offline_pytest_suite():
         encoding="utf-8")
     assert "python -m pytest -q tests --ignore=tests/test_coreaudio_mac.py" \
         in workflow
+
+
+def test_uninstaller_removes_every_user_file_and_asks_before_system_changes():
+    uninstaller = (ROOT / "uninstall.sh").read_text(encoding="utf-8")
+    for launcher in ("quasseld", "quassel-type", "quassel-pill", "quassel-ctl",
+                     "quassel-python"):
+        assert f'"$BIN"/{launcher}' in uninstaller
+    assert "quassel-voice.svg" in uninstaller
+    assert "quassel-voice.png" in uninstaller
+    assert "read -r -p" in uninstaller
+    assert "gpasswd -d" in uninstaller
