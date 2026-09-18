@@ -176,11 +176,13 @@ say "4/8  Sprachmodell(e) laden"
 mkdir -p "$DATA/models"
 HF="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 dl_model() {
-    local m="$1" f="ggml-$1.bin"
-    [[ -s "$DATA/models/$f" ]] && return 0
+    local m="$1" f="ggml-$1.bin" target="$DATA/models/$f" part="$DATA/models/$f.part"
+    [[ -s "$target" ]] && return 0
     echo "    Lade Modell '$m' (75 MB – 1,6 GB)…"
-    curl -L --fail --progress-bar -o "$DATA/models/$f" "$HF/$f" \
-        || die "Modell-Download fehlgeschlagen: $m"
+    rm -f "$part"
+    curl -L --fail --progress-bar -o "$part" "$HF/$f" \
+        || { rm -f "$part"; die "Modell-Download fehlgeschlagen: $m"; }
+    mv "$part" "$target"
 }
 # Standardmodell: mit GPU das volle large-v3-turbo; ohne GPU ein QUANTISIERTES
 # Modell passend zur CPU (hwdetect: medium-q5/small-q5/base-q5) — auf CPU klar
@@ -207,9 +209,12 @@ ok "Modell: $MODELFILE  (Standard für diese Hardware)"
 # ohne VAD weiter.
 VAD_PATH="$DATA/models/ggml-silero-v5.1.2.bin"
 if [[ ! -s "$VAD_PATH" ]]; then
-    curl -L --fail -s -o "$VAD_PATH" \
+    VAD_PART="$VAD_PATH.part"
+    rm -f "$VAD_PART"
+    curl -L --fail -s -o "$VAD_PART" \
         "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin" \
-        || { warn "VAD-Modell-Download fehlgeschlagen — VAD bleibt aus"; VAD_PATH=""; }
+        || { rm -f "$VAD_PART"; warn "VAD-Modell-Download fehlgeschlagen — VAD bleibt aus"; VAD_PATH=""; }
+    [[ -n "$VAD_PATH" ]] && mv "$VAD_PART" "$VAD_PATH"
 fi
 [[ -n "$VAD_PATH" ]] && ok "VAD-Modell bereit (Stille wird übersprungen)"
 

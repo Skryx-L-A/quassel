@@ -93,3 +93,11 @@ def test_online_installer_refuses_to_fall_back_to_main():
     assert "archive/refs/tags/$TAG.tar.gz" in installer
     assert "archive/refs/heads/main.tar.gz" not in installer
     assert "Release-Tag konnte nicht sicher ermittelt werden." in installer
+
+
+def test_model_downloads_only_publish_complete_files():
+    installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+    assert 'part="$DATA/models/$f.part"' in installer
+    assert 'mv "$part" "$target"' in installer
+    assert 'VAD_PART="$VAD_PATH.part"' in installer
+    assert 'mv "$VAD_PART" "$VAD_PATH"' in installer
