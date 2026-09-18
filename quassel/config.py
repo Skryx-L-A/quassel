@@ -324,8 +324,11 @@ def history_append(text):
     entries = history_read()
     entries.append({"text": text, "ts": __import__("time").time()})
     entries = entries[-HISTORY_MAX:]
+    # 0600: die letzten Diktate sind oft Privates und sollen nur der Nutzer lesen.
+    # Eine bestehende, weiter geöffnete Datei zieht beim nächsten Diktat nach.
     fsutil.atomic_write(
-        HISTORY, "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries))
+        HISTORY, "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
+        mode=0o600)
 
 
 def history_read():

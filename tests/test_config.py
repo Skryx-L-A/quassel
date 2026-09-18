@@ -5,6 +5,8 @@ import os
 import sys
 import time
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from quassel import config
@@ -231,3 +233,42 @@ def test_non_ascii_values_round_trip(tmp_path, monkeypatch):
     _cfg_file(tmp_path, monkeypatch)
     config.save({("wakeword", "phrase"): "Hallo Größe Ärger"})
     assert config.Cfg().wakeword_phrase == "Hallo Größe Ärger"
+
+
+# ------------------------------------------------- history.jsonl nur für den Nutzer (A5)
+def _isolate_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATADIR", str(tmp_path))
+    monkeypatch.setattr(config, "HISTORY", str(tmp_path / "history.jsonl"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-Rechte")
+def test_history_is_readable_by_the_user_only(tmp_path, monkeypatch):
+    """Die letzten Diktate (auch Privates, Passwörter) lagen mit der Standard-
+    umask da: 0644, also für jeden Nutzer des Rechners lesbar."""
+    _isolate_history(tmp_path, monkeypatch)
+    old_umask = os.umask(0o022)
+    try:
+        config.history_append("geheim")
+    finally:
+        os.umask(old_umask)
+    assert (os.stat(config.HISTORY).st_mode & 0o777) == 0o600
+    assert config.history_read()[0]["text"] == "geheim"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-Rechte")
+def test_an_existing_world_readable_history_is_tightened(tmp_path, monkeypatch):
+    """Installationen mit einem alten Verlauf ziehen beim nächsten Diktat nach."""
+    _isolate_history(tmp_path, monkeypatch)
+    with open(config.HISTORY, "w", encoding="utf-8") as f:
+        f.write('{"text": "alt", "ts": 1}\n')
+    os.chmod(config.HISTORY, 0o644)
+    config.history_append("neu")
+    assert (os.stat(config.HISTORY).st_mode & 0o777) == 0o600
+    assert [e["text"] for e in config.history_read()] == ["alt", "neu"]
+
+
+def test_history_default_stays_on(tmp_path, monkeypatch):
+    """Ob der Verlauf standardmäßig an ist, entscheidet der Betreiber, nicht
+    dieser Änderung: die Vorgabe bleibt wie sie war."""
+    _isolate_cfg(tmp_path, monkeypatch)
+    assert config.Cfg().history_enabled is True

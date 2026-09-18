@@ -43,6 +43,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   showed. All text fields are now sent as plain text.
 
 ### Security
+- The dictation history file (`history.jsonl`) is now readable by you only.
+  It used to be created with the system's default rights, which on most systems
+  let every other account on the computer read your last dictations. An
+  existing file is tightened the next time something is dictated. The history
+  itself stays on by default and can be switched off as before.
 - The AI clean-up no longer goes through the system proxy when Ollama runs on
   this computer. Behind a company or system proxy, your dictated text was sent
   to the proxy on its way to `127.0.0.1`, or the clean-up failed without a
