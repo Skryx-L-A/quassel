@@ -121,8 +121,9 @@ def _record_server_time(recorder):
     """Dauer der POST /inference-Runde messen, ohne das Produkt zu ändern.
 
     Nur im Bench-Prozess aktiv; danach wird der Original-Zustand wiederher-
-    gestellt. Bleibt der Recorder leer, ging der Request über den curl-
-    Rückfall und die Serverzeit ist für diesen Lauf nicht verfügbar.
+    gestellt. Gezählt wird nur die erfolgreiche Runde — scheitert der direkte
+    Post und der curl-Rückfall übernimmt, bleibt die Serverzeit für diesen
+    Lauf None statt eine fehlgeschlagene Runde zu melden.
     """
     import quassel.whisperclient as wc
     original = wc._post_multipart
@@ -130,9 +131,11 @@ def _record_server_time(recorder):
     def timed(body, content_type, timeout):
         start = time.perf_counter()
         try:
-            return original(body, content_type, timeout)
+            result = original(body, content_type, timeout)
         finally:
-            recorder.append(time.perf_counter() - start)
+            duration = time.perf_counter() - start
+        recorder.append((duration, result is not None))
+        return result
 
     wc._post_multipart = timed
     try:
@@ -157,8 +160,9 @@ def run_clip(backend, item, wav_path, *, language, runs, timeout,
                 recorder = []
                 with _record_server_time(recorder):
                     result = backend.transcribe(str(wav_path), opts)
-                if recorder:
-                    server_s = recorder[-1]
+                good = [(d, ok) for d, ok in recorder if ok]
+                if good:
+                    server_s = good[-1][0]
             else:
                 result = backend.transcribe(str(wav_path), opts)
             text = result.text
@@ -355,7 +359,7 @@ def _fmt(value, digits=3):
 
 
 def _hyp_preview(hyp):
-    text = (hyp or "").strip().replace("|", "\\|")
+    text = " ".join((hyp or "").split()).replace("|", "\\|")
     if len(text) > HYPOTHESIS_PREVIEW_CHARS:
         text = text[:HYPOTHESIS_PREVIEW_CHARS - 1] + "…"
     return text
