@@ -1,0 +1,93 @@
+{
+ "version": 1,
+ "note": "Referenztexte wortgetreu aus den vorhandenen .txt-Dateien uebernommen; Sprache/Kategorie aus dem Aufnahmeskript scripts/record_bench_samples.py (SENTENCES-Reihenfolge) bzw. dem Textinhalt der TTS-Clips. Pfade relativ zum Repo-Ursprung; die Aufnahmen liegen gitignored im Datenverzeichnis. Werte fuer mixed/namen/stille/code sind nicht vorhanden und werden nicht erfunden — siehe open.",
+ "items": [
+  {
+   "id": "de-kurz-01",
+   "path": "bench_samples/01.wav",
+   "ref": "Können Sie mir bitte sagen, wie spät es ist? Es ist ungefähr halb drei.",
+   "language": "de",
+   "category": "kurz",
+   "source": "record_bench_samples.py SENTENCES[0] (de), echte Aufnahme",
+   "expect_words": []
+  },
+  {
+   "id": "de-kurz-02",
+   "path": "bench_samples/02.wav",
+   "ref": "Die Rechnung beläuft sich auf 42 Euro und 17 Cent für drei Artikel.",
+   "language": "de",
+   "category": "kurz",
+   "source": "record_bench_samples.py SENTENCES[1] (de), echte Aufnahme",
+   "expect_words": []
+  },
+  {
+   "id": "de-kurz-03",
+   "path": "bench_samples/03.wav",
+   "ref": "Wir haben heute Milch, Brot, Käse, Äpfel und, wenn möglich, auch Marmelade gekauft.",
+   "language": "de",
+   "category": "kurz",
+   "source": "record_bench_samples.py SENTENCES[2] (de), echte Aufnahme",
+   "expect_words": []
+  },
+  {
+   "id": "en-kurz-04",
+   "path": "bench_samples/04.wav",
+   "ref": "The quick brown fox jumps over the lazy dog near the riverbank.",
+   "language": "en",
+   "category": "kurz",
+   "source": "record_bench_samples.py SENTENCES[3] (en), echte Aufnahme",
+   "expect_words": []
+  },
+  {
+   "id": "en-kurz-05",
+   "path": "bench_samples/05.wav",
+   "ref": "Please schedule the meeting for next Tuesday at 3:30 in the afternoon.",
+   "language": "en",
+   "category": "kurz",
+   "source": "record_bench_samples.py SENTENCES[4] (en), echte Aufnahme",
+   "expect_words": []
+  },
+  {
+   "id": "en-kurz-06",
+   "path": "bench_samples/06.wav",
+   "ref": "I would like to order two coffees and one croissant, thank you very much.",
+   "language": "en",
+   "category": "kurz",
+   "source": "record_bench_samples.py SENTENCES[5] (en), echte Aufnahme",
+   "expect_words": []
+  },
+  {
+   "id": "de-lang-07",
+   "path": "bench_samples/07.wav",
+   "ref": "Am Samstagmorgen bin ich früh aufgestanden und mit dem Fahrrad zum Wochenmarkt gefahren. Dort habe ich frisches Gemüse, zwei Kilo Äpfel und ein großes Roggenbrot gekauft. Der Händler erzählte mir, dass die Preise wegen des trockenen Sommers um fast fünfzehn Prozent gestiegen sind. Anschließend traf ich meine Schwester in einem kleinen Café am Marktplatz, wo wir über ihre geplante Reise nach Österreich sprachen. Sie will im Oktober für zehn Tage nach Wien und Salzburg, obwohl sie eigentlich lieber ans Meer fährt. Auf dem Rückweg begann es plötzlich zu regnen, und ich war völlig durchnässt, als ich endlich zu Hause ankam.",
+   "language": "de",
+   "category": "lang",
+   "source": "record_bench_samples.py SENTENCES[6] (de, 48,4 s), echte Aufnahme",
+   "expect_words": []
+  },
+  {
+   "id": "synth-de-01",
+   "path": "bench_samples_synth/01.wav",
+   "ref": "Guten Morgen, ich möchte heute über künstliche Intelligenz sprechen, insbesondere über Spracherkennung.",
+   "language": "de",
+   "category": "kurz",
+   "source": "TTS-Aufnahme, Text = bench_samples_synth/01.txt",
+   "expect_words": []
+  },
+  {
+   "id": "synth-en-02",
+   "path": "bench_samples_synth/02.wav",
+   "ref": "Good morning, I would like to talk about artificial intelligence today, especially speech recognition.",
+   "language": "en",
+   "category": "kurz",
+   "source": "TTS-Aufnahme, Text = bench_samples_synth/02.txt",
+   "expect_words": []
+  }
+ ],
+ "open": [
+  "Sprache 'mixed' (Code-Switching): keine Testaufnahme vorhanden (Perle-ai/ASR_Code_Switch nicht heruntergeladen; Schutzregel: keine Downloads)",
+  "Kategorie 'namen': keine Testaufnahme vorhanden",
+  "Kategorie 'stille': keine Testaufnahme vorhanden (Aufnahme braucht ein Mikrofon — Schutzregel)",
+  "Kategorie 'code': keine Testaufnahme vorhanden"
+ ]
+}
