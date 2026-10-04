@@ -8,7 +8,7 @@ pkgrel=1
 pkgdesc="Local, private voice typing — hold Ctrl+Meta, speak, release"
 arch=('any')
 url="https://github.com/Skryx-L-A/quassel"
-license=('MIT')
+license=('PolyForm-Noncommercial-1.0.0')
 depends=('python' 'python-gobject' 'gtk4' 'gtk4-layer-shell' 'pyside6'
          'ydotool' 'wl-clipboard' 'xclip' 'pipewire' 'libnotify' 'curl'
          'whisper.cpp')
@@ -46,4 +46,5 @@ package() {
   install -Dm644 assets/quassel.svg \
       "$pkgdir/usr/share/icons/hicolor/scalable/apps/quassel.svg"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 ADDITIONAL-PERMISSIONS.md "$pkgdir/usr/share/licenses/$pkgname/ADDITIONAL-PERMISSIONS.md"
 }
