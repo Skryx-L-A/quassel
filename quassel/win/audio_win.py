@@ -35,7 +35,11 @@ def list_mics():
 def resolve_mic(mic):
     """Resolve a saved name against the current device table at each start."""
     if not mic or mic == "default":
-        return None
+        try:
+            index = sd.default.device[0]
+            return index if index is not None and index >= 0 else None
+        except (AttributeError, IndexError, TypeError):
+            return None
     devices = sd.query_devices()
     if str(mic).isdigit():  # existing configurations saved an index
         index = int(mic)
@@ -120,7 +124,8 @@ class Recorder:
             self._warm_generation += 1
         if timer is not None:
             timer.cancel()
-        if self.stream is not None and (not self.preroll_ms or device != self._device):
+        if self.stream is not None and (not self.preroll_ms or device != self._device
+                                        or not self.stream.active):
             self._close_warm()
         self._slot = (self._slot + 1) % len(self._paths)
         self.raw_path = self._paths[self._slot]

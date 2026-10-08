@@ -5,6 +5,7 @@ auf Zuruf füttert. Alle Dateien liegen in tmp_path — nie im Laufzeit-
 verzeichnis einer installierten App (Audit B26/B27)."""
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -35,6 +36,7 @@ class FakeSD:
     def __init__(self, fail=False):
         self.streams = []
         self.fail = fail
+        self.default = SimpleNamespace(device=[1, None])
 
     def RawInputStream(self, **kw):           # noqa: N802 — Name wie sounddevice
         if self.fail:
@@ -168,3 +170,20 @@ def test_preroll_reuses_warm_stream_and_prepends_bounded_audio(paths):
     finally:
         rec._close_warm()
     assert not sd.streams[0].active
+
+
+def test_warm_stream_is_reopened_when_default_input_changes(paths):
+    _raw, _raw_b, sd = paths
+    rec = audio_win.Recorder(preroll_ms=100, preroll_keep_s=10)
+    try:
+        assert rec.start()
+        assert sd.streams[-1].device == 1
+        rec.stop()
+        sd.default.device[0] = 0
+        assert rec.start()
+        assert len(sd.streams) == 2
+        assert not sd.streams[0].active
+        assert sd.streams[-1].device == 0
+        rec.stop()
+    finally:
+        rec._close_warm()
