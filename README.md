@@ -278,7 +278,7 @@ server remains loaded for a quick restart.
 
 ```bash
 ./uninstall.sh          # remove the app
-./uninstall.sh --purge  # also remove whisper.cpp, models, venv, settings
+./uninstall.sh --purge  # also remove whisper.cpp, models, venv, history, settings
 ```
 
 ## License
