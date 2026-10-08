@@ -56,7 +56,9 @@ def test_daemon_crash_is_visible_and_persisted(monkeypatch):
                            showMessage=lambda *args: calls.append(("notice", args)))
     pill = SimpleNamespace(on=False,
                            set_mode=lambda *args: calls.append(("pill", args)))
-    selfheal.report_daemon_crash(SimpleNamespace(tray=tray, pill=pill), 1)
+    app = SimpleNamespace(tray=tray, pill=pill)
+    selfheal.report_daemon_crash(app, 1)
     assert pill.on
+    assert "exit 1" in app.crash_text
     assert [name for name, _ in calls] == ["state", "tray", "notice", "pill"]
     assert calls[0][1][0] == "error"

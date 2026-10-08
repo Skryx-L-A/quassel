@@ -69,6 +69,7 @@ def report_daemon_crash(app, code):
     """Persist an error and show it even after supervision disabled the pill."""
     from .state import state_set
     message = "Dictation service stopped (exit %s). Turn it on to retry." % code
+    app.crash_text = message
     state_set("error", message)
     if app.tray is not None:
         app.tray.set_mode("error", message)

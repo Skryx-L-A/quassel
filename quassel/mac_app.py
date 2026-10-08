@@ -164,6 +164,7 @@ class MacApp:
             self.daemon = subprocess.Popen(daemon_command(), cwd=self._repo,
                                            start_new_session=True,
                                            stdout=log_f, stderr=log_f)
+        self.crash_text = None
         self.enabled = True
 
     def _stop_daemon(self):
@@ -269,6 +270,9 @@ class MacApp:
     def sync_tray(self):
         """Tray-Statuszeile aus state.json nachführen (Daemon -> UI)."""
         if self.tray is None:
+            return
+        if not self.enabled and getattr(self, "crash_text", None):
+            self.tray.set_mode("error", self.crash_text)
             return
         if not self.enabled:
             self.tray.set_mode("off")
