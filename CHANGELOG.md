@@ -165,6 +165,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Per-app profiles: the page shows where the profiles file lives before you
+  press the button. On macOS the file opens in the default text editor (an .ini
+  file often has no app assigned there), on Windows in Notepad if no app is set
+  for it. If no editor opens, the page says so and names the path instead of
+  claiming it was opened.
 - macOS: when the text could not be typed and is left on the clipboard, the
   pill now says to press ⌘V instead of Ctrl+V.
 - Turning off dictation on macOS now unloads Quassel's own speech server;

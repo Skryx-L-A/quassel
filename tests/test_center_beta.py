@@ -194,8 +194,7 @@ def test_profiles_button_creates_once_and_opens(c, tmp_path, monkeypatch):
     path = tmp_path / "profiles.ini"
     monkeypatch.setattr(profiles, "PROFILES", str(path))
     opened = []
-    monkeypatch.setattr(center.QDesktopServices, "openUrl",
-                        lambda url: opened.append(url.toLocalFile()))
+    monkeypatch.setattr(center, "open_text_file", lambda p: opened.append(p) or True)
     c.profiles_btn.click()
     assert path.read_text(encoding="utf-8") == profiles.DEFAULTS
     assert opened == [str(path)]
@@ -215,9 +214,45 @@ def test_profiles_failure_is_reported(c, monkeypatch):
         raise OSError("read-only")
     monkeypatch.setattr(profiles, "write_defaults", boom)
     opened = []
-    monkeypatch.setattr(center.QDesktopServices, "openUrl", opened.append)
+    monkeypatch.setattr(center, "open_text_file", opened.append)
     c.profiles_btn.click()
     assert opened == [] and c.profiles_status.text().startswith("✕")
+
+
+def test_profiles_path_is_shown_before_any_click(c):
+    from quassel import profiles
+    assert profiles.PROFILES in c.profiles_status.text()
+
+
+def test_profiles_open_failure_names_the_path(c, tmp_path, monkeypatch):
+    from quassel import profiles
+    path = tmp_path / "profiles.ini"
+    monkeypatch.setattr(profiles, "PROFILES", str(path))
+    monkeypatch.setattr(center, "open_text_file", lambda p: False)
+    c.profiles_btn.click()
+    assert c.profiles_status.text() == "✕ " + i18n.tr("profiles_open_failed", path=str(path))
+
+
+@pytest.mark.parametrize("platform,qt_ok,expected", [
+    ("mac", True, [["open", "-t", "/x/profiles.ini"]]),     # Standard-Texteditor
+    ("linux", True, ["qt"]),
+    ("linux", False, ["qt"]),
+    ("windows", False, ["qt", ["notepad.exe", "/x/profiles.ini"]]),
+])
+def test_open_text_file_per_platform(monkeypatch, platform, qt_ok, expected):
+    """.ini hat auf macOS oft keine zugeordnete App: dort `open -t`. Unter
+    Windows Notepad, falls Qt nichts öffnen konnte. Keine echten Aufrufe."""
+    calls = []
+    monkeypatch.setattr(center, "IS_MAC", platform == "mac")
+    monkeypatch.setattr(center, "IS_WINDOWS", platform == "windows")
+    monkeypatch.setattr(center.QDesktopServices, "openUrl",
+                        lambda url: calls.append("qt") or qt_ok)
+    monkeypatch.setattr(center.subprocess, "run", lambda cmd, **kw: calls.append(cmd)
+                        or SimpleNamespace(returncode=0))
+    monkeypatch.setattr(center.subprocess, "Popen", lambda cmd, **kw: calls.append(cmd))
+    ok = center.open_text_file("/x/profiles.ini")
+    assert calls == expected
+    assert ok is (platform != "linux" or qt_ok)
 
 
 @pytest.mark.parametrize("lang", ["de", "en"])

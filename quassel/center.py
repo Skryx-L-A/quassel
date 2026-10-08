@@ -160,6 +160,25 @@ def sysctl(*args):
                           capture_output=True)
 
 
+def open_text_file(path):
+    """Textdatei im Editor öffnen; True, wenn das System sie übernommen hat.
+    macOS: `open -t` (Standard-Texteditor) — .ini ist dort oft keiner App
+    zugeordnet, Qt meldete dann Erfolg, und nichts ging auf. Windows: Notepad,
+    falls keine App für .ini eingetragen ist. Linux: xdg-open/Portal über Qt."""
+    if IS_MAC:
+        return subprocess.run(["open", "-t", path], check=False,
+                              capture_output=True).returncode == 0
+    if QDesktopServices.openUrl(QUrl.fromLocalFile(path)):
+        return True
+    if IS_WINDOWS:
+        try:
+            subprocess.Popen(["notepad.exe", path])
+        except OSError:
+            return False
+        return True
+    return False
+
+
 def daemon_active():
     if IS_WINDOWS or IS_MAC:
         # Windows: Fenster läuft im Tray-App-Prozess selbst. macOS: das
@@ -662,6 +681,7 @@ class Center(QMainWindow):
         self.profiles_status.setObjectName("desc")
         self.profiles_status.setWordWrap(True)
         self.profiles_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.profiles_status.setText(tr("profiles_path", path=profiles.PROFILES))
         g.addWidget(self.profiles_status)
 
         lay.addStretch(1)
@@ -830,14 +850,17 @@ class Center(QMainWindow):
 
     def on_profiles_open(self):
         """Profil-Datei mit den Vorgaben anlegen, falls es sie nicht gibt, und
-        im Standard-Editor öffnen. Eine vorhandene Datei bleibt unangetastet."""
+        im Texteditor öffnen. Eine vorhandene Datei bleibt unangetastet; der
+        Pfad steht immer darunter, auch wenn sich kein Editor öffnen ließ."""
         path = profiles.PROFILES
         try:
             created = profiles.write_defaults(path)
         except OSError:
             self.profiles_status.setText("✕ " + tr("profiles_failed"))
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+        if not open_text_file(path):
+            self.profiles_status.setText("✕ " + tr("profiles_open_failed", path=path))
+            return
         self.profiles_status.setText(tr("profiles_created" if created else "profiles_opened",
                                         path=path))
 
