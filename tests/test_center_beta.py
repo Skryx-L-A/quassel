@@ -1,0 +1,73 @@
+"""Bedienung der Beta-Funktionen und neuer Schalter im Kontrollzentrum
+(offscreen, eigene config.ini): Auto-Stopp/VAD, Wake-Word-Erkenner,
+Vorlaufpuffer, Datei-Transkription, Per-App-Profile."""
+import configparser
+import os
+import sys
+from types import SimpleNamespace
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+pytest.importorskip("PySide6")
+from PySide6.QtWidgets import QApplication              # noqa: E402
+
+from quassel import center, config, i18n, vad          # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def c(tmp_path, monkeypatch, qapp):
+    monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
+    monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
+    config.save({("ui", "language"): "en"})
+    win = center.Center()
+    yield win
+    win.close()
+    i18n.set_language(None)
+
+
+def saved():
+    p = configparser.ConfigParser(interpolation=None)
+    p.read(config.CONFIG)
+    return p
+
+
+def beta(c):
+    return c.stack.widget(c._page_keys.index("nav_beta"))
+
+
+# ------------------------------------------------------- (a) VAD / Auto-Stopp
+def test_autostop_defaults_follow_vad_settings(c):
+    assert c.vad_autostop.isChecked() is False
+    assert c.vad_silence.value() == pytest.approx(vad.AUTOSTOP_SILENCE_DEFAULT)
+    assert c.vad_backend.currentData() == "auto"
+    assert c.vad_model.text() == ""
+    assert not c.vad_silence.isEnabled()
+    assert beta(c).isAncestorOf(c.vad_autostop)
+
+
+def test_autostop_settings_round_trip_through_vad_settings(c, tmp_path, monkeypatch):
+    model = tmp_path / "silero_vad.onnx"
+    model.write_bytes(b"x")
+    monkeypatch.setattr(center.QFileDialog, "getOpenFileName",
+                        lambda *a, **k: (str(model), ""))
+    c.vad_autostop.setChecked(True)
+    c.vad_silence.setValue(2.5)
+    c.save_timer.timeout.emit()
+    c.vad_backend.setCurrentIndex(c.vad_backend.findData("rms"))
+    c.vad_model_pick.click()
+    s = vad.settings()
+    assert (s.autostop, s.autostop_silence, s.backend, s.silero_model) == \
+        (True, 2.5, "rms", str(model))
+    assert c.vad_silence.isEnabled()
+
+
+def test_silence_range_matches_vad(c):
+    assert (c.vad_silence.minimum(), c.vad_silence.maximum()) == vad.AUTOSTOP_SILENCE_RANGE

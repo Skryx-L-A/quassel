@@ -17,14 +17,14 @@ import wave
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
     QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, i18n, stats,
-               transcribe_file, updatecheck, whisperclient)
+               transcribe_file, updatecheck, vad, whisperclient)
 from .dictation import failure_text, mac_mic_permission
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
@@ -718,6 +718,39 @@ class Center(QMainWindow):
         scroll, lay = self.page()
 
         self.desc(tr("beta_intro"), lay)
+
+        # --- Auto-Stopp nach Stille ([vad], siehe vad.settings) ---
+        vs = vad.settings()
+        g = self.group(tr("sec_vad"), lay)
+        self.vad_autostop = QCheckBox(tr("vad_autostop"))
+        self.vad_autostop.setChecked(vs.autostop)
+        self.vad_autostop.toggled.connect(self.save_settings)
+        self.vad_autostop.toggled.connect(self._sync_vad_enabled)
+        g.addWidget(self.vad_autostop)
+        self.desc(tr("vad_autostop_hint"), g)
+        self.vad_silence = self.guard(QDoubleSpinBox())
+        self.vad_silence.setRange(*vad.AUTOSTOP_SILENCE_RANGE)
+        self.vad_silence.setSingleStep(0.1)
+        self.vad_silence.setDecimals(1)
+        self.vad_silence.setSuffix(" s")
+        self.vad_silence.setValue(vs.autostop_silence)
+        self.vad_silence.valueChanged.connect(self.save_soon)
+        self.labeled_row(tr("vad_silence"), self.vad_silence, g)
+        self.vad_backend = self.guard(QComboBox())
+        for val in ("auto", "rms"):
+            self.vad_backend.addItem(tr("vad_backend_" + val), val)
+        self.select_data(self.vad_backend, vs.backend)
+        self.vad_backend.currentIndexChanged.connect(self.save_settings)
+        self.labeled_row(tr("vad_backend"), self.vad_backend, g)
+        self.vad_model = QLineEdit(vs.silero_model)
+        self.vad_model.editingFinished.connect(self.save_settings)
+        self.vad_model_pick = QPushButton(tr("choose_file"))
+        self.vad_model_pick.setAccessibleName(tr("choose_file") + " " + tr("vad_silero_model"))
+        self.vad_model_pick.clicked.connect(
+            lambda: self._pick_model_file(self.vad_model))
+        self._file_row(tr("vad_silero_model"), self.vad_model, self.vad_model_pick, g)
+        self.desc(tr("vad_silero_hint"), g)
+        self._sync_vad_enabled(vs.autostop)
         g = self.group(tr("sec_wakeword"), lay)
         beta = self.desc(tr("wakeword_beta"), g)
         beta.setStyleSheet(f"color:{self._warn};font-weight:600;")   # Bernstein = Beta-Warnung
@@ -734,6 +767,27 @@ class Center(QMainWindow):
 
         lay.addStretch(1)
         return scroll
+
+    def _file_row(self, label, edit, button, layout):
+        """Beschriftung, Pfadfeld und „Wählen…" in einer Zeile."""
+        row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setBuddy(edit)
+        edit.setAccessibleName(label)
+        row.addWidget(lbl)
+        row.addWidget(edit, 1)
+        row.addWidget(button)
+        layout.addLayout(row)
+
+    def _pick_model_file(self, edit):
+        path, _ = QFileDialog.getOpenFileName(self, tr("choose_file"), edit.text(),
+                                              "ONNX (*.onnx);;* (*)")
+        if path:
+            edit.setText(path)
+            self.save_settings()
+
+    def _sync_vad_enabled(self, on):
+        self.vad_silence.setEnabled(on)
 
     def _fill_mics(self, selected):
         """Mikrofonliste neu aufbauen. Ein gespeichertes Gerät, das gerade
@@ -1194,6 +1248,10 @@ class Center(QMainWindow):
             ("ai", "post_process"): str(self.ai_post.isChecked()).lower(),
             ("ai", "post_mode"): self.ai_mode.currentData() or "cleanup",
             ("ai", "voice_modes"): str(self.ai_voice.isChecked()).lower(),
+            ("vad", "autostop"): str(self.vad_autostop.isChecked()).lower(),
+            ("vad", "autostop_silence"): round(self.vad_silence.value(), 1),
+            ("vad", "backend"): self.vad_backend.currentData() or "auto",
+            ("vad", "silero_model"): self.vad_model.text().strip(),
             ("cleanup", "enabled"): str(self.cleanup_on.isChecked()).lower(),
             ("cleanup", "level"): self.cleanup_level.currentData() or "aus",
             ("ui", "language"): self.uilang.currentData(),

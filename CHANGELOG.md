@@ -15,6 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Beta features page: auto-stop for hands-free dictation can now be switched
+  on in the Control Center, with the pause length before it stops, the way
+  pauses are detected (automatic with an optional Silero model, or loudness
+  only) and a file picker for the Silero model.
 - Control Center, AI page: a "Clean up dictation" section. It is off by
   default; the levels are Off, Light (fillers and repeats, no AI), Medium and
   Strong (with the local AI). It explains that Quassel inserts your dictation as
