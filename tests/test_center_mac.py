@@ -142,6 +142,8 @@ def test_history_and_file_copy_use_mac_clipboard(mac, monkeypatch, qapp, isolate
         item = type("Item", (), {"data": lambda self, role: "again"})()
         c.on_hist_click(item)
         c.on_file_done("ok", "file result")
+        assert copied == ["again"]            # Ergebnis erst auf Knopfdruck
+        c.file_copy.click()
     finally:
         c.close()
     assert copied == ["again", "file result"]

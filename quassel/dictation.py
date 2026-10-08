@@ -32,7 +32,7 @@ import time
 from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18n,
                power, profiles, progmode, selfheal, stats, textproc, textreplace, vad,
                wakeword, whisperclient)
-from .audio import RATE, SAMPLE_BYTES
+from .audio import LevelPump, RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
 from .streaming import StreamTyper
@@ -132,6 +132,38 @@ def clipboard_only_text():
     if i18n.current() == "de":
         return "Text liegt in der Zwischenablage – Strg+V drücken"
     return "Text is on the clipboard – press Ctrl+V"
+
+
+def mac_mic_permission():
+    """Mikrofonfreigabe dieses Prozesses unter macOS: "granted", "denied",
+    "undetermined" oder None (nicht ermittelbar). Reine Statusabfrage über
+    AVCaptureDevice, löst keinen Dialog aus und öffnet kein Mikrofon."""
+    try:
+        import ctypes
+        import objc
+        ctypes.cdll.LoadLibrary(
+            "/System/Library/Frameworks/AVFoundation.framework/AVFoundation")
+        device = objc.lookUpClass("AVCaptureDevice")
+        status = int(device.authorizationStatusForMediaType_("soun"))
+    except Exception:  # noqa: BLE001 — ohne pyobjc: unbekannt
+        return None
+    return {0: "undetermined", 1: "denied", 2: "denied", 3: "granted"}.get(status)
+
+
+def failure_text(result=None):
+    """Konkrete Meldung, warum aus einem Diktat kein Text wurde (H113).
+
+    result None: der Server lief nicht an — fehlt das Modell, steht das da,
+    sonst „antwortet nicht (lädt evtl. noch)". Sonst das SpeechResult der
+    gescheiterten Transkription: Frist, keine Verbindung, Serverfehler."""
+    if result is None:
+        model = whisperclient.missing_model()
+        if model:
+            return tr("err_model_missing", model=model)
+        return tr("err_server_down")
+    key = {"timeout": "err_timeout", "conn": "err_server_down"}.get(
+        getattr(result, "error", None), "err_transcribe")
+    return tr(key)
 
 
 def scratch_wav(name):
@@ -283,6 +315,11 @@ class DictationCore:
     _sync_action = None
     _runner = None              # ActionRunner, wo die Plattform einen nutzt
     _handsfree = False          # Freihand-Modus (Doppeltipp) im laufenden Diktat
+    _level_pump = None          # misst den Mikrofonpegel für die Pille (H112)
+    # Unbereinigter Text des letzten Diktats, nur wenn die Bereinigung ihn
+    # verändert hat — nur im Speicher, nie auf Platte oder im Log; für
+    # „Rohtext zurück" aus dem Kontrollzentrum.
+    _last_raw = None
     _autostop = None            # vad.AutoStop im Freihand-Modus (Schalter [vad] autostop)
 
     # ------------------------------------------------- Plattform-Anbindung
@@ -332,12 +369,24 @@ class DictationCore:
     def _mic_is_bluetooth(self):
         return False
 
+    def _level_target(self):
+        """Wohin der Mikrofonpegel während der Aufnahme geht (Callable mit
+        einem Wert 0..1), None = keine Pegelanzeige. Linux/macOS schreiben
+        ihn nach state.json, Windows reicht ihn an die Pille im Prozess."""
+        return None
+
     def _server_vad(self):
         return False
 
     def _report_mic_missing(self):
-        """rec.start() scheiterte: dem Nutzer sagen, was fehlt."""
-        self._notify(tr("no_mic"))
+        """rec.start() scheiterte: dem Nutzer sagen, was fehlt — in der Pille
+        und als Benachrichtigung (das Diktat kommt gar nicht erst zustande)."""
+        text = self._mic_error_text()
+        self._state("error", text)
+        self._notify(text)
+
+    def _mic_error_text(self):
+        return tr("err_mic_open")
 
     def _tail_pad_ms(self):
         return TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS
@@ -381,6 +430,35 @@ class DictationCore:
     def _wake_busy(self):
         return self._busy()
 
+    def _tell(self, key):
+        """Kurzer Hinweis ohne Fehlercharakter (Einzeltipp, zu kurz): die
+        Pille zeigt ihn 3 s. Eine Systembenachrichtigung kommt nur, wenn die
+        Pille ausgeschaltet ist — sonst gäbe es gar keine Rückmeldung (H118)."""
+        text = tr(key)
+        if getattr(self.cfg, "pill_enabled", True):
+            self._state("done", text)
+        else:
+            self._state("idle")
+            self._notify(text)
+
+    # ---------------------------------------------------------------- Pegel
+    def _start_level(self):
+        """Pegelpumpe für dieses Diktat starten. Ein Fehler hier kostet nur
+        die Anzeige, nie das Diktat."""
+        self._stop_level()
+        target = self._level_target()
+        if target is None:
+            return
+        try:
+            self._level_pump = LevelPump(target).start()
+        except Exception as exc:  # noqa: BLE001
+            self._log("level: Pegelanzeige nicht gestartet: %r" % exc)
+
+    def _stop_level(self):
+        pump, self._level_pump = self._level_pump, None
+        if pump is not None:
+            pump.stop()
+
     # ------------------------------------------------------------- Aufnahme
     def _refresh_cfg(self):
         self.cfg.reload()
@@ -412,6 +490,7 @@ class DictationCore:
         self.partial = self._new_partial()
         self.partial.start()
         self._state("recording")
+        self._start_level()
         return True
 
     def enable_streaming(self):
@@ -485,12 +564,19 @@ class DictationCore:
             if self.streamer is not None:
                 self._streaming_restore(self._clip_backup)
                 self.streamer = None
+            self._stop_level()
             discard(self.rec.stop())     # verworfenes Diktat: Ton gleich mit
             if self.cfg.beep:
                 beep.stop()
             self.ducker.restore()
-            self._state("idle")
-            self._notify("✖ " + tr(reason_key))
+            if reason_key == "canceled_key":
+                # Eine andere Taste zum Chord (z.B. Strg+Meta+Pfeil für den
+                # Arbeitsflächenwechsel) ist eine bewusste Tastenkombination,
+                # kein gescheitertes Diktat: still beenden, nur ins Log.
+                self._log("dict: abgebrochen (andere Taste)")
+                self._state("idle")
+            else:
+                self._tell(reason_key)
         finally:
             self._sync_action = None
         # Ein Stream, der beim Abbruch aufgegeben werden musste, vergiftet den
@@ -522,6 +608,7 @@ class DictationCore:
             self._streaming_restore(self._clip_backup)
             self.streamer = None
         try:
+            self._stop_level()
             self.rec.stop()
         except Exception as exc:   # noqa: BLE001 — der Not-Aus darf an nichts scheitern
             self._log("panic: rec.stop() fehlgeschlagen: %r" % exc)
@@ -600,6 +687,7 @@ class DictationCore:
         # (Bluetooth braucht mehr). Dann stoppen + Stopp-Ton.
         pad_ms = self._tail_pad_ms()
         time.sleep(pad_ms / 1000.0)
+        self._stop_level()
         t_stop = time.monotonic()
         # Der Rückgabewert ist die eben geschlossene Rohdatei: ein neues Diktat
         # schreibt in die andere, gelesen wird trotzdem diese hier.
@@ -620,8 +708,7 @@ class DictationCore:
         self._log("dict: bt=%s vad=%s rec=%.2fs trim=%dms pad=%dms" % (
             self._bt, self._vad, raw_len / (RATE * SAMPLE_BYTES), trim_ms, pad_ms))
         if len(data) < MIN_AUDIO_BYTES:
-            self._state("idle")
-            self._notify(tr("too_short"))
+            self._tell("too_short")
             discard(done_path)
             return None
         self._state("transcribing")
@@ -656,7 +743,7 @@ class DictationCore:
         deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
                     else SERVER_WAIT_COLD)
         if not whisperclient.ensure_server(deadline=deadline):
-            return self._fail_with_rescue(data, streamer, clip_backup)
+            return self._fail_with_rescue(data, streamer, clip_backup, None)
         wav = scratch_wav("rec")
         try:
             self._wav_from_raw(data, wav)
@@ -667,7 +754,7 @@ class DictationCore:
             discard(wav)
         raw_text = result.text
         if raw_text is None:
-            return self._fail_with_rescue(data, streamer, clip_backup)
+            return self._fail_with_rescue(data, streamer, clip_backup, result)
         if panic.is_set():
             # „Diktat sofort beenden" wurde gedrückt, während transkribiert
             # wurde: kein Text mehr ins Fenster.
@@ -715,6 +802,7 @@ class DictationCore:
                 self._state("error", tr("nothing"))
             return
         mechanical_failed = False
+        self._last_raw = None
         try:
             mech = self._finish_text(self._refine_mechanical(value), cfg)
         except Exception:
@@ -732,6 +820,8 @@ class DictationCore:
                 return
             inserted = self._insert(final)
             self.last_paste_len = len(final) if inserted else 0
+            if final != value:
+                self._last_raw = value
             value = final
         elif streamer is not None:
             # Streaming hat das Zielfenster schon berührt: keine spätere
@@ -763,6 +853,29 @@ class DictationCore:
         secs = len(data) / (RATE * SAMPLE_BYTES)
         self._after_insert(value, secs)
 
+    # ------------------------------------------------------- Rohtext zurück
+    def _clip_copy(self, text):
+        """Plattform: Text in die Zwischenablage. False = gescheitert."""
+        return False
+
+    def raw_back(self):
+        """„Rohtext zurück": den unbereinigten Text des letzten Diktats in die
+        Zwischenablage legen. Bewusst KEINE Tasten ins Fenster — gedrückt wird
+        im Kontrollzentrum, das Zielfenster ist dann ein anderes (B19). Die
+        Meldung nennt nur, wo der Text liegt, nicht den Text selbst."""
+        raw = self._last_raw
+        if not raw:
+            self._state("done", tr("raw_back_none"))
+            return False
+        try:
+            ok = self._clip_copy(raw) is not False
+        except Exception as exc:  # noqa: BLE001 — Zwischenablage kaputt
+            self._log("raw_back: Zwischenablage: %s" % type(exc).__name__)
+            ok = False
+        self._state("done" if ok else "error",
+                    tr("raw_back_done") if ok else tr("raw_back_failed"))
+        return ok
+
     # ------------------------------------------------------------ Einfügen
     def _insert(self, text):
         """Text einfügen. False nur, wenn die Plattform ausdrücklich meldet,
@@ -778,7 +891,7 @@ class DictationCore:
         self._state("error", clipboard_only_text())
 
     # --------------------------------------------------- Rettung der Aufnahme
-    def _fail_with_rescue(self, data, streamer, clip_backup):
+    def _fail_with_rescue(self, data, streamer, clip_backup, result=None):
         """Server nicht erreichbar oder Transkription gescheitert: die Aufnahme
         ist gesprochen und darf nicht einfach verschwinden — als WAV sichern und
         den Pfad in der Fehlermeldung nennen. Rückgabe False, wenn auch die
@@ -786,7 +899,7 @@ class DictationCore:
         if streamer is not None:
             self._streaming_restore(clip_backup)
         path = self._rescue(data)
-        text = tr("no_server")
+        text = failure_text(result)
         if path:
             text += " · " + tr("rescued").format(path=path)
         self._state("error", text)
@@ -993,7 +1106,11 @@ class DictationCore:
         kind, value = postprocess_transcript(raw_text, cfg)
         if kind != "text" or not value.strip():
             return
+        self._last_raw = None
+        raw = value
         value = self._refine(value)
+        if self._cleanup_active() and value != raw:
+            self._last_raw = raw
         if self._insert(value):
             self.last_paste_len = len(value)
             self._forget_text(self._state("done", value))

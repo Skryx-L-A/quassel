@@ -25,14 +25,15 @@ from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from .. import config, dictation, i18n, profile, whisperclient
+from .. import config, dictation, i18n, pill_qt, profile, whisperclient
 from ..audio import wav_from_raw
 from ..mediacontrol import AudioDucker
 from ..i18n import tr
+from ..state import LevelMeter, level_read
 from . import server
 from .audio_win import Recorder
 from .hook import CHORDS_VK, KeyboardHook
-from .paste import (paste, send_backspaces, send_enter, streaming_begin,
+from .paste import (clip_copy, paste, send_backspaces, send_enter, streaming_begin,
                     streaming_restore, type_chunk)
 
 DEBUG_LOG_MAX = 1_000_000   # ab ~1 MB eine Generation wegrotieren
@@ -76,10 +77,13 @@ def app_icon():
 
 
 class _Bubble(QWidget):
-    """Textblase über der Pille (Live-Vorschau / Ergebnis), wie auf Linux.
+    """Textblase über der Pille (Live-Vorschau / Ergebnis / Hinweise), wie auf
+    Linux und macOS.
 
     Eigenes Top-Level-Fenster, damit die Pille darunter fest verankert
-    bleibt, wenn die Blase wächst oder schrumpft."""
+    bleibt, wenn die Blase wächst oder schrumpft. Farben wie die Pille
+    (Direction B); die Blase bleibt auch bei fast durchsichtiger Pille
+    deckend genug zum Lesen (BUBBLE_MIN_ALPHA)."""
 
     def __init__(self, cfg):
         super().__init__(None,
@@ -96,11 +100,16 @@ class _Bubble(QWidget):
         self.label.setMaximumWidth(440)
         lay.addWidget(self.label)
 
+    def bg_color(self):
+        op = max(0.15, min(1.0, self.cfg.pill_opacity))
+        bg = QColor(pill_qt.PILL_BG)
+        bg.setAlphaF(max(pill_qt.BUBBLE_MIN_ALPHA, op))
+        return bg
+
     def paintEvent(self, _ev):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        op = max(0.15, min(1.0, self.cfg.pill_opacity))
-        p.setBrush(QColor(16, 16, 22, int(op * 255)))
+        p.setBrush(self.bg_color())
         p.setPen(Qt.NoPen)
         p.drawRoundedRect(self.rect(), 12, 12)
 
@@ -110,7 +119,7 @@ class _Bubble(QWidget):
             return False
         short = text if len(text) <= 140 else "…" + text[-139:]
         s = max(0.6, min(2.0, self.cfg.pill_scale))
-        style = "color: #cfcfd8; font-size: %dpx;" % int(11 * s)
+        style = "color: %s; font-size: %dpx;" % (pill_qt.C_TEXT.name(), int(11 * s))
         if italic:
             style += " font-style: italic;"
         self.label.setStyleSheet(style)
@@ -120,60 +129,67 @@ class _Bubble(QWidget):
 
 
 class _PillBody(QWidget):
-    """Die eigentliche Pille: minimale Wellenform aus fünf Balken in der
-    Direction-B-Palette (Pine; Grau=aus, Bernstein=Fehler). Bewegt sich nur
-    bei Aufnahme, sonst ruhend — gleiche Optik wie die Linux-Pille."""
-
-    REST = [0.30, 0.46, 0.38, 0.52, 0.34]
+    """Die eigentliche Pille: fünf Balken in der Direction-B-Palette, gleiche
+    Optik und Logik wie die Pillen unter Linux und macOS (state.LevelMeter):
+    echter Mikrofonpegel bei Aufnahme, flache Bernstein-Linie bei Stille,
+    eigene Form je Zustand, ruhig bei „Animationen aus"."""
 
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
         self.mode = "ready"
-        self.t0 = time.monotonic()
+        self.meter = LevelMeter()
         self.resize_to_cfg()
 
     def resize_to_cfg(self):
         s = max(0.6, min(2.0, self.cfg.pill_scale))
         self.setFixedSize(int(48 * s), int(28 * s))
 
+    def mic_silent(self):
+        return self.mode == "recording" and self.meter.silent()
+
     def _wave_color(self):
         if self.mode == "off":
-            return QColor("#6A786F")
-        if self.mode == "error":
-            return QColor("#E9A93A")
-        return QColor("#34C18C")        # ready / recording / transcribing / done
+            return pill_qt.WAVE_GRAY
+        if self.mode == "error" or self.mic_silent():
+            return pill_qt.WAVE_AMBER
+        return pill_qt.WAVE_PINE        # ready / recording / transcribing / done
+
+    def wave_fracs(self):
+        return self.meter.wave_fracs(self.mode, calm=pill_qt.reduced_motion())
 
     def paintEvent(self, _ev):
-        import math
         s = max(0.6, min(2.0, self.cfg.pill_scale))
         op = max(0.15, min(1.0, self.cfg.pill_opacity))
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(QColor(17, 32, 26, int(op * 255)))
+        bg = QColor(pill_qt.PILL_BG)
+        bg.setAlphaF(op)
+        p.setBrush(bg)
         p.setPen(QColor(255, 255, 255, 13))
         radius = self.height() / 2 - 1
         p.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), radius, radius)
-        # Fünf Balken, mittig — bewegen sich nur bei Aufnahme.
         p.setPen(Qt.NoPen)
         p.setBrush(self._wave_color())
-        wave_w, wave_h, n = 22 * s, 14 * s, 5
-        gap = wave_w * 0.11
-        bw = (wave_w - gap * (n - 1)) / n
+        wave_w, wave_h = 22 * s, 14 * s
         x0 = (self.width() - wave_w) / 2
         cy = self.height() / 2
-        animating = self.mode == "recording"
-        t = time.monotonic()
-        for i in range(n):
-            frac = (0.22 + 0.78 * (0.5 + 0.5 * math.sin(t * 7.5 + i * 1.1))) \
-                if animating else self.REST[i]
+        if self.mic_silent():
+            lh = max(2.0, wave_h * 0.14)      # flache Linie: nichts kommt an
+            p.drawRoundedRect(QRectF(x0, cy - lh / 2, wave_w, lh), lh / 2, lh / 2)
+            return
+        fracs = self.wave_fracs()
+        n = len(fracs)
+        gap = wave_w * 0.11
+        bw = (wave_w - gap * (n - 1)) / n
+        for i, frac in enumerate(fracs):
             bh = max(2.0, wave_h * frac)
             bx = x0 + i * (bw + gap)
             p.drawRoundedRect(QRectF(bx, cy - bh / 2, bw, bh), bw / 2, bw / 2)
 
     def set_mode(self, mode):
         if mode == "recording" and self.mode != "recording":
-            self.t0 = time.monotonic()
+            self.meter.reset()          # neue Aufnahme: Pegelquelle abwarten
         self.mode = mode
         self.resize_to_cfg()
         self.update()
@@ -182,7 +198,9 @@ class _PillBody(QWidget):
 class Pill(QWidget):
     """Schwebendes Overlay unten-mittig auf dem Monitor mit dem Mauszeiger.
     Die Pille selbst ist fest verankert; die Textblase ist ein eigenes
-    Fenster darüber und darf wachsen, ohne die Pille zu verschieben."""
+    Fenster darüber und darf wachsen, ohne die Pille zu verschieben.
+
+    level_source: Callable -> (Pegel, Zeitstempel) oder None; setzt WinApp."""
 
     def __init__(self):
         super().__init__(None,
@@ -192,11 +210,15 @@ class Pill(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.cfg = config.Cfg()
         self.mode = "ready"
+        self.text = ""
+        self.level_source = lambda: None
+        self._silent_shown = False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self.body = _PillBody(self.cfg)
         lay.addWidget(self.body)
         self.bubble = _Bubble(self.cfg)
+        self.setAccessibleName(tr("app_name"))
         self.set_mode("ready")
         anim = QTimer(self)
         anim.timeout.connect(self._tick)
@@ -220,22 +242,49 @@ class Pill(QWidget):
 
     def _tick(self):
         if self.mode == "recording":
+            sample = self.level_source()
+            level = None
+            if sample is not None:
+                level = level_read({"level": sample[0], "level_ts": sample[1]})
+            self.body.meter.feed(level)
+            silent = self.body.mic_silent()
+            if silent != self._silent_shown:
+                self._silent_shown = silent
+                self._show_bubble()
             self.body.update()
+        self.reposition()
+
+    def bubble_text(self):
+        """„Kein Ton vom Mikrofon" geht vor, sonst Vorschau bzw. Ergebnis."""
+        if self.body.mic_silent():
+            return tr("mic_silent")
+        if self.mode in ("recording", "done", "error"):
+            return self.text
+        return ""
+
+    def accessible_status(self):
+        parts = [tr(pill_qt.STATUS_KEYS.get(self.mode, "tray_ready"))]
+        if self.bubble_text():
+            parts.append(self.bubble_text())
+        return ": ".join(parts)
+
+    def _show_bubble(self):
+        text = self.bubble_text()
+        italic = self.mode == "recording" and not self.body.mic_silent()
+        has_text = self.bubble.set_text(text, italic=italic)
+        self.setAccessibleDescription(self.accessible_status())
+        self.bubble.setVisible(has_text and self.cfg.pill_enabled)
         self.reposition()
 
     def set_mode(self, mode, text=""):
         self.mode = mode
+        self.text = text
+        if mode == "recording" and self.body.mode != "recording":
+            self._silent_shown = False
         self.body.set_mode(mode)
-        if mode == "recording":
-            has_text = self.bubble.set_text(text, italic=True)  # Live-Vorschau
-        elif mode in ("done", "error"):
-            has_text = self.bubble.set_text(text)
-        else:
-            has_text = False
         self.adjustSize()
         self.setVisible(self.cfg.pill_enabled)
-        self.bubble.setVisible(has_text and self.cfg.pill_enabled)
-        self.reposition()
+        self._show_bubble()
 
     def reposition(self):
         """Auf den Monitor mit dem Mauszeiger (= aktiver Bildschirm)."""
@@ -311,10 +360,18 @@ class WinDictation(dictation.DictationCore):
     def _server_vad(self):
         return server.vad_model_path() is not None
 
+    def _clip_copy(self, text):
+        return clip_copy(text)
+
+    def _level_target(self):
+        # Pille läuft im selben Prozess: Pegel direkt an WinApp (thread-sicher,
+        # nur ein Tupel wird ersetzt), kein Umweg über eine Datei.
+        return getattr(self.owner, "set_level", None)
+
     def _report_mic_missing(self):
         # Nicht still scheitern: sonst bleibt die Pille grau und der Nutzer
-        # weiß nicht, warum nichts passiert (z.B. Mikro aus/weg).
-        self._state("error", tr("no_mic"))
+        # weiß nicht, warum nichts passiert (Mikro belegt, aus oder weg).
+        self._state("error", self._mic_error_text())
 
     def _reset_hotkey(self):
         pump = getattr(self.owner, "pump", None)
@@ -337,7 +394,9 @@ class WinApp(QObject):
         self.enabled = True
         self.core = WinDictation(self)
 
+        self._level = None              # (Pegel, Zeitstempel) der laufenden Aufnahme
         self.pill = Pill()
+        self.pill.level_source = lambda: self._level
         self.sig_state.connect(self._apply_state)
 
         self.hook = KeyboardHook()
@@ -378,6 +437,16 @@ class WinApp(QObject):
     def rec(self):
         return self.core.rec
 
+    def raw_back(self):
+        """„Rohtext zurück" aus dem Kontrollzentrum (läuft im selben Prozess):
+        auf dem Aktions-Thread, hinter einem noch laufenden Diktat."""
+        self.runner.submit("raw-back", self.core.raw_back)
+        return True
+
+    def set_level(self, level):
+        """Von der Pegelpumpe (eigener Thread) aufgerufen."""
+        self._level = (level, time.time())
+
     def on_second_instance(self):
         sock = self.ipc.nextPendingConnection()
         if sock:
@@ -403,9 +472,11 @@ class WinApp(QObject):
             if server.ensure_working(progress):
                 self.sig_state.emit("done", tr("ready"))
             else:
-                self.sig_state.emit("error", tr("no_server"))
+                self.sig_state.emit("error", dictation.failure_text(None))
         except Exception as e:  # noqa: BLE001
-            self.sig_state.emit("error", str(e)[:80])
+            # Rohe Ausnahmetexte gehören ins Log, nicht in die Pille (H113).
+            dlog("setup: %r" % e)
+            self.sig_state.emit("error", tr("download_failed", err=type(e).__name__))
 
 
     # ------------------------------------------------------------------ Menü

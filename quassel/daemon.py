@@ -19,6 +19,7 @@ import select
 import signal
 import struct
 import sys
+import threading
 import time
 
 from . import __version__
@@ -31,12 +32,13 @@ from .dictation import (  # noqa: F401 — Namen bleiben hier ansprechbar
     SERVER_WAIT_FINISH, SLOW_STOP, TAIL_PAD_BT_MS, WAKE_RAW,
     PartialLoop, postprocess_transcript)
 from .mediacontrol import AudioDucker
-from .audio import Recorder, mac_backend, wav_from_raw
+from .audio import Recorder, mac_backend, record_command, wav_from_raw
 from .config import CHORDS
 from .i18n import tr
 from .platform import (mic_is_bluetooth, notify, paste, send_backspaces,
                        send_enter, type_chunk, streaming_begin, streaming_restore)
-from .state import PARTWAV, RUNDIR, WAV, state_clear_text, state_set  # noqa: F401
+from .state import (PARTWAV, RUNDIR, WAV, level_set, state_clear_text,  # noqa: F401
+                    state_set)
 
 EVENT_FORMAT = "llHHi"
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
@@ -67,6 +69,14 @@ def log(msg):
     # Zeitstempel: im Log der App (~/Library/Logs/Quassel/daemon.log) ließe
     # sich sonst weder ein Neustart noch die Dauer eines Hängers ablesen.
     print("%s %s" % (time.strftime("%H:%M:%S"), msg), file=sys.stderr, flush=True)
+
+
+def clip_copy(text):
+    """Zwischenablage des Plattform-Backends (quassel.platform reicht nur die
+    Diktat-Funktionen durch). Modulfunktion, damit Tests sie ersetzen können."""
+    import importlib
+    from . import platform as platform_mod
+    return importlib.import_module(platform_mod._backend_module_name()).clip_copy(text)
 
 
 class Daemon(dictation.DictationCore):
@@ -142,18 +152,29 @@ class Daemon(dictation.DictationCore):
     def _mic_is_bluetooth(self):
         return mic_is_bluetooth(self.cfg.mic)
 
+    def _clip_copy(self, text):
+        return clip_copy(text)
+
+    def _level_target(self):
+        # Pegel über state.json an die Pille (eigener Prozess); level_set
+        # schreibt nur im Zustand "recording" und höchstens 15-mal je Sekunde.
+        return lambda level: level_set(level)
+
     def _server_vad(self):
         return bool(config.read_serverenv().get("VAD_MODEL"))
 
-    def _report_mic_missing(self):
-        if sys.platform == "darwin":
+    def _mic_error_text(self):
+        """Warum ließ sich die Aufnahme nicht starten (H113)?"""
+        if sys.platform == "darwin" and mac_backend() != "ffmpeg":
             # sounddevice-Pfad: es fehlt kein Programm, sondern ein
-            # nutzbares Eingabegerät (oder die Mikrofon-Freigabe).
-            missing = ("ffmpeg" if mac_backend() == "ffmpeg"
-                       else "Mikrofonzugriff")
-        else:
-            missing = "pw-record/parecord"
-        notify("Fehler: %s fehlt" % missing)
+            # nutzbares Eingabegerät oder die Mikrofon-Freigabe.
+            if dictation.mac_mic_permission() == "denied":
+                return tr("err_mic_denied")
+            return tr("err_mic_open")
+        if record_command(self.cfg.mic) is None:
+            tool = "ffmpeg" if sys.platform == "darwin" else "pw-record/parecord"
+            return tr("err_recorder_missing", tool=tool)
+        return tr("err_mic_open")
 
     def _tail_pad_ms(self):
         return TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS
@@ -302,6 +323,20 @@ class Daemon(dictation.DictationCore):
             signal.signal(signal.SIGUSR2, lambda *_: self.panic_stop())
         except (OSError, ValueError):   # nicht im Haupt-Thread -> kein Handler
             log("daemon: SIGUSR2-Handler nicht installierbar (Not-Aus nur übers Menü)")
+        self._install_raw_back_signal()
+
+    def _install_raw_back_signal(self):
+        """„Rohtext zurück" per SIGHUP: das Kontrollzentrum (eigener Prozess
+        unter Linux, Kindprozess-Eltern unter macOS) schickt das Signal; der
+        Rohtext liegt nur hier im Speicher. Die Zwischenablage wird in einem
+        eigenen Thread gesetzt, nicht im Signal-Handler."""
+        if not hasattr(signal, "SIGHUP"):
+            return
+        try:
+            signal.signal(signal.SIGHUP, lambda *_: threading.Thread(
+                target=self.raw_back, name="raw-back", daemon=True).start())
+        except (OSError, ValueError):
+            log("daemon: SIGHUP-Handler nicht installierbar (Rohtext zurück aus)")
 
     def _mac_watchdog(self, listener, now=None):
         """Sicherheitslimit im Freihand-Modus (Pendant zu MAX_RECORD im

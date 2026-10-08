@@ -1,6 +1,7 @@
 """Client für den lokalen whisper.cpp-Server (quassel-server.service)."""
 import http.client
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -222,11 +223,18 @@ def _multipart_body(wavpath, fields):
     return b"".join(body), "multipart/form-data; boundary=" + boundary
 
 
-def _post_multipart(body, content_type, timeout):
-    """Ohne Proxy direkt mit dem lokalen whisper.cpp-Server sprechen."""
+def _post_multipart(body, content_type, timeout, errors=None):
+    """Ohne Proxy direkt mit dem lokalen whisper.cpp-Server sprechen.
+
+    Scheitert es, kommt die Art des Fehlers in errors (falls übergeben):
+    "timeout", "http" oder "conn"."""
+    def fail(kind):
+        if errors is not None:
+            errors.append(kind)
+        return None
     parsed = urllib.parse.urlsplit(server_url())
     if parsed.scheme != "http" or not parsed.hostname:
-        return None
+        return fail("conn")
     path = (parsed.path.rstrip("/") or "") + "/inference"
     conn = http.client.HTTPConnection(parsed.hostname, parsed.port or 80,
                                       timeout=timeout)
@@ -237,31 +245,55 @@ def _post_multipart(body, content_type, timeout):
         })
         response = conn.getresponse()
         if not 200 <= response.status < 300:
-            return None
+            return fail("http")
         return response.read().decode("utf-8", errors="replace")
-    except (OSError, http.client.HTTPException, UnicodeError):
-        return None
+    except (socket.timeout, TimeoutError):
+        return fail("timeout")
+    except (http.client.HTTPException, UnicodeError):
+        return fail("http")
+    except OSError:
+        return fail("conn")
     finally:
         conn.close()
 
 
-def _transcribe_wav(wavpath, cfg, timeout=120, prompt_extra=None):
-    """Bestehende whisper.cpp-Übertragung; intern vom Backend verwendet."""
+def _transcribe_wav(wavpath, cfg, timeout=120, prompt_extra=None, errors=None):
+    """Bestehende whisper.cpp-Übertragung; intern vom Backend verwendet.
+    errors (Liste, optional) bekommt bei einem Fehlschlag dessen Art."""
     words = config.dictionary_words()
     try:
         body, content_type = _multipart_body(
             wavpath, inference_fields(wavpath, cfg, words, timeout, prompt_extra))
     except OSError:
+        if errors is not None:
+            errors.append("io")
         return None
-    result = _post_multipart(body, content_type, timeout)
+    seen = []
+    result = _post_multipart(body, content_type, timeout, seen)
     if result is not None:
         return result
+    if errors is not None:
+        errors.extend(seen)
+    if seen and seen[-1] in ("timeout", "http"):
+        # Der Server lief und war zu langsam bzw. lehnte ab: ein zweiter
+        # Versuch über curl wartete nur noch einmal so lange (H113).
+        return None
     # Kompatibler Rückfall, falls die direkte HTTP-Verbindung auf einer alten
     # Installation scheitert. Die Felder bleiben über inference_fields gleich.
     args = build_inference_args(wavpath, cfg, words, timeout, prompt_extra)
     r = subprocess.run(args, capture_output=True, text=True, check=False,
                        encoding="utf-8", errors="replace", **NOWIN)
     return r.stdout if r.returncode == 0 else None
+
+
+def missing_model():
+    """Dateiname des eingestellten Modells, wenn es fehlt (server.env nennt
+    eines, die Datei ist aber nicht da); sonst None. Erklärt einen Server,
+    der nicht startet, besser als „nicht erreichbar"."""
+    path = config.read_serverenv().get("MODEL_PATH", "")
+    if path and not os.path.exists(path):
+        return os.path.basename(path)
+    return None
 
 
 _backend = None

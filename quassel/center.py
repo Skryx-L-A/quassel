@@ -17,19 +17,21 @@ import wave
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
+    QSpinBox,
     QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import (__version__, ai, aimodes, beep, config, dictprompt, i18n, stats, transcribe_file,
-               updatecheck, whisperclient)
+from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, i18n, profiles,
+               stats, transcribe_file, updatecheck, vad, wakeword, whisperclient)
+from .dictation import failure_text, mac_mic_permission
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
 from .i18n import tr
 from .net import download as net_download
-from .state import RUNDIR
+from .state import RUNDIR, LevelMeter
 if os.name == "nt":
     from .win.audio_win import list_mics
     from .win.paste import clip_copy
@@ -263,22 +265,6 @@ def restart_server():
         sysctl("try-restart", "quassel-server")
 
 
-def mac_mic_permission():
-    """Mikrofonfreigabe dieses Prozesses unter macOS: "granted", "denied",
-    "undetermined" oder None (nicht ermittelbar). Reine Statusabfrage über
-    AVCaptureDevice, löst keinen Dialog aus und öffnet kein Mikrofon."""
-    try:
-        import ctypes
-        import objc
-        ctypes.cdll.LoadLibrary(
-            "/System/Library/Frameworks/AVFoundation.framework/AVFoundation")
-        device = objc.lookUpClass("AVCaptureDevice")
-        status = int(device.authorizationStatusForMediaType_("soun"))
-    except Exception:  # noqa: BLE001 — ohne pyobjc: unbekannt
-        return None
-    return {0: "undetermined", 1: "denied", 2: "denied", 3: "granted"}.get(status)
-
-
 class MicTestError(Exception):
     """Mikrofontest konnte nicht aufnehmen; args[0] ist der i18n-Schlüssel."""
 
@@ -307,6 +293,7 @@ class Bridge(QObject):
     message = Signal(str)
     model_done = Signal(str)
     file_done = Signal(str, str)      # (Statuszeile, Ergebnistext)
+    file_progress = Signal(float, float)  # (erledigt, gesamt) in Sekunden Audio
     update_done = Signal(dict)        # updatecheck.check()-Resultat
     ai_models = Signal(dict)          # {"available":bool,"models":[...]}
     ai_test_done = Signal(str)        # Ergebnis des KI-Tests
@@ -326,6 +313,7 @@ class Center(QMainWindow):
         self.bridge.message.connect(self.on_message)
         self.bridge.model_done.connect(self.on_model_done)
         self.bridge.file_done.connect(self.on_file_done)
+        self.bridge.file_progress.connect(self.on_file_progress)
         self.bridge.update_done.connect(self.on_update_done)
         self.bridge.ai_models.connect(self.on_ai_models)
         self.bridge.ai_test_done.connect(self.on_ai_test_done)
@@ -354,6 +342,11 @@ class Center(QMainWindow):
         """Mausrad-Schutz + sauberer Fokus für Dropdowns/Slider."""
         w.setFocusPolicy(Qt.StrongFocus)
         w.installEventFilter(self.nowheel)
+        if isinstance(w, QComboBox):
+            # Lange Einträge dürfen die Seite nicht breiter als das Fenster
+            # machen (sonst waagerechter Rollbalken); Text wird gekürzt.
+            w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            w.setMinimumContentsLength(12)
         return w
 
     def group(self, title, parent_layout):
@@ -480,20 +473,35 @@ class Center(QMainWindow):
         outer.addWidget(left)
         outer.addWidget(self.stack, 1)
 
+        self._page_keys = []
+        # Kurze Seiten (G111): eine Aufgabe je Seite, Beta-Funktionen gesammelt
+        # unten vor „System".
         for key, builder in [("nav_general", self.page_general),
+                             ("nav_pill", self.page_pill),
+                             ("nav_dictating", self.page_dictating),
                              ("nav_speech", self.page_speech),
+                             ("nav_mic", self.page_mic),
                              ("nav_dict", self.page_dict),
                              ("nav_replace", self.page_replace),
                              ("nav_file", self.page_file),
                              ("nav_ai", self.page_ai),
                              ("nav_history", self.page_history),
                              ("nav_stats", self.page_stats),
-                             ("nav_system", self.page_system)]:
+                             ("nav_beta", self.page_beta),
+                             ("nav_system", self.page_system),
+                             ("about", self.page_about)]:
             QListWidgetItem(tr(key), self.sidebar)
             self.stack.addWidget(builder())
+            self._page_keys.append(key)
         self.sidebar.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.sidebar.setCurrentRow(0)
         self.setCentralWidget(root)
+
+    def show_page(self, key):
+        """Seite über ihren Navigationsschlüssel wählen (nicht über die
+        Position — die ändert sich, wenn Seiten dazukommen)."""
+        if key in self._page_keys:
+            self.sidebar.setCurrentRow(self._page_keys.index(key))
 
     # --------------------------------------------------- Seite: Allgemein
     def page_general(self):
@@ -521,6 +529,26 @@ class Center(QMainWindow):
         row.addWidget(self.toggle_btn)
         g.addLayout(row)
         self.hint = self.desc(tr("hint", chord=self.chord_label()), g)
+
+        g = self.group(tr("sec_hotkey"), lay)
+        self.chord = self.guard(QComboBox())
+        for key in config.CHORDS:
+            self.chord.addItem(tr(config.CHORD_LABEL_KEYS[key]), key)
+        self.chord.setCurrentIndex(list(config.CHORDS).index(self.cfg.chord))
+        self.chord.currentIndexChanged.connect(self.save_settings)
+        self.chord.setAccessibleName(tr("sec_hotkey"))
+        g.addWidget(self.chord)
+
+        lay.addStretch(1)
+        note = QLabel(tr("close_note"))
+        note.setObjectName("desc")
+        note.setAlignment(Qt.AlignCenter)
+        lay.addWidget(note)
+        return scroll
+
+    # ----------------------------------------------------- Seite: Pille
+    def page_pill(self):
+        scroll, lay = self.page()
 
         g = self.group(tr("sec_pill"), lay)
         self.pill_show = QCheckBox(tr("pill_show"))
@@ -560,14 +588,13 @@ class Center(QMainWindow):
         self.pill_preview.toggled.connect(self.save_settings)
         g.addWidget(self.pill_preview)
 
-        g = self.group(tr("sec_hotkey"), lay)
-        self.chord = self.guard(QComboBox())
-        for key in config.CHORDS:
-            self.chord.addItem(tr(config.CHORD_LABEL_KEYS[key]), key)
-        self.chord.setCurrentIndex(list(config.CHORDS).index(self.cfg.chord))
-        self.chord.currentIndexChanged.connect(self.save_settings)
-        self.chord.setAccessibleName(tr("sec_hotkey"))
-        g.addWidget(self.chord)
+        lay.addStretch(1)
+        return scroll
+
+    # --------------------------------------------- Seite: Beim Diktieren
+    def page_dictating(self):
+        """Ton, Medien und Live-Tippen: was während eines Diktats passiert."""
+        scroll, lay = self.page()
 
         g = self.group(tr("sec_dictating"), lay)
         self.mute_combo = self.guard(QComboBox())
@@ -604,11 +631,39 @@ class Center(QMainWindow):
             self.labeled_row(tr("beep_out_label"), self.beep_out, g)
             self.desc(tr("beep_out_hint"), g)
 
+        # --- Streaming-Tippen (Live-Tippen ins Zielfenster, nur Freihand) ---
+        g = self.group(tr("sec_streaming"), lay)
+        self.stream_on = QCheckBox(tr("streaming_enable"))
+        self.stream_on.setChecked(self.cfg.streaming)
+        self.stream_on.toggled.connect(self.save_settings)
+        self.stream_on.toggled.connect(self._sync_streaming_enabled)
+        g.addWidget(self.stream_on)
+        self.desc(tr("streaming_hint"), g)
+        self.stream_mode = self.guard(QComboBox())
+        for val, key in (("word", "streaming_word"), ("stable", "streaming_stable")):
+            self.stream_mode.addItem(tr(key), val)
+        self.select_data(self.stream_mode, self.cfg.streaming_mode)
+        self.stream_mode.currentIndexChanged.connect(self.save_settings)
+        self.labeled_row(tr("streaming_mode"), self.stream_mode, g)
+        self._sync_streaming_enabled(self.cfg.streaming)
+
+
+        # --- Per-App-Profile (eigene Datei, profiles.py) ---
+        g = self.group(tr("sec_profiles"), lay)
+        self.desc(tr("profiles_hint"), g)
+        prow = QHBoxLayout()
+        self.profiles_btn = QPushButton(tr("profiles_open"))
+        self.profiles_btn.clicked.connect(self.on_profiles_open)
+        prow.addWidget(self.profiles_btn)
+        prow.addStretch(1)
+        g.addLayout(prow)
+        self.profiles_status = QLabel()
+        self.profiles_status.setObjectName("desc")
+        self.profiles_status.setWordWrap(True)
+        self.profiles_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        g.addWidget(self.profiles_status)
+
         lay.addStretch(1)
-        note = QLabel(tr("close_note"))
-        note.setObjectName("desc")
-        note.setAlignment(Qt.AlignCenter)
-        lay.addWidget(note)
         return scroll
 
     # ----------------------------------------------------- Seite: Sprache
@@ -637,22 +692,6 @@ class Center(QMainWindow):
         g.addWidget(self.progmode)
         self.desc(tr("programmer_hint"), g)
 
-        # --- Streaming-Tippen (Live-Tippen ins Zielfenster, nur Freihand) ---
-        g = self.group(tr("sec_streaming"), lay)
-        self.stream_on = QCheckBox(tr("streaming_enable"))
-        self.stream_on.setChecked(self.cfg.streaming)
-        self.stream_on.toggled.connect(self.save_settings)
-        self.stream_on.toggled.connect(self._sync_streaming_enabled)
-        g.addWidget(self.stream_on)
-        self.desc(tr("streaming_hint"), g)
-        self.stream_mode = self.guard(QComboBox())
-        for val, key in (("word", "streaming_word"), ("stable", "streaming_stable")):
-            self.stream_mode.addItem(tr(key), val)
-        self.select_data(self.stream_mode, self.cfg.streaming_mode)
-        self.stream_mode.currentIndexChanged.connect(self.save_settings)
-        self.labeled_row(tr("streaming_mode"), self.stream_mode, g)
-        self._sync_streaming_enabled(self.cfg.streaming)
-
         g = self.group(tr("model"), lay)
         self.model = self.guard(QComboBox())
         env = config.read_serverenv()
@@ -667,6 +706,13 @@ class Center(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setVisible(False)
         g.addWidget(self.progress)
+
+        lay.addStretch(1)
+        return scroll
+
+    # --------------------------------------------------- Seite: Mikrofon
+    def page_mic(self):
+        scroll, lay = self.page()
 
         g = self.group(tr("sec_mic"), lay)
         self.mic = self.guard(QComboBox())
@@ -686,8 +732,64 @@ class Center(QMainWindow):
         self.test_out = QLabel()
         self.test_out.setWordWrap(True)
         g.addWidget(self.test_out)
+        lay.addStretch(1)
+        return scroll
 
-        # --- Wake-Word (Freisprechen, opt-in, BETA) — Beta-Funktionen ganz unten ---
+    # ----------------------------------------------- Seite: Beta (G111)
+    def page_beta(self):
+        """Noch nicht fertige Funktionen an einem Ort, klar als Beta
+        gekennzeichnet — die übrigen Seiten bleiben dadurch kurz."""
+        scroll, lay = self.page()
+
+        self.desc(tr("beta_intro"), lay)
+
+        # --- Auto-Stopp nach Stille ([vad], siehe vad.settings) ---
+        vs = vad.settings()
+        g = self.group(tr("sec_vad"), lay)
+        self.vad_autostop = QCheckBox(tr("vad_autostop"))
+        self.vad_autostop.setChecked(vs.autostop)
+        self.vad_autostop.toggled.connect(self.save_settings)
+        self.vad_autostop.toggled.connect(self._sync_vad_enabled)
+        g.addWidget(self.vad_autostop)
+        self.desc(tr("vad_autostop_hint"), g)
+        self.vad_silence = self.guard(QDoubleSpinBox())
+        self.vad_silence.setRange(*vad.AUTOSTOP_SILENCE_RANGE)
+        self.vad_silence.setSingleStep(0.1)
+        self.vad_silence.setDecimals(1)
+        self.vad_silence.setSuffix(" s")
+        self.vad_silence.setValue(vs.autostop_silence)
+        self.vad_silence.valueChanged.connect(self.save_soon)
+        self.labeled_row(tr("vad_silence"), self.vad_silence, g)
+        self.vad_backend = self.guard(QComboBox())
+        for val in ("auto", "rms"):
+            self.vad_backend.addItem(tr("vad_backend_" + val), val)
+        self.select_data(self.vad_backend, vs.backend)
+        self.vad_backend.currentIndexChanged.connect(self.save_settings)
+        self.labeled_row(tr("vad_backend"), self.vad_backend, g)
+        self.vad_model = QLineEdit(vs.silero_model)
+        self.vad_model.editingFinished.connect(self.save_settings)
+        self.vad_model_pick = QPushButton(tr("choose_file"))
+        self.vad_model_pick.setAccessibleName(tr("choose_file") + " " + tr("vad_silero_model"))
+        self.vad_model_pick.clicked.connect(
+            lambda: self._pick_model_file(self.vad_model))
+        self._file_row(tr("vad_silero_model"), self.vad_model, self.vad_model_pick, g)
+        self.desc(tr("vad_silero_hint"), g)
+        self._sync_vad_enabled(vs.autostop)
+
+        # --- Vorlaufpuffer ([speech] preroll_ms, 0–2000 ms) ---
+        g = self.group(tr("sec_preroll"), lay)
+        self.preroll = self.guard(QSpinBox())
+        self.preroll.setRange(0, 2000)
+        self.preroll.setSingleStep(100)
+        self.preroll.setSuffix(" ms")
+        self.preroll.setSpecialValueText(tr("preroll_off"))
+        self.preroll.setValue(self.cfg.preroll_ms)
+        self.preroll.valueChanged.connect(self.save_soon)
+        self.labeled_row(tr("preroll_ms"), self.preroll, g)
+        self.desc(tr("preroll_hint"), g)
+        self.preroll_mac_note = None
+        if IS_MAC:
+            self.preroll_mac_note = self.desc(tr("preroll_mac_hint"), g)
         g = self.group(tr("sec_wakeword"), lay)
         beta = self.desc(tr("wakeword_beta"), g)
         beta.setStyleSheet(f"color:{self._warn};font-weight:600;")   # Bernstein = Beta-Warnung
@@ -701,9 +803,63 @@ class Center(QMainWindow):
         self.wake_phrase.editingFinished.connect(self.save_settings)
         self.labeled_row(tr("wakeword_phrase"), self.wake_phrase, g)
         self.desc(tr("wakeword_change_hint"), g)
+        ws = wakeword.wake_settings()
+        self.wake_model = QLineEdit(ws.spotter_model)
+        self.wake_model.editingFinished.connect(self.save_settings)
+        self.wake_model_pick = QPushButton(tr("choose_file"))
+        self.wake_model_pick.setAccessibleName(tr("choose_file") + " " + tr("wake_spotter_model"))
+        self.wake_model_pick.clicked.connect(lambda: self._pick_model_file(self.wake_model))
+        self._file_row(tr("wake_spotter_model"), self.wake_model, self.wake_model_pick, g)
+        self.desc(tr("wake_spotter_hint"), g)
+        self.wake_threshold = self.guard(QDoubleSpinBox())
+        self.wake_threshold.setRange(0.05, 0.99)
+        self.wake_threshold.setSingleStep(0.05)
+        self.wake_threshold.setDecimals(2)
+        self.wake_threshold.setValue(ws.spotter_threshold)
+        self.wake_threshold.valueChanged.connect(self.save_soon)
+        self.labeled_row(tr("wake_threshold"), self.wake_threshold, g)
+        self.desc(tr("wake_threshold_hint"), g)
+        self.wake_verify = QCheckBox(tr("wake_verify"))
+        self.wake_verify.setChecked(ws.verify)
+        self.wake_verify.toggled.connect(self.save_settings)
+        g.addWidget(self.wake_verify)
 
         lay.addStretch(1)
         return scroll
+
+    def on_profiles_open(self):
+        """Profil-Datei mit den Vorgaben anlegen, falls es sie nicht gibt, und
+        im Standard-Editor öffnen. Eine vorhandene Datei bleibt unangetastet."""
+        path = profiles.PROFILES
+        try:
+            created = profiles.write_defaults(path)
+        except OSError:
+            self.profiles_status.setText("✕ " + tr("profiles_failed"))
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+        self.profiles_status.setText(tr("profiles_created" if created else "profiles_opened",
+                                        path=path))
+
+    def _file_row(self, label, edit, button, layout):
+        """Beschriftung, Pfadfeld und „Wählen…" in einer Zeile."""
+        row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setBuddy(edit)
+        edit.setAccessibleName(label)
+        row.addWidget(lbl)
+        row.addWidget(edit, 1)
+        row.addWidget(button)
+        layout.addLayout(row)
+
+    def _pick_model_file(self, edit):
+        path, _ = QFileDialog.getOpenFileName(self, tr("choose_file"), edit.text(),
+                                              "ONNX (*.onnx);;* (*)")
+        if path:
+            edit.setText(path)
+            self.save_settings()
+
+    def _sync_vad_enabled(self, on):
+        self.vad_silence.setEnabled(on)
 
     def _fill_mics(self, selected):
         """Mikrofonliste neu aufbauen. Ein gespeichertes Gerät, das gerade
@@ -780,10 +936,27 @@ class Center(QMainWindow):
     def page_file(self):
         scroll, lay = self.page()
         g = self.group(tr("sec_file"), lay)
-        self.desc(tr("file_hint"), g)
-        pick = QPushButton(tr("file_pick"))
-        pick.clicked.connect(self.on_pick_file)
-        g.addWidget(pick)
+        self.desc(tr("file_hint_manual"), g)
+        self.file_format = self.guard(QComboBox())
+        for fmt in ("text", "srt", "vtt"):
+            self.file_format.addItem(tr("file_format_" + fmt), fmt)
+        self.labeled_row(tr("file_format"), self.file_format, g)
+        row = QHBoxLayout()
+        self.file_pick = QPushButton(tr("file_pick"))
+        self.file_pick.clicked.connect(self.on_pick_file)
+        row.addWidget(self.file_pick)
+        self.file_cancel = QPushButton(tr("file_cancel"))
+        self.file_cancel.setEnabled(False)
+        self.file_cancel.clicked.connect(self.on_file_cancel)
+        row.addWidget(self.file_cancel)
+        row.addStretch(1)
+        g.addLayout(row)
+        self.file_bar = QProgressBar()
+        self.file_bar.setRange(0, 1000)
+        self.file_bar.setTextVisible(False)
+        self.file_bar.setAccessibleName(tr("file_progress"))
+        self.file_bar.setVisible(False)
+        g.addWidget(self.file_bar)
         self.file_status = QLabel()
         self.file_status.setObjectName("desc")
         self.file_status.setWordWrap(True)
@@ -792,10 +965,10 @@ class Center(QMainWindow):
         self.file_result.setReadOnly(True)
         self.file_result.setAccessibleName(tr("sec_file"))
         g.addWidget(self.file_result)
-        copy = QPushButton(tr("copy"))
-        copy.clicked.connect(lambda: clip_copy(self.file_result.toPlainText()))
-        g.addWidget(copy)
-        lay.addStretch(1)
+        self.file_copy = QPushButton(tr("copy"))
+        self.file_copy.clicked.connect(self.on_file_copy)
+        g.addWidget(self.file_copy)
+        self._file_cancel_event = None
         return scroll
 
     # --------------------------------------------------------- Seite: KI (Ollama)
@@ -862,6 +1035,31 @@ class Center(QMainWindow):
         self.ai_test_lbl.setWordWrap(True)
         g.addWidget(self.ai_test_lbl)
 
+        g = self.group(tr("sec_cleanup"), lay)
+        self.cleanup_on = QCheckBox(tr("cleanup_enable"))
+        self.cleanup_on.setChecked(self.cfg.cleanup_enabled)
+        self.cleanup_on.toggled.connect(self._on_cleanup_toggled)
+        g.addWidget(self.cleanup_on)
+        self.cleanup_level = self.guard(QComboBox())
+        for level in cleanup.LEVELS:
+            self.cleanup_level.addItem(tr("cleanup_level_" + level), level)
+        self.select_data(self.cleanup_level, self.cfg.cleanup_level)
+        self.cleanup_level.currentIndexChanged.connect(self.save_settings)
+        self.labeled_row(tr("cleanup_level"), self.cleanup_level, g)
+        self.cleanup_level.setEnabled(self.cfg.cleanup_enabled)
+        self.desc(tr("cleanup_hint"), g)
+        rrow = QHBoxLayout()
+        self.raw_back_btn = QPushButton(tr("raw_back"))
+        self.raw_back_btn.clicked.connect(self.on_raw_back)
+        rrow.addWidget(self.raw_back_btn)
+        rrow.addStretch(1)
+        g.addLayout(rrow)
+        self.desc(tr("raw_back_hint"), g)
+        self.raw_back_status = QLabel()
+        self.raw_back_status.setObjectName("desc")
+        self.raw_back_status.setWordWrap(True)
+        g.addWidget(self.raw_back_status)
+
         g = self.group(tr("sec_ai_modes"), lay)
         self.desc(tr("ai_modes_hint"), g)
         self.ai_modes_edit = QPlainTextEdit(config.ai_modes_text())
@@ -875,6 +1073,29 @@ class Center(QMainWindow):
         if self.cfg.ai_enabled:
             QTimer.singleShot(200, self.on_ai_refresh)
         return scroll
+
+    def _on_cleanup_toggled(self, on):
+        """Einschalten mit Stufe „Aus" bewirkte nichts: dann „Leicht" wählen
+        (ohne KI, nur Füllwörter und Wiederholungen)."""
+        self.cleanup_level.setEnabled(on)
+        if on and self.cleanup_level.currentData() == "aus":
+            self.cleanup_level.blockSignals(True)
+            self.select_data(self.cleanup_level, "leicht")
+            self.cleanup_level.blockSignals(False)
+        self.save_settings()
+
+    def on_raw_back(self):
+        """Den Rohtext des letzten Diktats anfordern. Er liegt nur im Speicher
+        des Diktat-Dienstes: Windows/macOS über die App im selben Prozess,
+        Linux per SIGHUP an quasseld."""
+        if self.controller is not None and hasattr(self.controller, "raw_back"):
+            ok = self.controller.raw_back()
+        elif not (IS_WINDOWS or IS_MAC):
+            ok = sysctl("kill", "-s", "HUP", "quasseld").returncode == 0
+        else:
+            ok = False
+        self.raw_back_status.setText(tr("raw_back_sent") if ok
+                                     else tr("raw_back_unavailable"))
 
     def _save_ai_modes(self):
         config.ai_modes_save(self.ai_modes_edit.toPlainText())
@@ -1025,6 +1246,12 @@ class Center(QMainWindow):
         self.reset_status.setObjectName("desc")
         g.addWidget(self.reset_status)
 
+        lay.addStretch(1)
+        return scroll
+
+    # ------------------------------------------------------- Seite: Über
+    def page_about(self):
+        scroll, lay = self.page()
         g = self.group(tr("about"), lay)
         row = QHBoxLayout()
         icon_lbl = QLabel()
@@ -1110,6 +1337,16 @@ class Center(QMainWindow):
             ("ai", "post_process"): str(self.ai_post.isChecked()).lower(),
             ("ai", "post_mode"): self.ai_mode.currentData() or "cleanup",
             ("ai", "voice_modes"): str(self.ai_voice.isChecked()).lower(),
+            ("wakeword", "spotter_model"): self.wake_model.text().strip(),
+            ("wakeword", "spotter_threshold"): round(self.wake_threshold.value(), 2),
+            ("wakeword", "verify"): str(self.wake_verify.isChecked()).lower(),
+            ("speech", "preroll_ms"): self.preroll.value(),
+            ("vad", "autostop"): str(self.vad_autostop.isChecked()).lower(),
+            ("vad", "autostop_silence"): round(self.vad_silence.value(), 1),
+            ("vad", "backend"): self.vad_backend.currentData() or "auto",
+            ("vad", "silero_model"): self.vad_model.text().strip(),
+            ("cleanup", "enabled"): str(self.cleanup_on.isChecked()).lower(),
+            ("cleanup", "level"): self.cleanup_level.currentData() or "aus",
             ("ui", "language"): self.uilang.currentData(),
         }
         # Nur schreiben, wo es das Auswahlfeld überhaupt gibt. Auf Linux und
@@ -1231,10 +1468,13 @@ class Center(QMainWindow):
     def _maybe_onboard(self):
         if self.cfg.onboarded:
             return
-        dlg = OnboardingDialog(self, self.chord_label())
+        dlg = OnboardingDialog(self, self.chord_label(),
+                               record_fn=self._mictest_record)
         dlg.exec()
-        if dlg.open_settings:
-            self.sidebar.setCurrentRow(1)       # Spracherkennung (Wake-Word)
+        if dlg.open_page == "wake":
+            self.show_page("nav_beta")          # dort steht das Wake-Word
+        elif dlg.open_page == "speech":
+            self.show_page("nav_speech")
         config.save({("system", "onboarded"): "true"})
         self.cfg.reload(force=True)
 
@@ -1354,10 +1594,7 @@ class Center(QMainWindow):
 
     def _server_error(self):
         """Server antwortet nicht: fehlt das Modell, oder lädt/hängt er?"""
-        model_path = config.read_serverenv().get("MODEL_PATH", "")
-        if model_path and not os.path.exists(model_path):
-            return tr("err_model_missing", model=os.path.basename(model_path))
-        return tr("err_server_down")
+        return failure_text(None)
 
     def on_mictest(self):
         self.test_out.setText(tr("mic_testing"))
@@ -1399,36 +1636,72 @@ class Center(QMainWindow):
     # ------------------------------------------------ Datei transkribieren (#21)
     def on_pick_file(self):
         path, _ = QFileDialog.getOpenFileName(self, tr("file_pick"))
-        if not path:
-            return
+        if path:
+            self.start_file(path)
+
+    def start_file(self, path, run_async=True):
+        """Datei transkribieren: Fortschritt und Abbruch laufen bis in
+        transcribe_file() durch; das Ergebnis landet nur im Feld, kopiert wird
+        erst auf Knopfdruck."""
         if not transcribe_file.is_supported(path):
             self.file_status.setText("✕ " + tr("file_failed"))
             return
         if not transcribe_file.have_ffmpeg() and not path.lower().endswith(".wav"):
             self.file_status.setText("✕ " + tr("file_no_ffmpeg"))
             return
-        name = os.path.basename(path)
-        self.file_status.setText(tr("file_running", name=name))
+        fmt = self.file_format.currentData() or "text"
+        cancel = self._file_cancel_event = threading.Event()
+        self.file_status.setText(tr("file_running", name=os.path.basename(path)))
         self.file_result.setPlainText("")
+        self.file_bar.setValue(0)
+        self.file_bar.setVisible(True)
+        self.file_pick.setEnabled(False)
+        self.file_cancel.setEnabled(True)
 
         def run():
             try:
-                text = transcribe_file.transcribe_file(path, self.cfg)
+                text = transcribe_file.transcribe_file(
+                    path, self.cfg, output_format=fmt, cancel_event=cancel,
+                    progress=lambda done, total: self.bridge.file_progress.emit(
+                        float(done), float(total)))
             except Exception:    # noqa: BLE001
                 text = None
-            if not text or not text.strip():
+            if cancel.is_set():
+                self.bridge.file_done.emit(tr("file_canceled"), "")
+            elif not text or not text.strip():
                 self.bridge.file_done.emit("✕ " + tr("file_failed"), "")
-                return
-            text = text.strip()
-            self.bridge.file_done.emit(
-                "✓ " + tr("file_done", chars=len(text)), text)
-        threading.Thread(target=run, daemon=True).start()
+            else:
+                text = text.strip()
+                self.bridge.file_done.emit(
+                    "✓ " + tr("file_ready", chars=len(text)), text)
+        if run_async:
+            threading.Thread(target=run, daemon=True).start()
+        else:
+            run()
+
+    def on_file_progress(self, done, total):
+        if total > 0:
+            self.file_bar.setValue(int(1000 * min(1.0, done / total)))
+
+    def on_file_cancel(self):
+        if self._file_cancel_event is not None:
+            self._file_cancel_event.set()
+        self.file_cancel.setEnabled(False)
 
     def on_file_done(self, status, text):
         self.file_status.setText(status)
+        self.file_bar.setVisible(False)
+        self.file_pick.setEnabled(True)
+        self.file_cancel.setEnabled(False)
+        self._file_cancel_event = None
         if text:
             self.file_result.setPlainText(text)
+
+    def on_file_copy(self):
+        text = self.file_result.toPlainText()
+        if text:
             clip_copy(text)
+            self.file_status.setText("✓ " + tr("copied"))
 
     # ------------------------------------------------------- Update-Prüfung
     def on_check_update(self):
@@ -1515,16 +1788,85 @@ class _StatsChart(QWidget):
         p.drawText(w - pad_r - 34, h - 5, series[-1][0][5:])     # heute MM-DD
 
 
-class OnboardingDialog(QDialog):
-    """Erst-Start-Begrüßung (#27): erklärt den Hotkey und „nichts einzustellen,
-    einfach schließen", plus den Hinweis, dass das Wake-Word änderbar ist."""
+PRIVACY_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_%s"
 
-    def __init__(self, parent, chord_label):
+
+def permission_status():
+    """Rechte, die Quassel braucht, je Plattform: [(Textschlüssel, Status,
+    Einstellungs-URL oder None)], Status "ok" | "missing" | "unknown".
+    Nur Statusabfragen (Preflight), kein Rechte-Dialog wird ausgelöst."""
+    if IS_WINDOWS:
+        return []
+    if IS_MAC:
+        mic = {"granted": "ok", "denied": "missing"}.get(mac_mic_permission(), "unknown")
+        listen = post = None
+        try:
+            import Quartz
+            if hasattr(Quartz, "CGPreflightListenEventAccess"):
+                listen = bool(Quartz.CGPreflightListenEventAccess())
+            if hasattr(Quartz, "CGPreflightPostEventAccess"):
+                post = bool(Quartz.CGPreflightPostEventAccess())
+        except ImportError:
+            pass
+
+        def st(v):
+            return "unknown" if v is None else ("ok" if v else "missing")
+        return [("ob_perm_mic", mic, PRIVACY_URL % "Microphone"),
+                ("ob_perm_input", st(listen), PRIVACY_URL % "ListenEvent"),
+                ("ob_perm_access", st(post), PRIVACY_URL % "Accessibility")]
+    try:
+        import grp
+        member = grp.getgrnam("input").gr_gid in os.getgroups()
+        status = "ok" if member else "missing"
+    except (ImportError, KeyError):
+        status = "unknown"
+    return [("ob_perm_input_linux", status, None)]
+
+
+def model_status():
+    """("ok", Name) | ("missing", Name) | ("none", "") für das eingestellte
+    Sprachmodell (server.env)."""
+    path = config.read_serverenv().get("MODEL_PATH", "")
+    if not path:
+        return "none", ""
+    name = os.path.basename(path)
+    return ("ok" if os.path.exists(path) else "missing"), name
+
+
+def clip_level(data):
+    """Lautstärke einer Aufnahme (s16le) auf der Skala von audio.rms_level."""
+    import array
+    samples = array.array("h")
+    samples.frombytes(data[:len(data) - len(data) % 2])
+    if not samples:
+        return 0.0
+    rms = (sum(x * x for x in samples) / len(samples)) ** 0.5
+    return min(rms / 8000.0, 1.0)
+
+
+class OnboardingDialog(QDialog):
+    """Erst-Einrichtung (#27, G110) in kurzen Schritten: Begrüßung mit Hotkey,
+    Rechte (nur anzeigen, was fehlt, und wohin), Mikrofontest ohne Wiedergabe,
+    Sprachmodell, „jetzt ausprobieren". Jeder Schritt ist überspringbar; der
+    Dialog lässt sich jederzeit schließen.
+
+    record_fn, permissions und models sind austauschbar (Tests): record_fn()
+    liefert rohe PCM-Bytes oder wirft MicTestError."""
+
+    mic_done = Signal(object)          # Bytes oder Fehlertext
+
+    def __init__(self, parent, chord_label, record_fn=None, permissions=None,
+                 models=None):
         super().__init__(parent)
-        self.open_settings = False
+        self.open_settings = False      # Wake-Word in den Einstellungen zeigen
+        self.open_page = None           # "wake" | "speech"
+        self.record_fn = record_fn
+        self.chord_label = chord_label
+        self._permissions = permissions or permission_status
+        self._models = models or model_status
         self.setWindowTitle(tr("ob_title"))
         self.setModal(True)
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(520)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 22, 24, 18)
         lay.setSpacing(12)
@@ -1533,31 +1875,200 @@ class OnboardingDialog(QDialog):
         logo = QLabel()
         logo.setPixmap(app_icon().pixmap(36, 36))
         head.addWidget(logo)
-        title = QLabel(tr("ob_title"))
-        title.setStyleSheet("font-size: 18px; font-weight: 800;")
-        head.addWidget(title)
+        self.title = QLabel(tr("ob_title"))
+        self.title.setStyleSheet("font-size: 18px; font-weight: 800;")
+        head.addWidget(self.title)
         head.addStretch(1)
+        self.step_lbl = QLabel()
+        self.step_lbl.setObjectName("desc")
+        head.addWidget(self.step_lbl)
         lay.addLayout(head)
 
-        body = QLabel(tr("ob_body", chord=chord_label))
-        body.setWordWrap(True)
-        lay.addWidget(body)
-        wake = QLabel(tr("ob_wake"))
-        wake.setWordWrap(True)
-        wake.setObjectName("desc")
-        lay.addWidget(wake)
-        lay.addStretch(1)
+        self.pages = QStackedWidget()
+        lay.addWidget(self.pages, 1)
+        self._titles = []
+        for title_key, build in (("ob_title", self._page_welcome),
+                                 ("ob_perm_title", self._page_permissions),
+                                 ("ob_mic_title", self._page_mic),
+                                 ("ob_model_title", self._page_model),
+                                 ("ob_try_title", self._page_try)):
+            self._titles.append(tr(title_key))
+            self.pages.addWidget(build())
 
-        buttons = QDialogButtonBox()
-        settings_btn = buttons.addButton(tr("ob_open_settings"),
-                                         QDialogButtonBox.ActionRole)
-        close_btn = buttons.addButton(tr("ob_close"), QDialogButtonBox.AcceptRole)
-        settings_btn.clicked.connect(self._go_settings)
-        close_btn.clicked.connect(self.accept)
-        lay.addWidget(buttons)
+        buttons = QHBoxLayout()
+        self.close_btn = QPushButton(tr("ob_close"))
+        self.close_btn.clicked.connect(self.accept)
+        buttons.addWidget(self.close_btn)
+        buttons.addStretch(1)
+        self.back_btn = QPushButton(tr("ob_back"))
+        self.back_btn.clicked.connect(lambda: self.go(self.pages.currentIndex() - 1))
+        buttons.addWidget(self.back_btn)
+        self.next_btn = QPushButton(tr("ob_next"))
+        self.next_btn.setDefault(True)
+        self.next_btn.clicked.connect(self._next)
+        buttons.addWidget(self.next_btn)
+        lay.addLayout(buttons)
+        self.mic_done.connect(self._on_mic_done)
+        self.go(0)
+
+    # ---------------------------------------------------------- Seiten
+    def _text(self, text, layout, desc=False):
+        lbl = QLabel(text)
+        lbl.setWordWrap(True)
+        if desc:
+            lbl.setObjectName("desc")
+        layout.addWidget(lbl)
+        return lbl
+
+    def _page_welcome(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        self._text(tr("ob_body", chord=self.chord_label), v)
+        self._text(tr("ob_wake"), v, desc=True)
+        wake_btn = QPushButton(tr("ob_open_settings"))
+        wake_btn.clicked.connect(self._go_settings)
+        v.addWidget(wake_btn, 0, Qt.AlignLeft)
+        v.addStretch(1)
+        return w
+
+    def _page_permissions(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        rows = self._permissions()
+        self.perm_rows = {}
+        if not rows:
+            self._text(tr("ob_perm_none"), v)
+        else:
+            self._text(tr("ob_perm_hint"), v, desc=True)
+        for key, status, url in rows:
+            # Name über der Zeile (darf umbrechen), darunter Status und Knopf:
+            # nebeneinander würden lange Rechtenamen abgeschnitten.
+            name = QLabel(tr(key))
+            name.setWordWrap(True)
+            name.setStyleSheet("font-weight: 600;")
+            v.addWidget(name)
+            row = QHBoxLayout()
+            state = QLabel(("✓ " if status == "ok" else "") + tr("ob_perm_" + (
+                "ok" if status == "ok" else "missing" if status == "missing" else "unknown")))
+            state.setAccessibleName(tr(key) + ": " + state.text())
+            row.addWidget(state)
+            row.addStretch(1)
+            btn = None
+            if url and status != "ok":
+                btn = QPushButton(tr("ob_perm_open"))
+                btn.setAccessibleName(tr("ob_perm_open") + ": " + tr(key))
+                btn.clicked.connect(lambda _c=False, u=url: QDesktopServices.openUrl(QUrl(u)))
+                row.addWidget(btn)
+            v.addLayout(row)
+            self.perm_rows[key] = (status, state, btn)
+        if IS_MAC and any(st != "ok" for _k, st, _u in rows):
+            self._text(tr("ob_perm_restart"), v, desc=True)
+        v.addStretch(1)
+        return w
+
+    def _page_mic(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        self._text(tr("ob_mic_hint"), v, desc=True)
+        self.mic_btn = QPushButton(tr("ob_mic_button"))
+        self.mic_btn.clicked.connect(self.start_mic_test)
+        self.mic_btn.setEnabled(self.record_fn is not None)
+        v.addWidget(self.mic_btn, 0, Qt.AlignLeft)
+        self.mic_bar = QProgressBar()
+        self.mic_bar.setRange(0, 100)
+        self.mic_bar.setValue(0)
+        self.mic_bar.setTextVisible(False)
+        self.mic_bar.setAccessibleName(tr("ob_mic_level"))
+        v.addWidget(self.mic_bar)
+        self.mic_result = self._text("", v)
+        v.addStretch(1)
+        return w
+
+    def _page_model(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        state, name = self._models()
+        if state == "ok":
+            text = "✓ " + tr("ob_model_ok", model=name)
+        elif state == "missing":
+            text = tr("err_model_missing", model=name)
+        else:
+            text = tr("ob_model_none")
+        self.model_lbl = self._text(text, v)
+        self.model_btn = None
+        if state != "ok":
+            self.model_btn = QPushButton(tr("ob_model_open"))
+            self.model_btn.clicked.connect(self._go_speech)
+            v.addWidget(self.model_btn, 0, Qt.AlignLeft)
+        v.addStretch(1)
+        return w
+
+    def _page_try(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        self._text(tr("ob_try_hint", chord=self.chord_label), v)
+        self.try_field = QPlainTextEdit()
+        self.try_field.setAccessibleName(tr("ob_try_field"))
+        self.try_field.setPlaceholderText(tr("ob_try_field"))
+        v.addWidget(self.try_field, 1)
+        return w
+
+    # -------------------------------------------------------- Steuerung
+    def go(self, index):
+        index = max(0, min(self.pages.count() - 1, index))
+        self.pages.setCurrentIndex(index)
+        self.title.setText(self._titles[index])
+        self.step_lbl.setText(tr("ob_step", n=index + 1, total=self.pages.count()))
+        self.back_btn.setEnabled(index > 0)
+        last = index == self.pages.count() - 1
+        self.next_btn.setText(tr("ob_finish") if last else tr("ob_next"))
+        if last:
+            self.try_field.setFocus()
+
+    def _next(self):
+        if self.pages.currentIndex() == self.pages.count() - 1:
+            self.accept()
+        else:
+            self.go(self.pages.currentIndex() + 1)
+
+    def start_mic_test(self, run_async=True):
+        """Aufnahme im Hintergrund; das Ergebnis kommt über mic_done zurück.
+        Kein Abspielen, keine Transkription, nichts wird gespeichert."""
+        self.mic_btn.setEnabled(False)
+        self.mic_result.setText(tr("mic_testing"))
+
+        def work():
+            try:
+                self.mic_done.emit(self.record_fn() or b"")
+            except MicTestError as e:
+                self.mic_done.emit(e.args[0])
+            except Exception:  # noqa: BLE001 — Audio-Backend kaputt
+                self.mic_done.emit(tr("err_mic_open"))
+        if run_async:
+            threading.Thread(target=work, daemon=True).start()
+        else:
+            work()
+
+    def _on_mic_done(self, result):
+        self.mic_btn.setEnabled(True)
+        if isinstance(result, str):
+            self.mic_bar.setValue(0)
+            self.mic_result.setText("✕ " + result)
+            return
+        level = clip_level(result)
+        self.mic_bar.setValue(int(round(100 * LevelMeter.to_frac(level))))
+        if len(result) < 8000 or level <= LevelMeter.SILENT_LEVEL:
+            self.mic_result.setText("✕ " + tr("mic_silent"))
+        else:
+            self.mic_result.setText("✓ " + tr("ob_mic_ok"))
 
     def _go_settings(self):
         self.open_settings = True
+        self.open_page = "wake"
+        self.accept()
+
+    def _go_speech(self):
+        self.open_page = "speech"
         self.accept()
 
 

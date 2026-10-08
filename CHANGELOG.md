@@ -15,6 +15,35 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Per-app profiles: the "While dictating" page has a button that creates the
+  profiles file with the default profiles (terminal, mail, editor and so on) if
+  it does not exist yet and opens it. An existing file is never overwritten.
+  Long entries no longer make a settings page wider than the window.
+- Beta features page: the pre-roll (0 to 2000 ms of audio kept from before
+  the hotkey, Linux and macOS) can be set in the Control Center instead of only
+  through an environment variable. The page says that the microphone stays
+  open for three seconds after each dictation and, on macOS, that the
+  microphone indicator stays visible during that time.
+- Beta features page, wake word: you can pick a keyword model (openWakeWord
+  format, trained yourself) that listens for the phrase before speech
+  recognition runs, set its trigger threshold, and choose whether the phrase is
+  confirmed by speech recognition before a dictation starts.
+- Beta features page: auto-stop for hands-free dictation can now be switched
+  on in the Control Center, with the pause length before it stops, the way
+  pauses are detected (automatic with an optional Silero model, or loudness
+  only) and a file picker for the Silero model.
+- Control Center, AI page: a "Clean up dictation" section. It is off by
+  default; the levels are Off, Light (fillers and repeats, no AI), Medium and
+  Strong (with the local AI). It explains that Quassel inserts your dictation as
+  spoken whenever the cleanup fails or would change numbers, names, links or
+  the meaning. "Raw text back" puts the unedited text of your last dictation on
+  the clipboard; Quassel keeps that text only in memory, never on disk, and
+  never types it into a window on its own.
+- The first-start window now walks you through setup in five short steps you
+  can skip at any time: the hotkey, the permissions Quassel needs (on macOS
+  with what is still missing and a button to the right System Settings page),
+  a microphone test that shows how loud you were without playing anything
+  back, whether the speech model is ready, and a field to try dictating.
 - A command-line client can show Quassel's local status, manage the dictionary
   and installed speech-model selection, transcribe an existing file, and safely
   request the Linux service toggle or emergency stop. It never starts a
@@ -75,6 +104,25 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   downloads with checksums are in `scripts/tcpp/`.
 
 ### Changed
+- Transcribe file: you can choose plain text or subtitles (SRT or WebVTT),
+  follow the progress and cancel a long file. The result is no longer copied to
+  the clipboard automatically, which used to replace whatever you had copied;
+  press Copy when you want it.
+- The Control Center has shorter pages, each about one thing: General (status
+  and hotkey), Pill, While dictating (sound, media and live typing), Speech,
+  Microphone, and About on its own. Unfinished features such as the wake word
+  are collected on a "Beta features" page instead of sitting at the bottom of
+  the speech settings.
+- Fewer system notifications. Pressing the hotkey together with another key
+  (for example to switch desktops) now ends quietly instead of announcing
+  "Canceled (other key pressed)". A single tap and a recording that is too
+  short are shown in the pill for a moment instead of as a notification; only
+  with the pill switched off do they still come as a notification.
+- Windows: the pill now shows the real microphone level too, flags a silent
+  microphone with a flat amber line and a hint, gives each state its own shape,
+  respects "Show animations" being off, and tells screen readers its state. Its
+  text bubble uses the pill's colors and stays readable when the pill is set
+  almost transparent.
 - AI-enhanced dictation now finishes processing before inserting text once.
   It no longer replaces an earlier insertion with backspaces after a model
   response, which could erase text in a different window if focus changed.
@@ -118,6 +166,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   where the V key has a different physical position.
 - Bluetooth microphones are recognized in the packaged macOS app even when
   framework discovery is unavailable.
+- When a dictation fails, Quassel now says why instead of "Whisper server
+  unreachable" for everything: the speech model is missing (with its name),
+  the server is not answering (it may still be loading), it took too long, or
+  it could not transcribe the recording. The rescued recording is still named.
+  If the microphone cannot be opened, the message says whether macOS denied
+  access, the recording program is missing, or the microphone is busy or
+  unplugged, and the pill shows it too. Windows no longer shows raw error
+  texts from the setup. A slow server is no longer asked a second time over
+  curl, which made a timeout take twice as long.
 - On Wayland systems with a recent wl-copy, Linux marks dictated clipboard
   text as sensitive so compatible clipboard managers can omit it from history.
 - Linux leaves images, files and rich clipboard contents alone when inserting

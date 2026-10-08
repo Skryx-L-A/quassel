@@ -167,15 +167,17 @@ def test_remote_ai_endpoint_is_confirmed_once(qapp, isolated_cfg, saves, monkeyp
 
 # ------------------------------------------- H116 Barrierefreiheit Zentrum
 def test_every_input_has_an_accessible_name(qapp, isolated_cfg):
-    from PySide6.QtWidgets import (QComboBox, QLineEdit, QListWidget,
+    from PySide6.QtWidgets import (QAbstractSpinBox, QComboBox, QLineEdit, QListWidget,
                                    QPlainTextEdit, QSlider)
     c = center.Center()
     try:
         unnamed = []
-        for cls in (QComboBox, QSlider, QLineEdit, QPlainTextEdit, QListWidget):
+        for cls in (QComboBox, QSlider, QLineEdit, QPlainTextEdit, QListWidget,
+                    QAbstractSpinBox):
             for w in c.findChildren(cls):
-                if isinstance(w, QLineEdit) and isinstance(w.parent(), QComboBox):
-                    continue                 # Editierfeld innerhalb eines Dropdowns
+                if isinstance(w, QLineEdit) and isinstance(
+                        w.parent(), (QComboBox, QAbstractSpinBox)):
+                    continue                 # Editierfeld in Dropdown bzw. Zahlenfeld
                 if not w.accessibleName():
                     unnamed.append((cls.__name__, w.objectName()))
         assert unnamed == []
