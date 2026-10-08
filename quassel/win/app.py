@@ -322,7 +322,7 @@ class WinDictation(dictation.DictationCore):
             pump.force_reset()
 
     def _wake_busy(self):
-        return self.rec.active or not self.owner.enabled
+        return self._busy() or not self.owner.enabled
 
 
 class WinApp(QObject):

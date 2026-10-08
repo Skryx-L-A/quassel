@@ -61,7 +61,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Optional hands-free auto-stop: with `autostop = true` under `[vad]` in `config.ini`,
   a double-tap dictation ends by itself after a pause (`autostop_silence`, default 1.5
   seconds), but only after you have actually spoken, so an accidental start never ends
-  an empty recording. Off by default. Works on Windows now; Linux and macOS follow.
+  an empty recording. Off by default. Works the same on Linux, macOS and Windows.
 - Optional wake-word detector in front of the speech engine. Instead of transcribing
   every sentence said in the room, Quassel can listen with a small keyword model
   (openWakeWord format) and only start the speech engine once it hears the wake word.

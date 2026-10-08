@@ -379,7 +379,7 @@ class DictationCore:
         return runner is not None and runner.current_action is not None
 
     def _wake_busy(self):
-        return self.rec.active
+        return self._busy()
 
     # ------------------------------------------------------------- Aufnahme
     def _refresh_cfg(self):
@@ -769,7 +769,8 @@ class DictationCore:
         dass der Tastendruck nicht ankam und der Text nur in der
         Zwischenablage liegt (Linux ohne laufendes ydotoold, Audit D57).
         Plattformen ohne Rückmeldung (None) gelten als erfolgreich."""
-        return self._paste(text) is not False
+        with wakeword.INSERT_GATE.dictation():
+            return self._paste(text) is not False
 
     def _report_clipboard_only(self):
         """Die Pille sagte sonst „fertig", obwohl im Fenster nichts ankam."""
@@ -946,57 +947,36 @@ class DictationCore:
         if self.cfg.wakeword_enabled and self.wake is None:
             self.wake = wakeword.WakeListener(
                 self.cfg, self._wake_record_utterance, self._wake_transcribe,
-                self._wake_insert, is_busy=self._wake_busy)
+                self._wake_insert, is_busy=self._wake_busy,
+                record_followup=self._wake_record_followup,
+                trust_capture=bool(wakeword.wake_settings(self.cfg).spotter_model))
             self.wake.start()
         elif not self.cfg.wakeword_enabled and self.wake is not None:
             self.wake.stop()
             self.wake = None
 
-    def _wake_record_utterance(self):
-        """Eine Äußerung über VAD aufnehmen (für den Wake-Listener). Eigener
-        Recorder + eigene Rohdatei, damit der Tastatur-Pfad und die Pille
-        ungestört bleiben. Schwelle wird am Grundrauschen kalibriert."""
+    def _wake_record_utterance(self, spot=True):
+        """Eine Äußerung für den Wake-Listener aufnehmen
+        (wakeword.capture_utterance). Eigener Recorder + eigene Rohdatei, damit
+        der Tastatur-Pfad und die Pille ungestört bleiben. Die Schwelle folgt dem
+        Grundrauschen und ist auf jeder Plattform dieselbe (vad.RmsClassifier);
+        mit Silero-Modell entscheidet stattdessen das. Ist ein Keyword-Modell
+        eingetragen ([wakeword] spotter_model), hört zuerst nur dieses mit und
+        gibt die Aufnahme erst nach einem Treffer an Whisper weiter."""
         rec = self._new_recorder(WAKE_RAW)
-        if not rec.start(self.cfg.mic):
-            return None
-        prev = 0
-        det = None
-        peak = 0.0
-        base_samples = []
-        deadline = time.monotonic() + 12
+        spotter = wakeword.load_spotter(self.cfg, log=self._log) if spot else None
         try:
-            while time.monotonic() < deadline and self.wake is not None:
-                time.sleep(0.1)
-                data = rec.raw_bytes()
-                new = data[prev:]
-                prev = len(data)
-                if not new:
-                    continue
-                lvl = vad.frame_rms(new)
-                peak = max(peak, lvl)
-                if det is None:
-                    # erste ~0.4 s: Grundrauschen messen, dann Schwelle setzen
-                    base_samples.append(lvl)
-                    if len(base_samples) >= 4:
-                        noise = sorted(base_samples)[len(base_samples) // 2]
-                        thr = max(220.0, noise * 2.2)
-                        det = vad.SilenceDetector(silence_rms=thr,
-                                                  min_speech_sec=0.25, hang_sec=1.0)
-                        det.feed(new)   # Kalibrier-Frames nur als Rauschwert genutzt
-                else:
-                    det.feed(new)
-                    if det.stopped:
-                        break
+            return wakeword.capture_utterance(
+                rec, self.cfg.mic, vad.make_classifier(self.cfg, log=self._log),
+                spotter=spotter, log=self._log, window=30.0 if spotter else 12.0,
+                min_bytes=MIN_AUDIO_BYTES, active=lambda: self.wake is not None)
         finally:
-            rec.stop()
-        data = rec.raw_bytes()
-        # Der Wake-Listener hört alles im Raum: die Rohdatei nicht liegen lassen.
-        discard(rec.raw_path)
-        started = det.speech_started if det is not None else False
-        self._log("wake: rec %d bytes, peak_rms=%.0f, speech=%s" % (len(data), peak, started))
-        if not started or len(data) < MIN_AUDIO_BYTES:
-            return None
-        return data
+            # Der Wake-Listener hört alles im Raum: die Rohdatei nicht liegen lassen.
+            discard(rec.raw_path)
+
+    def _wake_record_followup(self):
+        """Die Äußerung nach der reinen Phrase: ohne Spotter, der hat sie gehört."""
+        return self._wake_record_utterance(spot=False)
 
     def _wake_transcribe(self, pcm):
         return wake_transcribe(self.cfg, pcm, scratch_wav("wake"),
