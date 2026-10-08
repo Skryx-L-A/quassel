@@ -408,7 +408,8 @@ class DictationCore:
         """Beim Wechsel in den Freihand-Modus: Streaming starten, falls
         eingeschaltet. (Im Halten-Modus technisch unmöglich -> nie hier.)"""
         self._handsfree = True
-        if self.streamer is not None or not self.cfg.streaming or self._cleanup_active():
+        if (self.streamer is not None or not self.cfg.streaming
+                or self._cleanup_active() or self.cfg.ai_enabled):
             return
         self._clip_backup = self._streaming_begin()
         self.streamer = StreamTyper(self.cfg.streaming_mode,
@@ -655,27 +656,23 @@ class DictationCore:
             self.last_paste_len = len(final) if inserted else 0
             value = final
         elif streamer is not None:
-            # Streaming: KI auf den Endtext, dann Zielfenster exakt darauf bringen.
-            final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
+            # A stream already touched the target; never run a later model
+            # request that could replace it after focus has changed.
+            final = mech
             typed = streamer.finish(final)
             self.last_paste_len = len(typed)
             self._streaming_restore(clip_backup)
             value = final
         elif self.cfg.ai_enabled:
-            # Lokale KI braucht Sekunden. ERST den Rohtext einfügen (solange der
-            # Fokus sicher im Zielfeld ist), DANN durch die KI-Fassung ersetzen —
-            # sonst landet bei langsamen Modellen nichts mehr im Fenster.
-            inserted = self._insert(mech)
-            self.last_paste_len = len(mech) if inserted else 0
+            # B19: keine Backspaces nach dem Netzaufruf in ein inzwischen
+            # anderes Zielfenster schicken. Erst fertig berechnen, einmal einfügen.
             self._state("transcribing")
             final = self._ai_refine(mech)
-            if final != mech and inserted:
-                self._send_backspaces(len(mech))
-                inserted = self._insert(final)
-                self.last_paste_len = len(final) if inserted else 0
-                self._log("ai: replaced %d -> %d chars" % (len(mech), len(final)))
-            elif final != mech:
-                inserted = self._insert(final)  # nichts zu ersetzen: Endfassung ablegen
+            if panic.is_set():
+                self._state("idle")
+                return
+            inserted = self._insert(final)
+            self.last_paste_len = len(final) if inserted else 0
             value = final
         else:
             inserted = self._insert(mech)

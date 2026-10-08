@@ -51,11 +51,39 @@ def test_cleanup_failure_inserts_raw_once(monkeypatch):
 
 def test_cleanup_disables_target_streaming():
     core = dictation.DictationCore.__new__(dictation.DictationCore)
-    core.cfg = SimpleNamespace(streaming=True, cleanup_enabled=True, cleanup_level="leicht")
+    core.cfg = SimpleNamespace(streaming=True, cleanup_enabled=True,
+                               cleanup_level="leicht", ai_enabled=False)
     core.streamer = None
     core._streaming_begin = lambda: (_ for _ in ()).throw(AssertionError("target streaming"))
     core.enable_streaming()
     assert core.streamer is None
+    core.cfg.cleanup_enabled = False
+    core.cfg.ai_enabled = True
+    core.enable_streaming()
+    assert core.streamer is None
+
+
+def test_legacy_ai_also_inserts_once_after_refinement(monkeypatch):
+    core = dictation.DictationCore.__new__(dictation.DictationCore)
+    core.cfg = SimpleNamespace(cleanup_enabled=False, cleanup_level="aus", ai_enabled=True)
+    calls = []
+    core._wav_from_raw = lambda data, path: None
+    core._refine_mechanical = lambda text: text
+    core._ai_refine = lambda text: "corrected"
+    core._insert = lambda text: calls.append(("insert", text)) or True
+    core._send_backspaces = lambda n: calls.append(("backspace", n))
+    core._state = lambda state, text="": text
+    core._forget_text = lambda text: None
+    core._after_insert = lambda text, secs: None
+    monkeypatch.setattr(dictation.whisperclient, "server_was_up", lambda: True)
+    monkeypatch.setattr(dictation.whisperclient, "ensure_server", lambda deadline: True)
+    monkeypatch.setattr(dictation.whisperclient, "transcribe_result",
+                        lambda wav, cfg: SimpleNamespace(text="raw", language="en"))
+    monkeypatch.setattr(dictation, "postprocess_transcript", lambda *a: ("text", a[0]))
+    monkeypatch.setattr(dictation, "scratch_wav", lambda name: "unused-test.wav")
+    monkeypatch.setattr(dictation, "discard", lambda path: None)
+    core._transcribe_and_insert(None, None, b"\0" * 32000, threading.Event())
+    assert calls == [("insert", "corrected")]
 
 
 def wait_for(cond, timeout=2.0):
