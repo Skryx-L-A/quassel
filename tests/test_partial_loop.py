@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from quassel import dictation as daemon_mod
 from quassel.audio import RATE, SAMPLE_BYTES
-from quassel.state import PARTWAV
 
 
 class FakeStopEvent:
@@ -181,5 +180,5 @@ def test_normal_run_still_transcribes_and_updates_state(monkeypatch):
 
     pl.run()
 
-    assert transcribe_calls == [PARTWAV]
+    assert transcribe_calls == [daemon_mod.scratch_wav("partial")]
     assert pl.owner.states == [("recording", "hallo welt")]

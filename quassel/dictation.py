@@ -64,12 +64,16 @@ LEAD_TRIM_MS = 160            # nur der Start-Ton (mit VAD)
 LEAD_TRIM_NOVAD_BT_MS = 400   # ohne VAD: BT-Ramp am Anfang
 TAIL_PAD_MS, TAIL_PAD_BT_MS = 250, 450
 
+# So lange bleibt der Text einer Meldung in state.json stehen: länger als die
+# Pille ihn zeigt (3 s) und als ihr Abfragetakt (80 ms), danach wird er
+# geleert (Audit A6).
+STATE_TEXT_KEEP = 4.0
 ACTION_STALL = 60.0    # s: so lange darf der lange Rest eines Diktats höchstens laufen
 PUMP_POLL = 0.02       # s: Takt des Ereignis-Threads (Doppeltipp-Fenster, Einfügen)
 
-# Eigene Roh-/WAV-Dateien für den Wake-Listener (getrennt vom Tastatur-Pfad)
+# Eigene Rohdatei für den Wake-Listener (getrennt vom Tastatur-Pfad); seine
+# WAV ist eine Zwischendatei dieses Prozesses (scratch_wav("wake")).
 WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
-WAKE_WAV = os.path.join(os.path.dirname(WAV), "wake.wav")
 
 
 def postprocess_transcript(raw_text, cfg, language=None, pcm=None):
@@ -93,18 +97,39 @@ def wake_transcribe(cfg, pcm, wav_path, wav_from_raw, log):
     if not pcm or not whisperclient.ensure_server():
         return None
     try:
-        wav_from_raw(pcm, wav_path)
-    except OSError:
-        return None
-    # Wake-Phrase als Bias mitgeben, damit Whisper das Kunstwort eher trifft.
-    text = whisperclient.transcribe(wav_path, cfg, timeout=30,
-                                    prompt_extra=cfg.wakeword_phrase)
+        try:
+            wav_from_raw(pcm, wav_path)
+        except OSError:
+            return None
+        # Wake-Phrase als Bias mitgeben, damit Whisper das Kunstwort eher trifft.
+        text = whisperclient.transcribe(wav_path, cfg, timeout=30,
+                                        prompt_extra=cfg.wakeword_phrase)
+    finally:
+        discard(wav_path)          # alles im Raum Gesprochene: nicht liegen lassen
     # Nur Länge und Treffer loggen: der Listener hört alles im Raum, der Text
     # darf nie in eine Logdatei.
     heard = (text or "").strip()
     matched, _ = wakeword.match_wake(heard, cfg.wakeword_phrase)
     log("wake: heard %d chars, match=%s" % (len(heard), "yes" if matched else "no"))
     return text
+
+
+def scratch_wav(name):
+    """Pfad einer Zwischen-WAV dieses Prozesses (Diktat, Vorschau). Die
+    Prozessnummer im Namen sorgt dafür, dass beim Aufräumen nie die Datei
+    eines anderen Quassel-Prozesses (zweites Profil, Test) verschwindet."""
+    return os.path.join(os.path.dirname(WAV), "%s-%d.wav" % (name, os.getpid()))
+
+
+def discard(path):
+    """Eine Aufnahme- oder Zwischendatei löschen (Audit A6). Nur absolute
+    Pfade; fehlt die Datei, ist das kein Fehler."""
+    if not isinstance(path, str) or not os.path.isabs(path):
+        return
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 class PartialLoop(threading.Thread):
@@ -123,8 +148,14 @@ class PartialLoop(threading.Thread):
         self.stop_event = threading.Event()
 
     def run(self):
-        from .state import PARTWAV
-        wav_path = self.wav_path or PARTWAV
+        wav_path = self.wav_path or scratch_wav("partial")
+        try:
+            self._loop(wav_path)
+        finally:
+            # Die Vorschau-WAV enthält die letzten Sekunden des Diktats.
+            discard(wav_path)
+
+    def _loop(self, wav_path):
         whisperclient.ensure_server()   # Modell vorladen -> finale Transkription flott
         # Adaptiver Abstand statt fest PARTIAL_EVERY: der Server bearbeitet
         # Teil- und Finaltranskript NACHEINANDER, und ein Teiltranskript
@@ -273,6 +304,19 @@ class DictationCore:
             return LEAD_TRIM_MS
         return LEAD_TRIM_NOVAD_BT_MS if self._bt else LEAD_TRIM_MS
 
+    def _forget_text(self, token):
+        """Den Text einer eben gemeldeten Meldung nach der Anzeige aus der
+        Zustandsdatei nehmen. token ist der Rückgabewert von _state (None:
+        die Plattform hält keinen Text auf der Platte)."""
+        if token is None:
+            return
+        timer = threading.Timer(STATE_TEXT_KEEP, self._clear_state_text, (token,))
+        timer.daemon = True
+        timer.start()
+
+    def _clear_state_text(self, token):
+        """Plattform: den Text der Meldung token leeren."""
+
     def _after_audio_released(self):
         """Nach jedem Ende einer Aufnahme (auch Abbruch, zu kurz). Der Daemon
         prüft hier, ob CoreAudio verklemmt ist."""
@@ -338,7 +382,7 @@ class DictationCore:
             if self.streamer is not None:
                 self._streaming_restore(self._clip_backup)
                 self.streamer = None
-            self.rec.stop()
+            discard(self.rec.stop())     # verworfenes Diktat: Ton gleich mit
             if self.cfg.beep:
                 beep.stop()
             self.ducker.restore()
@@ -468,16 +512,23 @@ class DictationCore:
         if len(data) < MIN_AUDIO_BYTES:
             self._state("idle")
             self._notify(tr("too_short"))
+            discard(done_path)
             return None
         self._state("transcribing")
-        return lambda: self._finish_rest(streamer, clip_backup, data, panic)
+        return lambda: self._finish_rest(streamer, clip_backup, data, panic, done_path)
 
-    def _finish_rest(self, streamer, clip_backup, data, panic):
+    def _finish_rest(self, streamer, clip_backup, data, panic, done_path=None):
         """Der lange Teil: Server, Transkription, Nachbearbeitung, Einfügen.
-        Läuft auf dem Aktions-Thread und fasst den Recorder nicht mehr an."""
+        Läuft auf dem Aktions-Thread und fasst den Recorder nicht mehr an —
+        nur die Rohdatei SEINES Diktats wird am Ende gelöscht: die Daten
+        liegen ab hier im Speicher, und eine gerettete Aufnahme hat ihre
+        eigene Datei. Scheitert die Rettung, bleibt die Rohdatei stehen."""
+        keep_raw = True
         try:
-            self._transcribe_and_insert(streamer, clip_backup, data, panic)
+            keep_raw = self._transcribe_and_insert(streamer, clip_backup, data, panic) is False
         finally:
+            if not keep_raw:
+                discard(done_path)
             self._after_audio_released()
 
     def _transcribe_and_insert(self, streamer, clip_backup, data, panic):
@@ -486,14 +537,16 @@ class DictationCore:
         deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
                     else SERVER_WAIT_COLD)
         if not whisperclient.ensure_server(deadline=deadline):
-            self._fail_with_rescue(data, streamer, clip_backup)
-            return
-        self._wav_from_raw(data, WAV)
-        result = whisperclient.transcribe_result(WAV, self.cfg)
+            return self._fail_with_rescue(data, streamer, clip_backup)
+        wav = scratch_wav("rec")
+        try:
+            self._wav_from_raw(data, wav)
+            result = whisperclient.transcribe_result(wav, self.cfg)
+        finally:
+            discard(wav)
         raw_text = result.text
         if raw_text is None:
-            self._fail_with_rescue(data, streamer, clip_backup)
-            return
+            return self._fail_with_rescue(data, streamer, clip_backup)
         if panic.is_set():
             # „Diktat sofort beenden" wurde gedrückt, während transkribiert
             # wurde: kein Text mehr ins Fenster.
@@ -559,7 +612,7 @@ class DictationCore:
             self._paste(mech)
             self.last_paste_len = len(mech)
             value = mech
-        self._state("done", value)
+        self._forget_text(self._state("done", value))
         secs = len(data) / (RATE * SAMPLE_BYTES)
         self._after_insert(value, secs)
 
@@ -567,7 +620,8 @@ class DictationCore:
     def _fail_with_rescue(self, data, streamer, clip_backup):
         """Server nicht erreichbar oder Transkription gescheitert: die Aufnahme
         ist gesprochen und darf nicht einfach verschwinden — als WAV sichern und
-        den Pfad in der Fehlermeldung nennen."""
+        den Pfad in der Fehlermeldung nennen. Rückgabe False, wenn auch die
+        Rettung scheiterte (dann bleibt die Rohdatei als letzte Kopie)."""
         if streamer is not None:
             self._streaming_restore(clip_backup)
         path = self._rescue(data)
@@ -575,6 +629,7 @@ class DictationCore:
         if path:
             text += " · " + tr("rescued").format(path=path)
         self._state("error", text)
+        return path is not None
 
     def _rescue(self, data):
         """Rohdaten als eigene WAV-Datei ablegen. Rückgabe: Pfad oder None."""
@@ -719,6 +774,8 @@ class DictationCore:
         finally:
             rec.stop()
         data = rec.raw_bytes()
+        # Der Wake-Listener hört alles im Raum: die Rohdatei nicht liegen lassen.
+        discard(rec.raw_path)
         started = det.speech_started if det is not None else False
         self._log("wake: rec %d bytes, peak_rms=%.0f, speech=%s" % (len(data), peak, started))
         if not started or len(data) < MIN_AUDIO_BYTES:
@@ -726,7 +783,8 @@ class DictationCore:
         return data
 
     def _wake_transcribe(self, pcm):
-        return wake_transcribe(self.cfg, pcm, WAKE_WAV, self._wav_from_raw, self._log)
+        return wake_transcribe(self.cfg, pcm, scratch_wav("wake"),
+                               self._wav_from_raw, self._log)
 
     def _wake_insert(self, raw_text):
         kind, value = postprocess_transcript(raw_text, self.cfg)
@@ -735,7 +793,7 @@ class DictationCore:
         value = self._refine(value)
         self._paste(value)
         self.last_paste_len = len(value)
-        self._state("done", value)
+        self._forget_text(self._state("done", value))
         self._after_insert(value)
 
 

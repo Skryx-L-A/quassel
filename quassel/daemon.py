@@ -28,7 +28,7 @@ from . import beep, config, dictation, i18n, textproc, whisperclient  # noqa: F4
 from .dictation import (  # noqa: F401 — Namen bleiben hier ansprechbar
     LEAD_TRIM_MS, LEAD_TRIM_NOVAD_BT_MS, PARTIAL_EVERY, PARTIAL_MAX_WAIT,
     PARTIAL_WINDOW, RESCUE_GLOB, RESCUE_KEEP, RESCUE_NAME, SERVER_WAIT_COLD,
-    SERVER_WAIT_FINISH, SLOW_STOP, TAIL_PAD_BT_MS, WAKE_RAW, WAKE_WAV,
+    SERVER_WAIT_FINISH, SLOW_STOP, TAIL_PAD_BT_MS, WAKE_RAW,
     PartialLoop, postprocess_transcript)
 from .mediacontrol import AudioDucker
 from .audio import Recorder, mac_backend, wav_from_raw
@@ -36,7 +36,7 @@ from .config import CHORDS
 from .i18n import tr
 from .platform import (mic_is_bluetooth, notify, paste, send_backspaces,
                        send_enter, type_chunk, streaming_begin, streaming_restore)
-from .state import PARTWAV, RUNDIR, WAV, state_set  # noqa: F401
+from .state import PARTWAV, RUNDIR, WAV, state_clear_text, state_set  # noqa: F401
 
 EVENT_FORMAT = "llHHi"
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
@@ -95,6 +95,9 @@ class Daemon(dictation.DictationCore):
     # die gemeinsame Ablaufsteuerung.
     def _state(self, state, text=""):
         return state_set(state, text)
+
+    def _clear_state_text(self, token):
+        state_clear_text(token)
 
     def _notify(self, text):
         notify(text)
@@ -168,7 +171,8 @@ class Daemon(dictation.DictationCore):
 
     def _wake_transcribe(self, pcm):
         # Über die Modulnamen dieses Moduls, damit Tests sie ersetzen können.
-        return dictation.wake_transcribe(self.cfg, pcm, WAKE_WAV, wav_from_raw, log)
+        return dictation.wake_transcribe(self.cfg, pcm, dictation.scratch_wav("wake"),
+                                         wav_from_raw, log)
 
     def _restart_if_audio_poisoned(self, after_panic=False):
         """Musste ein Aufnahme-Stream aufgegeben werden, steckt in CoreAudio ein

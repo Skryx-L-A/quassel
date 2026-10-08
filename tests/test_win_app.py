@@ -55,7 +55,6 @@ def win(monkeypatch, tmp_path):
     monkeypatch.setattr(dictation, "RUNDIR", str(tmp_path))
     monkeypatch.setattr(dictation, "WAV", str(tmp_path / "rec.wav"))
     monkeypatch.setattr(dictation, "WAKE_RAW", str(tmp_path / "wake.raw"))
-    monkeypatch.setattr(dictation, "WAKE_WAV", str(tmp_path / "wake.wav"))
     monkeypatch.setattr(dictation, "TAIL_PAD_MS", 0)
     monkeypatch.setattr(dictation, "PartialLoop", NoPartial)
     monkeypatch.setattr(dictation.whisperclient, "server_was_up", lambda: True)
@@ -111,8 +110,10 @@ def test_wake_listener_records_into_its_own_files(win, monkeypatch):
     monkeypatch.setattr(dictation.whisperclient, "ensure_server", lambda: True)
     monkeypatch.setattr(dictation.whisperclient, "transcribe", lambda *a, **k: "hallo")
     assert win.core._wake_transcribe(b"\x01\x00" * 8000) == "hallo"
-    assert [path for path, _ in win.seen["wavs"]] == [dictation.WAKE_WAV]
-    assert dictation.WAKE_WAV != dictation.WAV
+    [wake_wav] = [path for path, _ in win.seen["wavs"]]
+    assert os.path.basename(wake_wav).startswith("wake-")
+    assert wake_wav != dictation.scratch_wav("rec")
+    assert not os.path.exists(wake_wav)          # A6: nach der Erkennung gelöscht
 
 
 class FakeRunner:

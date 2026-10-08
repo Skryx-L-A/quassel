@@ -42,6 +42,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no longer quits right after starting because it found the first user's
   instance. The single-instance channel is now per user and session, and only
   your own user account can use it to open the settings.
+- Your last dictation no longer stays on disk. On macOS and Windows the raw
+  recording, the WAV sent to the speech engine, the preview audio and the last
+  dictated text sat in Application Support or LOCALAPPDATA until the next
+  dictation, and with that in backups. The audio is now deleted as soon as the
+  text is inserted (or the dictation is canceled or too short), the wake-word
+  audio right after it is checked, and the text in the status file is blanked
+  a few seconds after the pill has shown it. A recording that had to be rescued
+  keeps only its rescue file; if even the rescue fails, the raw recording stays
+  as the last copy.
 - macOS can again copy history and file-transcription results without relying
   on the Linux-only `xclip` command.
 - Known Whisper subtitle and “for watching” silence artifacts are discarded;
