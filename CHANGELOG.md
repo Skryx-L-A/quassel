@@ -54,6 +54,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - AI-enhanced dictation now finishes processing before inserting text once.
   It no longer replaces an earlier insertion with backspaces after a model
   response, which could erase text in a different window if focus changed.
+- Linux starts checking clipboard contents while recording and uses fewer
+  clipboard commands when inserting a dictation.
 - The pill now shows your real microphone level while you dictate instead of a
   fixed animation. If nothing arrives from the microphone for 1.5 seconds, the
   bars turn into a flat amber line and the pill says so, so a muted or wrong
@@ -78,6 +80,21 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- On Wayland systems with a recent wl-copy, Linux marks dictated clipboard
+  text as sensitive so compatible clipboard managers can omit it from history.
+- Linux leaves images, files and rich clipboard contents alone when inserting
+  text and keeps anything you copy during the restore delay.
+- macOS preserves every pasteboard item and format across dictation insertion.
+  If an item cannot be read, Quassel types without changing the pasteboard.
+- Windows keeps dictation text out of clipboard history and cloud sync. It
+  preserves common image, file and rich text clipboard formats, and types
+  directly when a clipboard format cannot be safely restored.
+- Windows restores an earlier clipboard item only if it still holds Quassel's
+  own dictation text, so a new copy made while dictating is kept.
+- Windows now stops only a verified Quassel speech server process, so other
+  speech server processes are left alone.
+- macOS and Windows keep bounded speech server diagnostic logs in the profile
+  data folder to make startup failures easier to diagnose.
 - The microphone test in the Control Center now says what went wrong instead
   of "Whisper server unreachable" for everything: missing microphone access on
   macOS (with the place to allow it), a microphone that is busy or unplugged, a

@@ -57,6 +57,8 @@ def clip(monkeypatch):
         board["concealed"] = concealed
 
     monkeypatch.setattr(pm, "clip_read", lambda: board["text"])
+    monkeypatch.setattr(pm, "clip_snapshot", lambda: board["text"])
+    monkeypatch.setattr(pm, "clip_restore", lambda snapshot: copy(snapshot))
     monkeypatch.setattr(pm, "clip_copy", copy)
     monkeypatch.setattr(pm, "clip_clear",
                         lambda: (board.update(text="", concealed=False)))
@@ -148,6 +150,62 @@ def test_streaming_restore_with_empty_slot_and_token_clears(clip):
     pm.streaming_restore("")
     _wait_restores()
     assert clip["text"] == ""              # leeres Original -> leeren
+
+
+def test_snapshot_captures_all_pasteboard_item_types(monkeypatch):
+    class Item:
+        def types(self):
+            return ["public.utf8-plain-text", "public.png"]
+
+        def dataForType_(self, typ):
+            return {"public.utf8-plain-text": b"label", "public.png": b"image"}[typ]
+
+    board = SimpleNamespace(pasteboardItems=lambda: [Item()])
+    monkeypatch.setattr(pm, "_HAS_OBJC", True)
+    monkeypatch.setattr(pm, "NSPasteboard", SimpleNamespace(generalPasteboard=lambda: board), raising=False)
+    assert pm.clip_snapshot() == ("items", [[("public.utf8-plain-text", b"label"),
+                                           ("public.png", b"image")]])
+
+
+def test_unreadable_pasteboard_type_is_left_untouched(monkeypatch):
+    class Item:
+        def types(self):
+            return ["private"]
+
+        def dataForType_(self, typ):
+            return None
+
+    board = SimpleNamespace(pasteboardItems=lambda: [Item()])
+    monkeypatch.setattr(pm, "_HAS_OBJC", True)
+    monkeypatch.setattr(pm, "NSPasteboard", SimpleNamespace(generalPasteboard=lambda: board), raising=False)
+    assert pm.clip_snapshot() is pm.UNSAFE
+
+
+def test_restore_writes_every_saved_item_and_type(monkeypatch):
+    written = []
+
+    class Item:
+        def __init__(self):
+            self.formats = []
+
+        def init(self):
+            return self
+
+        def setData_forType_(self, data, typ):
+            self.formats.append((typ, data))
+
+    board = SimpleNamespace(clearContents=lambda: None,
+                            writeObjects_=lambda items: written.extend(items))
+    monkeypatch.setattr(pm, "_HAS_OBJC", True)
+    monkeypatch.setattr(pm, "NSPasteboard", SimpleNamespace(generalPasteboard=lambda: board), raising=False)
+    monkeypatch.setattr(pm, "NSPasteboardItem", SimpleNamespace(alloc=Item), raising=False)
+    monkeypatch.setattr(pm, "NSData", SimpleNamespace(dataWithBytes_length_=lambda data, length: data[:length]), raising=False)
+    pm.clip_restore(("items", [[("public.png", b"image"), ("public.text", b"caption")],
+                               [("public.file-url", b"file")]]))
+    assert [item.formats for item in written] == [
+        [("public.png", b"image"), ("public.text", b"caption")],
+        [("public.file-url", b"file")],
+    ]
 
 
 # ---------------------------------------------------------------- Backspaces
