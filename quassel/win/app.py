@@ -310,7 +310,7 @@ class WinDictation(dictation.DictationCore):
     def __init__(self, owner):
         self.owner = owner              # WinApp: Signal, enabled, Pumpe
         self.cfg = owner.cfg
-        self.rec = Recorder()
+        self.rec = Recorder(preroll_ms=getattr(self.cfg, "preroll_ms", 0))
         self.partial = None
         self.last_paste_len = 0
         self.streamer = None

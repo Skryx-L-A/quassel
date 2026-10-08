@@ -149,3 +149,22 @@ def test_missing_named_microphone_fails_closed(paths):
     rec = audio_win.Recorder()
     assert rec.start("missing") is False
     assert not sd.streams
+
+
+def test_preroll_reuses_warm_stream_and_prepends_bounded_audio(paths):
+    _raw, _raw_b, sd = paths
+    rec = audio_win.Recorder(preroll_ms=100, preroll_keep_s=10)
+    try:
+        assert rec.start()
+        sd.streams[0].feed(b"\x01\x00" * 10)
+        rec.stop()
+        assert not rec.active and sd.streams[0].active
+        sd.streams[0].feed(b"\x02\x00" * 2000)  # ring keeps last 100 ms
+        assert rec.start()
+        assert len(sd.streams) == 1
+        sd.streams[0].feed(b"\x03\x00" * 10)
+        assert rec.raw_bytes() == b"\x02\x00" * 1600 + b"\x03\x00" * 10
+        rec.stop()
+    finally:
+        rec._close_warm()
+    assert not sd.streams[0].active

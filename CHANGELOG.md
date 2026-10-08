@@ -15,6 +15,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Windows now supports the optional pre-roll setting: it keeps up to two seconds of recent microphone audio for the next dictation and closes the input after the short warm period.
 - Per-app profiles: the "While dictating" page has a button that creates the
   profiles file with the default profiles (terminal, mail, editor and so on) if
   it does not exist yet and opens it. An existing file is never overwritten.
