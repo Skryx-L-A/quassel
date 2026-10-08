@@ -28,7 +28,7 @@ import queue
 import threading
 import time
 
-from . import (aimodes, beep, config, dictprompt, i18n, progmode, stats, textproc,
+from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18n, progmode, stats, textproc,
                textreplace, vad, wakeword, whisperclient)
 from .audio import RATE, SAMPLE_BYTES
 from .i18n import tr
@@ -408,7 +408,7 @@ class DictationCore:
         """Beim Wechsel in den Freihand-Modus: Streaming starten, falls
         eingeschaltet. (Im Halten-Modus technisch unmöglich -> nie hier.)"""
         self._handsfree = True
-        if self.streamer is not None or not self.cfg.streaming:
+        if self.streamer is not None or not self.cfg.streaming or self._cleanup_active():
             return
         self._clip_backup = self._streaming_begin()
         self.streamer = StreamTyper(self.cfg.streaming_mode,
@@ -636,9 +636,25 @@ class DictationCore:
             else:
                 self._state("error", tr("nothing"))
             return
-        mech = self._refine_mechanical(value)
+        mechanical_failed = False
+        try:
+            mech = self._refine_mechanical(value)
+        except Exception:
+            if not self._cleanup_active():
+                raise
+            mech = value
+            mechanical_failed = True
         inserted = True             # Streaming tippt selbst, ohne Rückmeldung
-        if streamer is not None:
+        if self._cleanup_active() and streamer is None:
+            # B19: finish all cleanup and validation before one target insert.
+            final = value if mechanical_failed else self._cleanup_refine(value, mech)
+            if panic.is_set():
+                self._state("idle")
+                return
+            inserted = self._insert(final)
+            self.last_paste_len = len(final) if inserted else 0
+            value = final
+        elif streamer is not None:
             # Streaming: KI auf den Endtext, dann Zielfenster exakt darauf bringen.
             final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
             typed = streamer.finish(final)
@@ -747,10 +763,36 @@ class DictationCore:
 
     def _refine(self, text):
         """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
+        raw = text
+        if self._cleanup_active():
+            try:
+                text = self._refine_mechanical(text)
+            except Exception:
+                return raw
+            return self._cleanup_refine(raw, text)
         text = self._refine_mechanical(text)
         if self.cfg.ai_enabled:
             text = self._ai_refine(text)
         return text
+
+    def _cleanup_active(self):
+        return (getattr(self.cfg, "cleanup_enabled", False)
+                and getattr(self.cfg, "cleanup_level", "aus") != "aus")
+
+    def _cleanup_refine(self, raw, mechanical):
+        """Keep addressed AI modes; otherwise validate cleanup before insert."""
+        try:
+            if self.cfg.ai_enabled and self.cfg.ai_voice_modes:
+                mode, _ = aimodes.detect_voice_mode(mechanical)
+                if mode is None:
+                    mode, _ = self._detect_custom_voice(mechanical)
+                if mode is not None:
+                    transformed = self._ai_refine(mechanical)
+                    return raw if transformed == mechanical else transformed
+            result = cleanup_module.cleanup(mechanical, self.cfg.cleanup_level, self.cfg)
+            return raw if result.fallback_reason else result.text
+        except Exception:
+            return raw
 
     def _ai_refine(self, text):
         """Lokale KI-Nachbearbeitung (Ollama): Sprach-Modus ('als E-Mail', …) hat
