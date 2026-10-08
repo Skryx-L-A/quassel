@@ -90,6 +90,17 @@ def test_ram_none_is_safe():
     assert hwdetect.default_model_for_hardware() == "small-q5_1"
 
 
+def test_amd_and_intel_choose_from_ram(monkeypatch):
+    monkeypatch.setattr(hwdetect, "is_apple_silicon", lambda: False)
+    monkeypatch.setattr(hwdetect, "nvidia_vram_mb", lambda: None)
+    monkeypatch.setattr(hwdetect, "amd_gpu_present", lambda: True)
+    monkeypatch.setattr(hwdetect, "intel_gpu_present", lambda: False)
+    monkeypatch.setattr(hwdetect, "total_ram_gb", lambda: 32)
+    assert hwdetect.default_model_for_hardware() == "large-v3-turbo"
+    monkeypatch.setattr(hwdetect, "total_ram_gb", lambda: 16)
+    assert hwdetect.default_model_for_hardware() == "medium"
+
+
 if __name__ == "__main__":
     for fn in [test_nvidia_high_vram_turbo, test_nvidia_low_vram_medium,
                test_no_nvidia_strong_cpu_medium, test_no_nvidia_enough_cores_small,

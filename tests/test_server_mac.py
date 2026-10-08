@@ -33,6 +33,13 @@ def test_build_args_defaults_and_missing_vad():
     assert "--vad" not in args        # VAD-Datei fehlt -> keine VAD-Flags
 
 
+def test_build_args_adds_checked_request_path(monkeypatch):
+    monkeypatch.setattr(server_mac, "_supports_request_path", lambda _b: True)
+    args = server_mac.build_args({"SERVER_BIN": "b", "MODEL_PATH": "m",
+                                  "REQUEST_PATH": "/q/opaque"})
+    assert args[-2:] == ["--request-path", "/q/opaque"]
+
+
 def test_server_bin_prefers_serverenv(tmp_path):
     fake = tmp_path / "whisper-server"
     fake.write_text("#!/bin/sh\n")

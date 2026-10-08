@@ -92,12 +92,53 @@ QListWidget#sidebar::item:selected {{
     background: {accent};
     color: {accent_text};
 }}
-QLabel#desc {{ color: palette(placeholder-text); }}
+QListWidget#sidebar::item:selected:focus {{
+    border: 2px solid {focus};
+}}
+QLabel#desc {{ color: {muted}; }}
 """
+
+# Mindestkontrast für Text (WCAG 2.1 AA, normaler Text).
+MIN_CONTRAST = 4.5
+
+
+def _luminance(c):
+    def lin(v):
+        v /= 255.0
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    return 0.2126 * lin(c.red()) + 0.7152 * lin(c.green()) + 0.0722 * lin(c.blue())
+
+
+def contrast_ratio(a, b):
+    la, lb = sorted((_luminance(QColor(a)), _luminance(QColor(b))), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _mix(a, b, t):
+    a, b = QColor(a), QColor(b)
+    return QColor(round(a.red() + (b.red() - a.red()) * t),
+                  round(a.green() + (b.green() - a.green()) * t),
+                  round(a.blue() + (b.blue() - a.blue()) * t))
+
+
+def readable(fg, bg, min_ratio=MIN_CONTRAST):
+    """fg so weit Richtung Schwarz bzw. Weiß schieben (je nachdem, was auf bg
+    mehr Kontrast gibt), bis der Mindestkontrast erreicht ist. Hält Farbton
+    und Zurückhaltung, wo es geht, statt pauschal auf Schwarz zu gehen."""
+    end = QColor("#000000") if _luminance(QColor(bg)) > 0.18 else QColor("#FFFFFF")
+    for i in range(21):
+        c = _mix(fg, end, i / 20)
+        if contrast_ratio(c, bg) >= min_ratio:
+            return c
+    return end
 
 
 IS_WINDOWS = os.name == "nt"
 IS_MAC = sys.platform == "darwin"
+# Schieberegler (Tastatur) und das KI-Modellfeld speichern erst nach dieser
+# Pause statt bei jedem Schritt bzw. Tastendruck (H121); Ziehen mit der Maus
+# speichert beim Loslassen.
+SAVE_DELAY_MS = 400
 
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -222,6 +263,26 @@ def restart_server():
         sysctl("try-restart", "quassel-server")
 
 
+def mac_mic_permission():
+    """Mikrofonfreigabe dieses Prozesses unter macOS: "granted", "denied",
+    "undetermined" oder None (nicht ermittelbar). Reine Statusabfrage über
+    AVCaptureDevice, löst keinen Dialog aus und öffnet kein Mikrofon."""
+    try:
+        import ctypes
+        import objc
+        ctypes.cdll.LoadLibrary(
+            "/System/Library/Frameworks/AVFoundation.framework/AVFoundation")
+        device = objc.lookUpClass("AVCaptureDevice")
+        status = int(device.authorizationStatusForMediaType_("soun"))
+    except Exception:  # noqa: BLE001 — ohne pyobjc: unbekannt
+        return None
+    return {0: "undetermined", 1: "denied", 2: "denied", 3: "granted"}.get(status)
+
+
+class MicTestError(Exception):
+    """Mikrofontest konnte nicht aufnehmen; args[0] ist der i18n-Schlüssel."""
+
+
 def app_icon():
     for p in ICON_PATHS:
         if os.path.exists(p):
@@ -269,6 +330,13 @@ class Center(QMainWindow):
         self.bridge.ai_models.connect(self.on_ai_models)
         self.bridge.ai_test_done.connect(self.on_ai_test_done)
         self.nowheel = NoWheel(self)
+        # Ein bestätigter fremder KI-Endpunkt wird nicht bei jedem weiteren
+        # Speichern erneut abgefragt; der gespeicherte gilt als bestätigt.
+        self._ai_endpoint_ok = self.cfg.ai_endpoint
+        self.save_timer = QTimer(self)
+        self.save_timer.setSingleShot(True)
+        self.save_timer.setInterval(SAVE_DELAY_MS)
+        self.save_timer.timeout.connect(self.save_settings)
         self._loading = True
         self.build()
         self._loading = False
@@ -303,10 +371,34 @@ class Center(QMainWindow):
         return lbl
 
     def labeled_row(self, label, widget, layout):
+        """Beschriftung und Feld verknüpfen: Bildschirmleser nennen den Text,
+        ein Klick auf die Beschriftung setzt den Fokus ins Feld."""
         row = QHBoxLayout()
-        row.addWidget(QLabel(label))
+        lbl = QLabel(label)
+        lbl.setBuddy(widget)
+        widget.setAccessibleName(label)
+        row.addWidget(lbl)
         row.addWidget(widget, 1)
         layout.addLayout(row)
+        return lbl
+
+    def save_soon(self, *_a):
+        """Speichern nach kurzer Pause — gedrückt gehaltene Pfeiltasten oder
+        Tippen schreiben config.ini dann einmal statt dutzendfach."""
+        if not self._loading:
+            self.save_timer.start()
+
+    def _save_on_release(self, slider):
+        """Ziehen: erst beim Loslassen speichern; Tastatur: nach der Pause."""
+        slider.valueChanged.connect(
+            lambda *_a: None if slider.isSliderDown() else self.save_soon())
+        slider.sliderReleased.connect(self.save_settings)
+
+    def closeEvent(self, ev):
+        if self.save_timer.isActive():      # nichts Ungespeichertes verlieren
+            self.save_timer.stop()
+            self.save_settings()
+        super().closeEvent(ev)
 
     def select_data(self, combo, value, default=0):
         """Combo-Eintrag mit passenden userData auswählen (Reihenfolge-unabhängig)."""
@@ -343,9 +435,16 @@ class Center(QMainWindow):
             self._accent_text = "#FFFFFF"
             self._accent_hover = "#0B5238"
             accent_soft = "rgba(15,107,79,0.12)"
+        # Beschreibungstexte und die Beta-Warnung (Bernstein #E9A93A) erreichen
+        # auf hellem Grund nur ~2:1; beide werden je Thema auf >= 4,5:1 gebracht.
+        window = self.palette().color(QPalette.Window)
+        text = self.palette().color(QPalette.WindowText)
+        self._muted = readable(_mix(text, window, 0.4), window).name()
+        self._warn = readable(QColor("#E9A93A"), window).name()
+        self._focus = text.name()
         self.setStyleSheet(STYLE.format(
             accent=self._accent, accent_text=self._accent_text,
-            accent_soft=accent_soft))
+            accent_soft=accent_soft, muted=self._muted, focus=self._focus))
 
         root = QWidget()
         outer = QHBoxLayout(root)
@@ -375,6 +474,7 @@ class Center(QMainWindow):
 
         self.sidebar = QListWidget()
         self.sidebar.setObjectName("sidebar")
+        self.sidebar.setAccessibleName(tr("nav_sections"))
         self.stack = QStackedWidget()
         lv.addWidget(self.sidebar, 1)
         outer.addWidget(left)
@@ -413,7 +513,8 @@ class Center(QMainWindow):
         self.toggle_btn.setStyleSheet(
             f"QPushButton{{background:{self._accent};color:{self._accent_text};"
             f"font-weight:600;padding:7px 26px;border:none;border-radius:9px;}}"
-            f"QPushButton:hover{{background:{self._accent_hover};}}")
+            f"QPushButton:hover{{background:{self._accent_hover};}}"
+            f"QPushButton:focus{{border:2px solid {self._focus};}}")
         self.toggle_btn.clicked.connect(self.on_toggle)
         if (IS_WINDOWS or IS_MAC) and self.controller is None:
             self.toggle_btn.hide()      # ohne Tray-/Menüleisten-App nichts zu schalten
@@ -429,12 +530,12 @@ class Center(QMainWindow):
         self.pill_size = self.guard(QSlider(Qt.Horizontal))
         self.pill_size.setRange(60, 200)
         self.pill_size.setValue(int(self.cfg.pill_scale * 100))
-        self.pill_size.valueChanged.connect(self.save_settings)
+        self._save_on_release(self.pill_size)
         self.labeled_row(tr("pill_size"), self.pill_size, g)
         self.pill_opacity = self.guard(QSlider(Qt.Horizontal))
         self.pill_opacity.setRange(15, 100)
         self.pill_opacity.setValue(int(self.cfg.pill_opacity * 100))
-        self.pill_opacity.valueChanged.connect(self.save_settings)
+        self._save_on_release(self.pill_opacity)
         self.labeled_row(tr("pill_opacity"), self.pill_opacity, g)
         self.pill_movable = QCheckBox(tr("pill_movable"))
         self.pill_movable.setChecked(self.cfg.pill_movable)
@@ -446,6 +547,10 @@ class Center(QMainWindow):
         self.pill_reset_pos.clicked.connect(self.reset_pill_position)
         row.addWidget(self.pill_reset_pos)
         g.addLayout(row)
+        self.pill_movable_note = None
+        if not (IS_WINDOWS or IS_MAC):
+            # Die GTK-Pille (Layer-Shell-Overlay) kann nicht frei stehen (E81)
+            self.pill_movable_note = self.desc(tr("pill_movable_linux"), g)
         self.pill_click_center = QCheckBox(tr("pill_click_center"))
         self.pill_click_center.setChecked(self.cfg.pill_click_opens_center)
         self.pill_click_center.toggled.connect(self.save_settings)
@@ -461,6 +566,7 @@ class Center(QMainWindow):
             self.chord.addItem(tr(config.CHORD_LABEL_KEYS[key]), key)
         self.chord.setCurrentIndex(list(config.CHORDS).index(self.cfg.chord))
         self.chord.currentIndexChanged.connect(self.save_settings)
+        self.chord.setAccessibleName(tr("sec_hotkey"))
         g.addWidget(self.chord)
 
         g = self.group(tr("sec_dictating"), lay)
@@ -556,6 +662,7 @@ class Center(QMainWindow):
             self.model.addItem(m, m)
         self.model.setCurrentIndex(MODELS.index(current))
         self.model.currentIndexChanged.connect(self.on_model)
+        self.model.setAccessibleName(tr("model"))
         g.addWidget(self.model)
         self.progress = QProgressBar()
         self.progress.setVisible(False)
@@ -563,13 +670,16 @@ class Center(QMainWindow):
 
         g = self.group(tr("sec_mic"), lay)
         self.mic = self.guard(QComboBox())
-        self.mic.addItem(tr("mic_default"), "default")
-        for name, desc in list_mics():
-            self.mic.addItem(desc, name)
-            if name == self.cfg.mic:
-                self.mic.setCurrentIndex(self.mic.count() - 1)
+        self._fill_mics(self.cfg.mic)
         self.mic.currentIndexChanged.connect(self.save_settings)
-        g.addWidget(self.mic)
+        self.mic.setAccessibleName(tr("sec_mic"))
+        mic_row = QHBoxLayout()
+        mic_row.addWidget(self.mic, 1)
+        self.mic_refresh = QPushButton(tr("ai_refresh"))
+        self.mic_refresh.setAccessibleName(tr("mic_refresh"))
+        self.mic_refresh.clicked.connect(self.on_mic_refresh)
+        mic_row.addWidget(self.mic_refresh)
+        g.addLayout(mic_row)
         test = QPushButton(tr("mic_test"))
         test.clicked.connect(self.on_mictest)
         g.addWidget(test)
@@ -580,7 +690,7 @@ class Center(QMainWindow):
         # --- Wake-Word (Freisprechen, opt-in, BETA) — Beta-Funktionen ganz unten ---
         g = self.group(tr("sec_wakeword"), lay)
         beta = self.desc(tr("wakeword_beta"), g)
-        beta.setStyleSheet("color:#E9A93A;font-weight:600;")   # Bernstein = Beta-Warnung
+        beta.setStyleSheet(f"color:{self._warn};font-weight:600;")   # Bernstein = Beta-Warnung
         self.wake_on = QCheckBox(tr("wakeword_enable"))
         self.wake_on.setChecked(self.cfg.wakeword_enabled)
         self.wake_on.toggled.connect(self.save_settings)
@@ -594,6 +704,24 @@ class Center(QMainWindow):
 
         lay.addStretch(1)
         return scroll
+
+    def _fill_mics(self, selected):
+        """Mikrofonliste neu aufbauen. Ein gespeichertes Gerät, das gerade
+        nicht angeschlossen ist, bleibt als Eintrag ausgewählt — sonst setzte
+        schon das Öffnen des Fensters die Wahl still auf den Standard zurück."""
+        self.mic.blockSignals(True)
+        self.mic.clear()
+        self.mic.addItem(tr("mic_default"), "default")
+        for name, desc in list_mics():
+            self.mic.addItem(desc, name)
+        if selected not in ("", "default") and self.mic.findData(selected) < 0:
+            self.mic.addItem(selected, selected)
+        self.select_data(self.mic, selected)
+        self.mic.blockSignals(False)
+
+    def on_mic_refresh(self):
+        """Neu angeschlossene Mikrofone ohne Neustart des Fensters zeigen."""
+        self._fill_mics(self.mic.currentData())
 
     # -------------------------------------------------- Seite: Wörterbuch
     def page_dict(self):
@@ -609,6 +737,7 @@ class Center(QMainWindow):
         self.dict_timer.timeout.connect(
             lambda: config.dictionary_save(self.dict_edit.toPlainText()))
         self.dict_edit.textChanged.connect(self._update_dict_effective)
+        self.dict_edit.setAccessibleName(tr("sec_dict"))
         self.dict_edit.textChanged.connect(lambda: self.dict_timer.start(800))
         g.addWidget(self.dict_edit)
         g.addWidget(self.dict_effective)
@@ -643,6 +772,7 @@ class Center(QMainWindow):
         self.replace_timer.timeout.connect(
             lambda: config.replacement_save(self.replace_edit.toPlainText()))
         self.replace_edit.textChanged.connect(lambda: self.replace_timer.start(800))
+        self.replace_edit.setAccessibleName(tr("sec_replace"))
         g.addWidget(self.replace_edit)
         return scroll
 
@@ -660,6 +790,7 @@ class Center(QMainWindow):
         g.addWidget(self.file_status)
         self.file_result = QPlainTextEdit()
         self.file_result.setReadOnly(True)
+        self.file_result.setAccessibleName(tr("sec_file"))
         g.addWidget(self.file_result)
         copy = QPushButton(tr("copy"))
         copy.clicked.connect(lambda: clip_copy(self.file_result.toPlainText()))
@@ -688,12 +819,15 @@ class Center(QMainWindow):
         self.ai_endpoint.editingFinished.connect(self.save_settings)
         self.labeled_row(tr("ai_endpoint"), self.ai_endpoint, g)
         mrow = QHBoxLayout()
-        mrow.addWidget(QLabel(tr("ai_model")))
+        model_lbl = QLabel(tr("ai_model"))
+        mrow.addWidget(model_lbl)
         self.ai_model = self.guard(QComboBox())
         self.ai_model.setEditable(True)
+        model_lbl.setBuddy(self.ai_model)
+        self.ai_model.setAccessibleName(tr("ai_model"))
         if self.cfg.ai_model:
             self.ai_model.addItem(self.cfg.ai_model, self.cfg.ai_model)
-        self.ai_model.currentTextChanged.connect(self.save_settings)
+        self.ai_model.currentTextChanged.connect(self.save_soon)
         mrow.addWidget(self.ai_model, 1)
         refresh = QPushButton(tr("ai_refresh"))
         refresh.clicked.connect(self.on_ai_refresh)
@@ -735,6 +869,7 @@ class Center(QMainWindow):
         self.ai_modes_timer.setSingleShot(True)
         self.ai_modes_timer.timeout.connect(self._save_ai_modes)
         self.ai_modes_edit.textChanged.connect(lambda: self.ai_modes_timer.start(800))
+        self.ai_modes_edit.setAccessibleName(tr("sec_ai_modes"))
         g.addWidget(self.ai_modes_edit)
         lay.addStretch(1)
         if self.cfg.ai_enabled:
@@ -801,6 +936,8 @@ class Center(QMainWindow):
 
     def _confirmed_ai_endpoint(self):
         endpoint = self.ai_endpoint.text().strip() or config.OLLAMA_DEFAULT
+        if endpoint == self._ai_endpoint_ok:
+            return endpoint
         warning = ai.endpoint_warning(endpoint)
         if warning == "invalid":
             QMessageBox.warning(self, tr("ai_endpoint_invalid_title"),
@@ -816,6 +953,7 @@ class Center(QMainWindow):
             if answer != QMessageBox.Yes:
                 self.ai_endpoint.setText(self.cfg.ai_endpoint)
                 return None
+        self._ai_endpoint_ok = endpoint
         return endpoint
 
     # ----------------------------------------------------- Seite: Verlauf
@@ -829,6 +967,7 @@ class Center(QMainWindow):
         self.desc(tr("history_copy"), g)
         self.hist = QListWidget()
         self.hist.itemClicked.connect(self.on_hist_click)
+        self.hist.setAccessibleName(tr("sec_history"))
         g.addWidget(self.hist)
         self.hist_msg = QLabel()
         self.hist_msg.setObjectName("desc")
@@ -935,10 +1074,11 @@ class Center(QMainWindow):
 
     # ----------------------------------------------------------- Speichern
     def save_settings(self, *_a):
+        if self._loading:
+            return
+        self.save_timer.stop()
         endpoint = self._confirmed_ai_endpoint()
         if endpoint is None:
-            return
-        if self._loading:
             return
         werte = {
             ("pill", "enabled"): str(self.pill_show.isChecked()).lower(),
@@ -1045,6 +1185,7 @@ class Center(QMainWindow):
 
         g2 = self.group(tr("stats_chart"), lay)
         self.stats_chart = _StatsChart(self._accent)
+        self.stats_chart.setAccessibleName(tr("stats_chart"))
         g2.addWidget(self.stats_chart)
         self.stats_empty = self.desc(tr("stats_chart_empty"), g2)
         self.stats_saved_lbl = QLabel()
@@ -1173,7 +1314,7 @@ class Center(QMainWindow):
             from .win.audio_win import Recorder
             rec = Recorder()
             if not rec.start(self.cfg.mic):
-                return None
+                raise MicTestError(self._mic_open_error())
             time.sleep(2.5)
             rec.stop()
             return rec.raw_bytes()
@@ -1183,13 +1324,14 @@ class Center(QMainWindow):
             from .audio import Recorder
             rec = Recorder(raw_path=os.path.join(RUNDIR, "mictest.raw"))
             if not rec.start(self.cfg.mic):
-                return None
+                raise MicTestError(self._mic_open_error())
             time.sleep(2.5)
             rec.stop()
             return rec.raw_bytes()
         cmd = record_command(self.cfg.mic)
         if cmd is None:
-            return None
+            raise MicTestError(tr("err_recorder_missing", tool=(
+                "ffmpeg" if IS_MAC else "pw-record/parecord")))
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                              stderr=subprocess.DEVNULL)
         try:
@@ -1203,37 +1345,56 @@ class Center(QMainWindow):
                 data, _ = p.communicate()
         return data
 
+    def _mic_open_error(self):
+        """Warum ließ sich das Mikrofon nicht öffnen? Auf dem Mac zuerst die
+        Freigabe prüfen — fehlt sie, hilft nur die Systemeinstellung."""
+        if IS_MAC and mac_mic_permission() == "denied":
+            return tr("err_mic_denied")
+        return tr("err_mic_open")
+
+    def _server_error(self):
+        """Server antwortet nicht: fehlt das Modell, oder lädt/hängt er?"""
+        model_path = config.read_serverenv().get("MODEL_PATH", "")
+        if model_path and not os.path.exists(model_path):
+            return tr("err_model_missing", model=os.path.basename(model_path))
+        return tr("err_server_down")
+
     def on_mictest(self):
         self.test_out.setText(tr("mic_testing"))
+        threading.Thread(target=self._mictest_run, daemon=True).start()
 
-        def run():
-            try:
-                data = self._mictest_record()
-            except Exception:  # noqa: BLE001 — Audio-Backend kaputt
-                data = None
-            if not data or len(data) < 8000:
-                self.bridge.message.emit("✕ " + tr("mic_nothing"))
-                return
-            self.bridge.message.emit(tr("mic_transcribing"))
-            wavpath = os.path.join(config.DATADIR, "mictest.wav")
-            os.makedirs(config.DATADIR, exist_ok=True)
-            with wave.open(wavpath, "wb") as w:
-                w.setnchannels(1)
-                w.setsampwidth(2)
-                w.setframerate(RATE)
-                w.writeframes(data)
+    def _mictest_run(self):
+        try:
+            data = self._mictest_record()
+        except MicTestError as e:
+            self.bridge.message.emit("✕ " + e.args[0])
+            return
+        except Exception:  # noqa: BLE001 — Audio-Backend kaputt
+            self.bridge.message.emit("✕ " + self._mic_open_error())
+            return
+        if not data or len(data) < 8000:
+            self.bridge.message.emit("✕ " + tr("mic_nothing"))
+            return
+        self.bridge.message.emit(tr("mic_transcribing"))
+        wavpath = os.path.join(config.DATADIR, "mictest.wav")
+        os.makedirs(config.DATADIR, exist_ok=True)
+        with wave.open(wavpath, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(RATE)
+            w.writeframes(data)
+        try:
             if not whisperclient.ensure_server():
-                os.unlink(wavpath)
-                self.bridge.message.emit("✕ " + tr("no_server"))
+                self.bridge.message.emit("✕ " + self._server_error())
                 return
             text = whisperclient.transcribe(wavpath, self.cfg, timeout=60)
+        finally:
             os.unlink(wavpath)
-            if text is None:
-                self.bridge.message.emit("✕ " + tr("no_server"))
-                return
-            text = " ".join(text.split()).strip() or "—"
-            self.bridge.message.emit("✓ " + tr("mic_result", text=text))
-        threading.Thread(target=run, daemon=True).start()
+        if text is None:
+            self.bridge.message.emit("✕ " + tr("err_transcribe"))
+            return
+        text = " ".join(text.split()).strip() or "—"
+        self.bridge.message.emit("✓ " + tr("mic_result", text=text))
 
     # ------------------------------------------------ Datei transkribieren (#21)
     def on_pick_file(self):

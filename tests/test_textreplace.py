@@ -2,6 +2,7 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from quassel.textreplace import parse_rules, apply_rules, expand
+import datetime
 
 
 def test_parse_ignores_comments_blanks_and_trims():
@@ -63,6 +64,14 @@ def test_longer_trigger_precedence():
 def test_expansions_do_not_trigger_following_rules():
     rules = [("omw", "on my way"), ("way", "road")]
     assert apply_rules("omw now", rules) == "on my way now"
+
+
+def test_spoken_snippet_and_opt_in_placeholders():
+    rules = [("Adresse", "Am {datum} um {uhrzeit}: {zwischenablage}")]
+    assert apply_rules("Snippet Adresse", rules) == rules[0][1]
+    assert apply_rules("Snippet Adresse", rules, expand_placeholders=True,
+                       clipboard="lokal", now=datetime.datetime(2026, 10, 9, 8, 5)) == \
+        "Am 2026-10-09 um 08:05: lokal"
 
 
 if __name__ == "__main__":

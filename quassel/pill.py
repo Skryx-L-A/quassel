@@ -2,10 +2,11 @@
 (an Wispr Flow orientiert).
 
 - Folgt dem aktiven Monitor (KWin-Skript meldet Fensteraktivierung per D-Bus)
-- Linksklick: Diktat ein-/ausschalten · Rechtsklick: Kontrollzentrum öffnen
-- Zustände: grauer Punkt (aus) · heller Punkt (bereit) · rotes Glühen +
-  Wellenform mit echtem Mikrofon-Pegel + Live-Transkript (Aufnahme) ·
-  „…" (Transkription) · kurz das Ergebnis
+- Linksklick: Kontrollzentrum öffnen (abschaltbar) · Rechtsklick: Diktat an/aus
+- Zustände: fünf Balken, je Zustand eigene Form — graue flache Punkte (aus) ·
+  ruhige Pine-Welle (bereit) · echter Mikrofonpegel + Live-Transkript
+  (Aufnahme; flache Bernstein-Linie + Hinweis, wenn nichts ankommt) ·
+  gleichmäßige Reihe (Transkription) · kurz das Ergebnis
 - Größe/Transparenz/Sichtbarkeit aus config.ini ([pill]), live übernommen
 
 Wayland-Overlay über gtk4-layer-shell (KWin/GNOME/wlroots), Fallback:
@@ -29,7 +30,8 @@ except (ValueError, ImportError):
     pass
 
 from . import config  # noqa: E402
-from .state import RUNDIR, state_read  # noqa: E402
+from .i18n import tr  # noqa: E402
+from .state import LevelMeter, RUNDIR, level_read, state_read  # noqa: E402
 
 BARS = 9
 RESULT_SHOW_MS = 3000
@@ -50,12 +52,18 @@ CSS_TEMPLATE = """
 }}
 .quassel-pill label {{ color: #E7F0EB; font-size: {font}px; }}
 .quassel-text {{
-    background-color: rgba(17, 32, 26, {op});
+    background-color: rgba(17, 32, 26, {op_text});
     border-radius: 12px;
     padding: 6px 14px;
 }}
 .quassel-text label {{ color: #BAC8C0; font-size: {font_small}px; }}
 """
+
+# Die Textblase bleibt lesbar, auch bei fast durchsichtiger Pille (Regler-Minimum 0,15).
+BUBBLE_MIN_ALPHA = 0.85
+STATUS_KEYS = {"off": "tray_off", "ready": "tray_ready",
+               "recording": "tray_recording", "transcribing": "tray_transcribing",
+               "done": "tray_done", "error": "tray_error"}
 
 # Direction B (Lokal): Pine als Akzent, gedämpftes Grau für "aus", Bernstein für Fehler.
 WAVE_PINE = (0.20, 0.76, 0.55)   # #34C18C
@@ -82,15 +90,13 @@ def daemon_active():
 
 
 class Waveform(Gtk.DrawingArea):
-    """Fünf Balken wie auf der Website. Bewegen sich nur bei Aufnahme
-    (Sprechen), sonst ruhen sie auf einer leisen, festen Höhe."""
-
-    N = 5
-    REST = [0.30, 0.46, 0.38, 0.52, 0.34]   # ruhende Anteile der Höhe
+    """Fünf Balken wie auf der Website. Bei Aufnahme zeigen sie den echten
+    Mikrofonpegel (LevelMeter), eine flache Linie, wenn nichts ankommt;
+    sonst ruhen sie auf einer leisen, festen Höhe."""
 
     def __init__(self, get_state):
         super().__init__()
-        self.get_state = get_state          # -> (animating: bool, (r,g,b))
+        self.get_state = get_state          # -> (fracs, (r,g,b), flach?)
         self.set_draw_func(self.draw)
 
     @staticmethod
@@ -104,16 +110,17 @@ class Waveform(Gtk.DrawingArea):
         cr.close_path()
 
     def draw(self, _area, cr, w, h):
-        animating, (r, g, b) = self.get_state()
-        gap = w * 0.11
-        bw = (w - gap * (self.N - 1)) / self.N
-        t = time.monotonic()
+        fracs, (r, g, b), flat = self.get_state()
         cr.set_source_rgb(r, g, b)
-        for i in range(self.N):
-            if animating:
-                frac = 0.22 + 0.78 * (0.5 + 0.5 * math.sin(t * 7.5 + i * 1.1))
-            else:
-                frac = self.REST[i]
+        if flat:
+            lh = max(2.0, h * 0.14)
+            self._rrect(cr, 0, (h - lh) / 2, w, lh, lh / 2)
+            cr.fill()
+            return
+        n = len(fracs)
+        gap = w * 0.11
+        bw = (w - gap * (n - 1)) / n
+        for i, frac in enumerate(fracs):
             bh = max(2.0, h * frac)
             x = i * (bw + gap)
             y = (h - bh) / 2
@@ -130,6 +137,9 @@ class Pill(Gtk.Application):
         self.textbox = None
         self.pillbox = None
         self.wave = None
+        self.meter = LevelMeter()
+        self.text = ""
+        self._hint_shown = False
         self.last_ts = None
         self.result_until = 0.0
         self.mode = "off"
@@ -250,7 +260,8 @@ class Pill(Gtk.Application):
     def apply_style(self):
         s = max(0.6, min(2.0, self.cfg.pill_scale))
         op = max(0.15, min(1.0, self.cfg.pill_opacity))
-        css = CSS_TEMPLATE.format(op=op, pad_v=int(5 * s), pad_h=int(12 * s),
+        css = CSS_TEMPLATE.format(op=op, op_text=max(BUBBLE_MIN_ALPHA, op),
+                                  pad_v=int(5 * s), pad_h=int(12 * s),
                                   font=int(12 * s), font_small=int(11 * s))
         self.css.load_from_data(css.encode())
         if self.wave:
@@ -265,18 +276,49 @@ class Pill(Gtk.Application):
         return True
 
     # ------------------------------------------------------------- Zustand
+    def mic_silent(self):
+        return self.mode == "recording" and self.meter.silent()
+
+    @staticmethod
+    def reduced_motion():
+        """GTK folgt der Desktop-Einstellung „Animationen" (GNOME
+        enable-animations, KDE-Animationsgeschwindigkeit)."""
+        settings = Gtk.Settings.get_default()
+        try:
+            return not settings.get_property("gtk-enable-animations")
+        except (AttributeError, TypeError):
+            return False
+
+    def update_accessible(self, extra=""):
+        """Zustand als Text für Bildschirmleser (sonst nur Farbe/Form)."""
+        if not self.win:
+            return
+        label = tr("app_name") + ": " + tr(STATUS_KEYS.get(self.mode, "tray_ready"))
+        if extra:
+            label += ": " + extra
+        try:
+            self.win.update_property([Gtk.AccessibleProperty.LABEL], [label])
+        except (AttributeError, TypeError):
+            pass
+
     def wave_state(self):
-        """(bewegt sich?, Farbe) für die Wellenform — nur bei Aufnahme bewegt."""
-        if self.mode == "recording":
-            return True, WAVE_PINE
+        """(Balkenhöhen, Farbe, flache Linie?) für die Wellenform."""
+        fracs = self.meter.wave_fracs(self.mode, calm=self.reduced_motion())
+        if self.mic_silent():
+            return fracs, WAVE_AMBER, True
         if self.mode == "off":
-            return False, WAVE_GRAY
+            return fracs, WAVE_GRAY, False
         if self.mode == "error":
-            return False, WAVE_AMBER
-        return False, WAVE_PINE        # ready / transcribing / done: ruhend, Pine
+            return fracs, WAVE_AMBER, False
+        return fracs, WAVE_PINE, False   # ready / recording / transcribing / done
 
     def set_mode(self, mode, text=""):
+        if mode == "recording" and self.mode != "recording":
+            self.meter.reset()           # neue Aufnahme: Pegelquelle abwarten
+            self._hint_shown = False
         self.mode = mode
+        self.text = text
+        self.update_accessible(text if mode in ("done", "error") else "")
         if mode in ("off", "ready"):
             self.textbox.set_visible(False)
         elif mode == "recording":
@@ -289,8 +331,8 @@ class Pill(Gtk.Application):
         if self.wave:
             self.wave.queue_draw()
 
-    def show_text(self, text, italic=False):
-        if not self.cfg.pill_preview:
+    def show_text(self, text, italic=False, force=False):
+        if not self.cfg.pill_preview and not force:
             self.textbox.set_visible(False)
             return
         if not text:
@@ -317,6 +359,17 @@ class Pill(Gtk.Application):
             self.set_mode(st.get("state", "idle") if st.get("state") != "idle"
                           else "ready", st.get("text", ""))
         if self.mode == "recording":
+            self.meter.feed(level_read(st))
+            silent = self.mic_silent()
+            if silent != self._hint_shown:
+                # „kein Ton vom Mikrofon" geht vor, auch ohne Live-Vorschau
+                self._hint_shown = silent
+                if silent:
+                    self.show_text(tr("mic_silent"), force=True)
+                    self.update_accessible(tr("mic_silent"))
+                else:
+                    self.show_text(self.text, italic=True)
+                    self.update_accessible()
             self.wave.queue_draw()
         if self.mode in ("done", "error") and now > self.result_until:
             self.set_mode("ready" if self.on else "off")
@@ -324,7 +377,10 @@ class Pill(Gtk.Application):
 
     # --------------------------------------------------------------- Klicks
     def on_left_click(self, *_a):
-        # Sichere Hauptaktion: Kontrollzentrum öffnen (stoppt Quassel NIE).
+        # Sichere Hauptaktion: Kontrollzentrum öffnen (stoppt Quassel NIE) —
+        # außer der Nutzer hat das im Kontrollzentrum abgeschaltet.
+        if not self.cfg.pill_click_opens_center:
+            return
         subprocess.Popen(["quassel-type"])
 
     def on_right_click(self, *_a):

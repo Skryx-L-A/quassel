@@ -8,6 +8,7 @@ Dieses Modul ist reine Logik: ``apply_rules`` macht kein Datei-IO, der Aufrufer
 uebergibt bereits geparste Regeln. ``parse_rules`` liest den Regeltext,
 ``expand`` ist die Bequemlichkeits-Kombination aus beiden.
 """
+import datetime
 import re
 
 __all__ = ["parse_rules", "apply_rules", "expand"]
@@ -50,7 +51,23 @@ def _carry_capitalization(matched, expansion):
     return expansion
 
 
-def apply_rules(text, rules, *, case_insensitive=True):
+def _placeholders(expansion, *, enabled, clipboard, now):
+    """Expandiert dynamische Werte nur im ausdrücklich freigegebenen Modus."""
+    if not enabled:
+        return expansion
+    now = now or datetime.datetime.now()
+    values = {
+        "{datum}": now.strftime("%Y-%m-%d"),
+        "{uhrzeit}": now.strftime("%H:%M"),
+        "{zwischenablage}": clipboard or "",
+    }
+    for marker, value in values.items():
+        expansion = expansion.replace(marker, value)
+    return expansion
+
+
+def apply_rules(text, rules, *, case_insensitive=True, expand_placeholders=False,
+                clipboard=None, now=None):
     """Ersetzt ganzwortige Vorkommen jedes Triggers durch seine Expansion.
 
     Ganzwortig = an Wortgrenzen / Stringenden begrenzt (Regex mit ``\\b``-artigen
@@ -70,6 +87,19 @@ def apply_rules(text, rules, *, case_insensitive=True):
     for trigger, expansion in rules:
         resolved[trigger] = expansion
 
+    # Die gesprochene Form ist absichtlich eindeutig: Nur "Snippet <name>"
+    # löst einen ganzen Snippet-Namen aus; normales Vorkommen bleibt Text.
+    spoken = re.fullmatch(r"\s*snippet\s+(.+?)\s*[.!?]?\s*", text,
+                          re.IGNORECASE if case_insensitive else 0)
+    if spoken:
+        name = spoken.group(1)
+        for trigger, expansion in resolved.items():
+            if (trigger.casefold() == name.casefold() if case_insensitive
+                    else trigger == name):
+                return _carry_capitalization(
+                    name, _placeholders(expansion, enabled=expand_placeholders,
+                                        clipboard=clipboard, now=now))
+
     # Laengere Trigger zuerst (verhindert, dass "cat" das Wort in "cat nap"
     # vor "cat nap" abfaengt). Stabil bei Gleichstand: alphabetisch.
     ordered = sorted(resolved.items(), key=lambda kv: (-len(kv[0]), kv[0]))
@@ -88,7 +118,8 @@ def apply_rules(text, rules, *, case_insensitive=True):
         right = r"(?!\w)" if trigger[-1].isalnum() or trigger[-1] == "_" else ""
         name = f"rule_{index}"
         alternatives.append(f"(?P<{name}>{left}{esc}{right})")
-        expansions[name] = expansion
+        expansions[name] = _placeholders(expansion, enabled=expand_placeholders,
+                                         clipboard=clipboard, now=now)
 
     if not alternatives:
         return text

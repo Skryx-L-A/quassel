@@ -8,9 +8,20 @@ import shutil
 import subprocess
 import threading
 import time
+import stat
+from types import SimpleNamespace
 
 KEY_BACKSPACE = 14
 KEY_ENTER = 28
+SUBPROCESS_TIMEOUT = 3
+
+
+def _run(args, **kwargs):
+    """Bounded subprocess call: a stalled clipboard/tool must not hang dictation."""
+    try:
+        return subprocess.run(args, timeout=SUBPROCESS_TIMEOUT, **kwargs)
+    except (OSError, subprocess.TimeoutExpired):
+        return SimpleNamespace(returncode=1, stdout="", stderr="")
 
 XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR",
     f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else "")
@@ -21,32 +32,48 @@ if IS_WAYLAND:
 
 
 def find_ydotool_socket():
-    if os.environ.get("YDOTOOL_SOCKET"):
-        return os.environ["YDOTOOL_SOCKET"]
-    for cand in (os.path.join(XDG_RUNTIME, ".ydotool_socket"),
-                 "/tmp/.ydotool_socket"):
-        if os.path.exists(cand):
-            return cand
-    return os.path.join(XDG_RUNTIME, ".ydotool_socket")
+    """Return only an owned socket below this user's runtime directory.
+
+    A socket in /tmp is shared between local users and must never become an
+    input-injection endpoint merely because ydotoold is missing.
+    """
+    runtime = os.path.realpath(XDG_RUNTIME) if XDG_RUNTIME else ""
+    candidate = os.environ.get("YDOTOOL_SOCKET") or os.path.join(runtime, ".ydotool_socket")
+    if not runtime or not candidate:
+        return None
+    try:
+        candidate = os.path.realpath(candidate)
+        if os.path.commonpath((runtime, candidate)) != runtime:
+            return None
+        info = os.stat(candidate)
+        if info.st_uid != os.getuid() or not stat.S_ISSOCK(info.st_mode):
+            return None
+    except (OSError, ValueError):
+        return None
+    return candidate
 
 
-os.environ["YDOTOOL_SOCKET"] = find_ydotool_socket()
+_ydotool_socket = find_ydotool_socket()
+if _ydotool_socket:
+    os.environ["YDOTOOL_SOCKET"] = _ydotool_socket
+else:
+    os.environ.pop("YDOTOOL_SOCKET", None)
 
 
 def clip_copy(text):
     if IS_WAYLAND:
-        subprocess.run(["wl-copy"], input=text, text=True, check=False)
-        subprocess.run(["wl-copy", "--primary"], input=text, text=True, check=False)
+        _run(["wl-copy"], input=text, text=True, check=False)
+        _run(["wl-copy", "--primary"], input=text, text=True, check=False)
     else:
         for sel in ("clipboard", "primary"):
-            subprocess.run(["xclip", "-selection", sel], input=text, text=True,
+            _run(["xclip", "-selection", sel], input=text, text=True,
                            check=False)
 
 
 def clip_read():
     cmd = (["wl-paste", "--no-newline", "-t", "text"] if IS_WAYLAND
            else ["xclip", "-selection", "clipboard", "-o"])
-    r = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    r = _run(cmd, capture_output=True, text=True, check=False)
     return r.stdout if r.returncode == 0 else ""
 
 
@@ -55,8 +82,8 @@ def paste(text):
     clip_copy(text)
     time.sleep(0.25)
     # Shift+Einfg: KEY_LEFTSHIFT=42, KEY_INSERT=110
-    subprocess.run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
-    if old:
+    result = _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
+    if result.returncode == 0 and old:
         def restore():
             # großzügig warten: XWayland-Fenster holen den Clipboard-Inhalt
             # teils verzögert ab — zu frühes Wiederherstellen fügt sonst den
@@ -64,6 +91,7 @@ def paste(text):
             time.sleep(6)
             clip_copy(old)
         threading.Thread(target=restore, daemon=True).start()
+    return result.returncode == 0
 
 
 def type_chunk(text):
@@ -73,7 +101,7 @@ def type_chunk(text):
         return
     clip_copy(text)
     time.sleep(0.12)
-    subprocess.run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
+    return _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False).returncode == 0
 
 
 def streaming_begin():
@@ -94,14 +122,32 @@ def send_backspaces(n):
     keys = []
     for _ in range(n):
         keys += [f"{KEY_BACKSPACE}:1", f"{KEY_BACKSPACE}:0"]
+    delay = ["-d", "1"] if _ydotool_supports_fast_delay() else []
     while keys:
-        subprocess.run(["ydotool", "key"] + keys[:400], check=False)
+        _run(["ydotool", "key"] + delay + keys[:400], check=False)
         keys = keys[400:]
+
+
+_fast_delay_supported = None
+
+
+def _ydotool_supports_fast_delay():
+    """Detect -d once; older ydotool versions retain the safe old command."""
+    global _fast_delay_supported
+    if _fast_delay_supported is None:
+        try:
+            result = _run(["ydotool", "key", "--help"],
+                                    capture_output=True, text=True, timeout=2,
+                                    check=False)
+            _fast_delay_supported = "-d" in result.stdout or "--delay" in result.stdout
+        except (OSError, subprocess.SubprocessError):
+            _fast_delay_supported = False
+    return _fast_delay_supported
 
 
 def send_enter():
     """Eingabetaste drücken (Sprachkommando 'press enter')."""
-    subprocess.run(["ydotool", "key", f"{KEY_ENTER}:1", f"{KEY_ENTER}:0"], check=False)
+    _run(["ydotool", "key", f"{KEY_ENTER}:1", f"{KEY_ENTER}:0"], check=False)
 
 
 def mic_is_bluetooth(mic="default"):
@@ -113,7 +159,7 @@ def mic_is_bluetooth(mic="default"):
     try:
         if mic and mic != "default":
             return "bluez" in mic.lower()
-        r = subprocess.run(["pactl", "get-default-source"], capture_output=True,
+        r = _run(["pactl", "get-default-source"], capture_output=True,
                            text=True, timeout=2, check=False)
         return "bluez" in r.stdout.lower()
     except (OSError, subprocess.SubprocessError):
@@ -121,7 +167,7 @@ def mic_is_bluetooth(mic="default"):
 
 
 def notify(text, ms=4000):
-    subprocess.run(
+    _run(
         ["notify-send", "-a", "Quassel", "-t", str(ms),
          "-h", "string:x-canonical-private-synchronous:quassel", "Quassel", text],
         check=False)
@@ -133,7 +179,7 @@ def notify(text, ms=4000):
 def _pactl(*args):
     # LC_ALL=C: erzwingt englische Ausgabe ("Mute: yes/no") — sonst liest die
     # Mute-Erkennung auf z.B. deutschen Systemen ("Mute: ja/nein") falsch.
-    return subprocess.run(["pactl", *args], capture_output=True, text=True,
+    return _run(["pactl", *args], capture_output=True, text=True,
                           check=False, env={**os.environ, "LC_ALL": "C"})
 
 
@@ -144,23 +190,23 @@ def _default_sink_muted():
 def _mpris_playing():
     """Liste der gerade spielenden Player als (backend, name)-Paare."""
     if shutil.which("playerctl"):
-        names = subprocess.run(["playerctl", "-l"], capture_output=True,
+        names = _run(["playerctl", "-l"], capture_output=True,
                                text=True, check=False).stdout.split()
         out = []
         for n in names:
-            s = subprocess.run(["playerctl", "-p", n, "status"], capture_output=True,
+            s = _run(["playerctl", "-p", n, "status"], capture_output=True,
                                text=True, check=False).stdout.strip()
             if s == "Playing":
                 out.append(("playerctl", n))
         return out
     if shutil.which("busctl"):
-        listing = subprocess.run(["busctl", "--user", "list", "--no-legend"],
+        listing = _run(["busctl", "--user", "list", "--no-legend"],
                                  capture_output=True, text=True, check=False).stdout
         svcs = [ln.split()[0] for ln in listing.splitlines()
                 if ln.startswith("org.mpris.MediaPlayer2.")]
         out = []
         for svc in svcs:
-            r = subprocess.run(["busctl", "--user", "get-property", svc,
+            r = _run(["busctl", "--user", "get-property", svc,
                                 "/org/mpris/MediaPlayer2",
                                 "org.mpris.MediaPlayer2.Player", "PlaybackStatus"],
                                capture_output=True, text=True, check=False)
@@ -173,10 +219,10 @@ def _mpris_playing():
 def _mpris_call(item, method):
     backend, name = item
     if backend == "playerctl":
-        subprocess.run(["playerctl", "-p", name,
+        _run(["playerctl", "-p", name,
                         "pause" if method == "Pause" else "play"], check=False)
     else:
-        subprocess.run(["busctl", "--user", "call", name, "/org/mpris/MediaPlayer2",
+        _run(["busctl", "--user", "call", name, "/org/mpris/MediaPlayer2",
                         "org.mpris.MediaPlayer2.Player", method], check=False)
 
 

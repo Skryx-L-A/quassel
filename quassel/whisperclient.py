@@ -39,6 +39,14 @@ _server_seen = False       # war der Server in dieser Sitzung schon erreichbar?
 _probe = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+def server_url():
+    """Local server URL, with the per-installation opaque request prefix."""
+    path = config.read_serverenv().get("REQUEST_PATH", "").strip()
+    if path and path.startswith("/") and "?" not in path and "#" not in path:
+        return SERVER + path.rstrip("/")
+    return SERVER
+
+
 def server_up(timeout=2):
     # urllib statt curl-Subprozess: gemessen 0,17ms gegen 5,75ms.
     # Der Multipart-Upload in transcribe() läuft ebenfalls ohne Proxy direkt
@@ -51,7 +59,7 @@ def server_up(timeout=2):
     # irrt sich.
     global _server_seen
     try:
-        with _probe.open(SERVER + "/", timeout=timeout) as response:
+        with _probe.open(server_url() + "/", timeout=timeout) as response:
             server = response.headers.get("Server", "")
         # Ein anderer Dienst auf diesem Port darf den echten Start nicht
         # blockieren und auch nicht als warmer whisper.cpp-Server gelten.
@@ -166,7 +174,7 @@ def build_inference_args(wavpath, cfg, words, timeout=120, prompt_extra=None):
     # Nur die WAV geht als Dateiverweis (-F). Alle Textfelder laufen über
     # --form-string: -F deutet einen Wert, der mit "@" oder "<" beginnt, als
     # lokale Datei, und dann scheitert jede Transkription (curl-Fehler 26).
-    args = ["curl", "-fsS", "-m", str(timeout), SERVER + "/inference",
+    args = ["curl", "-fsS", "-m", str(timeout), server_url() + "/inference",
             "-F", f"file=@{wavpath}"]
     for name, value in inference_fields(wavpath, cfg, words, timeout, prompt_extra):
         args += ["--form-string", f"{name}={value}"]
@@ -216,7 +224,7 @@ def _multipart_body(wavpath, fields):
 
 def _post_multipart(body, content_type, timeout):
     """Ohne Proxy direkt mit dem lokalen whisper.cpp-Server sprechen."""
-    parsed = urllib.parse.urlsplit(SERVER)
+    parsed = urllib.parse.urlsplit(server_url())
     if parsed.scheme != "http" or not parsed.hostname:
         return None
     path = (parsed.path.rstrip("/") or "") + "/inference"
