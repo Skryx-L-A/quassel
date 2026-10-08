@@ -81,7 +81,7 @@ class Daemon(dictation.DictationCore):
         self.cfg = config.Cfg()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
         beep.set_output(self.cfg.beep_output)
-        self.rec = Recorder()
+        self.rec = Recorder(preroll_ms=getattr(self.cfg, "preroll_ms", 0))
         self.partial = None
         self.last_paste_len = 0
         self.streamer = None        # aktiv nur im Freihand-Modus mit Streaming

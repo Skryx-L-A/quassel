@@ -192,6 +192,10 @@ def parser():
 
 
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["profiles"]:
+        from . import profiles
+        return profiles.cli(argv[1:])
     args = parser().parse_args(argv)
     if args.command == "status":
         _emit(status_data(), args.json)
