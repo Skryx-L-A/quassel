@@ -15,6 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Optional pre-roll on Linux and macOS: set `QUASSEL_PREROLL_MS=300` (up to
+  2000 ms) to include a short audio buffer before the next dictation starts.
+  The input stays open for three seconds after a dictation. The default is off.
+  On macOS, the microphone indicator remains visible while the input is open.
 - macOS: when Secure Input is on (a password field, or Secure Keyboard Entry
   in Terminal), the system hides every key from Quassel and the hotkey does
   nothing. The pill now says so for a few seconds when it starts, and the menu
