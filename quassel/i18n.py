@@ -179,6 +179,7 @@ STRINGS = {
     "repo": ("Project page", "Projektseite"),
     # --- Kommandos / Daemon ---
     "pressed_enter": ("Pressed Enter", "Eingabetaste gedrückt"),
+    "enter_blocked": ("Enter is blocked in this app", "Enter in dieser App gesperrt"),
     # --- Streaming-Modus "word" ---
     "streaming_word": ("Word by word (confirmed words only)",
                        "Wort für Wort (nur bestätigte Wörter)"),

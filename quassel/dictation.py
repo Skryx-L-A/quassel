@@ -634,7 +634,7 @@ class DictationCore:
                 if live_typed:
                     self._send_backspaces(live_typed)
                 self._log("profile: enter blocked")
-                self._state("error", tr("nothing"))
+                self._state("error", tr("enter_blocked"))
                 return
             if action == "enter":
                 if live_typed:

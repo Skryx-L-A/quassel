@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from quassel import appctx, dictation, profiles
+from quassel import appctx, dictation, i18n, profiles
 
 TERMINAL = appctx.make("com.apple.Terminal", "Terminal", "Terminal")
 KITTY = appctx.make(process="kitty", wm_class="kitty")
@@ -275,7 +275,14 @@ def test_terminal_profile_blocks_a_spoken_enter(monkeypatch, tmp_path):
     core, _ = run_dictation(monkeypatch, tmp_path, KITTY, ini=TERM_INI,
                             postprocess=lambda raw, cfg: ("command", "enter"))
     assert core.entered == 0 and core.pasted == []
-    assert core.states[-1][0] == "error"
+    assert core.states[-1] == ("error", i18n.tr("enter_blocked"))
+
+
+def test_enter_blocked_has_both_languages(monkeypatch):
+    monkeypatch.setattr(i18n, "current", lambda: "de")
+    assert i18n.tr("enter_blocked") == "Enter in dieser App gesperrt"
+    monkeypatch.setattr(i18n, "current", lambda: "en")
+    assert i18n.tr("enter_blocked") == "Enter is blocked in this app"
 
 
 def test_other_apps_still_get_enter(monkeypatch, tmp_path):
