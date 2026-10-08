@@ -99,6 +99,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Linux Bluetooth output gets a short silence lead-in before the recording
+  start tone, so the headset has time to wake before the audible part.
 - Linux microphone choices are listed consistently when the system language
   is not English.
 - On GNOME Wayland without layer-shell, the pill uses XWayland when available

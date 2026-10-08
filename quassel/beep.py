@@ -14,6 +14,7 @@ import queue
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import wave
@@ -375,6 +376,48 @@ def _player():
         return _PLAYER
 
 
+def _linux_bluetooth_sink():
+    """Bounded check of the current output route; an unknown route is normal."""
+    try:
+        result = subprocess.run(["pactl", "get-default-sink"],
+                                capture_output=True, text=True, check=False,
+                                timeout=0.5)
+        return result.returncode == 0 and "bluez" in result.stdout.lower()
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _linux_preroll_wav(path):
+    """Create a private, silence-prefixed WAV for a cold Bluetooth output."""
+    fd, target = tempfile.mkstemp(prefix="quassel-beep-", suffix=".wav")
+    os.close(fd)
+    try:
+        with wave.open(path, "rb") as source:
+            params = source.getparams()
+            frames = source.readframes(source.getnframes())
+        silence = b"\0" * (params.framerate * PREROLL_MS // 1000
+                            * params.nchannels * params.sampwidth)
+        with wave.open(target, "wb") as output:
+            output.setparams(params)
+            output.writeframes(silence + frames)
+        return target
+    except Exception:
+        os.unlink(target)
+        raise
+
+
+def _remove_after_playback(proc, path):
+    try:
+        proc.wait(timeout=10)
+    except Exception:  # noqa: BLE001 — temp file must not outlive a stuck player
+        pass
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 def _play(path):
     if not path or not os.path.exists(path):
         return
@@ -386,12 +429,29 @@ def _play(path):
         if sys.platform == "darwin":
             _player().play(path)
             return
+        play_path = path
+        if path == START_WAV and _linux_bluetooth_sink():
+            try:
+                play_path = _linux_preroll_wav(path)
+            except (OSError, wave.Error):
+                play_path = path
         for player in (["pw-play"], ["paplay"], ["aplay", "-q"]):
             if shutil.which(player[0]):
-                subprocess.Popen(player + [path],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                proc = subprocess.Popen(player + [play_path],
+                                        stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL)
+                if play_path != path:
+                    threading.Thread(target=_remove_after_playback,
+                                     args=(proc, play_path), daemon=True).start()
                 return
+        if play_path != path:
+            os.unlink(play_path)
     except Exception:        # noqa: BLE001 — Ton darf nie stören
+        if "play_path" in locals() and play_path != path:
+            try:
+                os.unlink(play_path)
+            except OSError:
+                pass
         pass
 
 
