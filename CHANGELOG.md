@@ -22,6 +22,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lasts.
 
 ### Changed
+- Windows: the pill now shows the real microphone level too, flags a silent
+  microphone with a flat amber line and a hint, gives each state its own shape,
+  respects "Show animations" being off, and tells screen readers its state. Its
+  text bubble uses the pill's colors and stays readable when the pill is set
+  almost transparent.
 - The pill now shows your real microphone level while you dictate instead of a
   fixed animation. If nothing arrives from the microphone for 1.5 seconds, the
   bars turn into a flat amber line and the pill says so, so a muted or wrong
