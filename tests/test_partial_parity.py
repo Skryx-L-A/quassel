@@ -1,4 +1,4 @@
-"""daemon.py (Linux/macOS) und quassel/win/app.py spiegeln dieselbe
+"""dictation.py (Ablaufsteuerung von Linux/macOS) und quassel/win/app.py spiegeln dieselbe
 Live-Vorschau-Logik (PartialLoop). win/app.py importiert ctypes.windll und ist
 auf macOS/Linux nicht ladbar — dieser Test liest darum nur den Quelltext
 (ast) statt zu importieren, und bleibt robust gegen Neuformatierung (kein
@@ -7,7 +7,7 @@ import ast
 import os
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
-DAEMON = os.path.join(ROOT, "quassel", "daemon.py")
+DAEMON = os.path.join(ROOT, "quassel", "dictation.py")
 WIN_APP = os.path.join(ROOT, "quassel", "win", "app.py")
 CONSTANTS = ("PARTIAL_EVERY", "PARTIAL_WINDOW", "PARTIAL_MAX_WAIT")
 

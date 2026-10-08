@@ -1,4 +1,4 @@
-"""Tests für PartialLoop (daemon.py): adaptiver Abstand + Vorab-Abbruch der
+"""Tests für PartialLoop (dictation.py, von daemon.py und win/app.py geteilt): adaptiver Abstand + Vorab-Abbruch der
 Live-Vorschau-Transkription, ohne echten whisper-server.
 
 whisperclient.transcribe wird gemockt, ebenso time.monotonic für den
@@ -10,8 +10,9 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from quassel import daemon as daemon_mod
+from quassel import dictation as daemon_mod
 from quassel.audio import RATE, SAMPLE_BYTES
+from quassel.state import PARTWAV
 
 
 class FakeStopEvent:
@@ -46,15 +47,30 @@ class FakeRecorder:
         return b"\x00" * (RATE * SAMPLE_BYTES * 2)   # 2s Audio, > 0,5s Minimum
 
 
+class FakeOwner:
+    """Ablaufsteuerung-Attrappe: nur die Plattform-Anbindung, die die
+    Vorschau benutzt (WAV schreiben, Zustand melden)."""
+
+    def __init__(self):
+        self.streamer = None
+        self.states = []
+        self.wav_hook = None
+
+    def _wav_from_raw(self, data, path):
+        if self.wav_hook is not None:
+            self.wav_hook(data, path)
+
+    def _state(self, state, text=""):
+        self.states.append((state, text))
+
+
 def make_loop(monkeypatch, stop_after=1):
     monkeypatch.setattr(daemon_mod.whisperclient, "ensure_server", lambda: None)
-    monkeypatch.setattr(daemon_mod, "wav_from_raw", lambda data, path: None)
-    monkeypatch.setattr(daemon_mod, "state_set", lambda *a, **k: None)
     monkeypatch.setattr(daemon_mod.textproc, "postprocess",
                          lambda raw, cfg: ("text", raw))
     rec = FakeRecorder()
     cfg = SimpleNamespace(pill_preview=True)
-    owner = SimpleNamespace(streamer=None)
+    owner = FakeOwner()
     pl = daemon_mod.PartialLoop(rec, cfg, owner)
     pl.stop_event = FakeStopEvent(stop_after=stop_after)
     return pl, rec
@@ -121,7 +137,7 @@ def test_transcribe_skipped_when_dictation_ends_just_before_it(monkeypatch):
         transcribe_calls.append(path)
         return "hallo"
 
-    monkeypatch.setattr(daemon_mod, "wav_from_raw", fake_wav_from_raw)
+    pl.owner.wav_hook = fake_wav_from_raw
     monkeypatch.setattr(daemon_mod.whisperclient, "transcribe", fake_transcribe)
 
     pl.run()
@@ -142,7 +158,7 @@ def test_transcribe_skipped_when_stop_event_set_just_before_it(monkeypatch):
         transcribe_calls.append(path)
         return "hallo"
 
-    monkeypatch.setattr(daemon_mod, "wav_from_raw", fake_wav_from_raw)
+    pl.owner.wav_hook = fake_wav_from_raw
     monkeypatch.setattr(daemon_mod.whisperclient, "transcribe", fake_transcribe)
 
     pl.run()
@@ -155,10 +171,6 @@ def test_normal_run_still_transcribes_and_updates_state(monkeypatch):
     und setzt den Vorschautext."""
     pl, rec = make_loop(monkeypatch, stop_after=1)
     transcribe_calls = []
-    seen_state = []
-
-    monkeypatch.setattr(daemon_mod, "state_set",
-                         lambda *a, **k: seen_state.append(a))
 
     def fake_transcribe(path, cfg, timeout=20):
         transcribe_calls.append(path)
@@ -169,5 +181,5 @@ def test_normal_run_still_transcribes_and_updates_state(monkeypatch):
 
     pl.run()
 
-    assert transcribe_calls == [daemon_mod.PARTWAV]
-    assert seen_state == [("recording", "hallo welt")]
+    assert transcribe_calls == [PARTWAV]
+    assert pl.owner.states == [("recording", "hallo welt")]
