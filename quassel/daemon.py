@@ -43,7 +43,9 @@ EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
 EV_KEY = 1
 KEY_PRESS = 1
 
-MAX_RECORD = 300       # s: Sicherheitslimit im Freihand-Modus
+MAX_RECORD = 300       # s: Sicherheitslimit je Aufnahme (Halten und Freihand)
+# Zustände der Linux-Schleife, in denen eine Aufnahme läuft.
+RECORDING_STATES = ("hold", "toggle_armed", "toggle")
 RESCAN_EVERY = 5       # s: /dev/input auf neue Tastaturen prüfen
 PANIC_EXIT_WAIT = 5.0  # s: so lange wartet der Not-Aus auf das Ende einer Aktion
 # Der Ereignis-Thread führt den synchronen Teil der Aktionen selbst aus, und
@@ -248,6 +250,19 @@ class Daemon(dictation.DictationCore):
             self._sync_wakeword()
             self._mac_watchdog(listener)
 
+    def _forget_lost_keys(self, pressed, gone, st):
+        """Nach dem Verschwinden von Geräten (Deskriptoren in gone) deren
+        gedrückte Tasten vergessen (Audit B35) und, wenn der Chord dadurch
+        fehlt, so weitermachen, als wäre er losgelassen worden. Rückgabe
+        (Zustand, jetzt einfügen?)."""
+        if not any([pressed.drop(fd) for fd in gone]):
+            return st, False
+        group_a, group_b = CHORDS[self.cfg.chord]
+        st, finish = keys_lost(st, pressed.chord(group_a, group_b))
+        if finish:
+            log("linux: Tastatur verschwand mit gehaltenem Chord -> Aufnahme endet")
+        return st, finish
+
     def _install_panic_signal(self):
         """Not-Aus per Signal (SIGUSR2): beendet ein hängendes Diktat auch
         dann, wenn der Event-Tap nicht mehr reagiert — der Menüpunkt „Diktat
@@ -309,8 +324,15 @@ class Daemon(dictation.DictationCore):
             notify(tr("audio_restart"))
             self._exit(RESTART_EXIT)
 
+    def _record_expired(self, st, now):
+        """Sicherheitslimit: eine Aufnahme läuft höchstens MAX_RECORD. Gilt
+        auch im Halten-Modus (Audit B35): verschwindet die Tastatur, während
+        der Chord gehalten wird, käme sonst nie ein Loslassen."""
+        return (st in RECORDING_STATES and self.rec.active
+                and now - self.rec.started > MAX_RECORD)
+
     def _run_linux(self):
-        pressed = set()
+        pressed = PressedKeys()
         st = "idle"                 # idle|hold|await2|toggle_armed|toggle|drain
         # Einfügen erst, wenn ALLE Modifier losgelassen sind — sonst käme beim
         # Ziel z.B. Strg+Meta+Shift+Einfg an statt Shift+Einfg.
@@ -332,7 +354,11 @@ class Daemon(dictation.DictationCore):
         while True:
             now = time.monotonic()
             if now - last_scan > RESCAN_EVERY:
-                scan_devices(fds)
+                gone = []
+                scan_devices(fds, on_close=gone.append)
+                st, lost = self._forget_lost_keys(pressed, gone, st)
+                if lost:
+                    pending, pending_since = True, now
                 # Config live nachladen (mtime-Check, billig): Hotkey-/
                 # Timing-Änderungen aus den Einstellungen greifen sofort
                 if self.cfg.reload():
@@ -345,7 +371,11 @@ class Daemon(dictation.DictationCore):
             try:
                 rlist, _, _ = select.select(list(fds), [], [], timeout)
             except OSError:
-                scan_devices(fds)
+                gone = []
+                scan_devices(fds, on_close=gone.append)
+                st, lost = self._forget_lost_keys(pressed, gone, st)
+                if lost:
+                    pending, pending_since = True, now
                 continue
 
             now = time.monotonic()
@@ -356,9 +386,9 @@ class Daemon(dictation.DictationCore):
             if st == "await2" and now - t_tap > self.cfg.double_window:
                 self.cancel_recording("canceled_tap")
                 st = "idle"
-            # Sicherheitslimit im Freihand-Modus
-            if st in ("toggle", "toggle_armed") and self.rec.active \
-                    and now - self.rec.started > MAX_RECORD:
+            # Sicherheitslimit, auch im Halten-Modus
+            if self._record_expired(st, now):
+                log("linux: MAX_RECORD erreicht -> Aufnahme wird beendet")
                 st = "idle"
                 pending, pending_since = True, now
 
@@ -368,6 +398,9 @@ class Daemon(dictation.DictationCore):
                 except OSError:
                     fds.pop(fd, None)
                     os.close(fd)
+                    st, lost = self._forget_lost_keys(pressed, [fd], st)
+                    if lost:
+                        pending, pending_since = True, now
                     continue
                 for off in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
                     _, _, etype, code, value = struct.unpack_from(EVENT_FORMAT, data, off)
@@ -376,12 +409,12 @@ class Daemon(dictation.DictationCore):
                     now = time.monotonic()
 
                     if code in mods:
-                        before = bool(pressed & group_a) and bool(pressed & group_b)
+                        before = pressed.chord(group_a, group_b)
                         if value == KEY_PRESS:
-                            pressed.add(code)
+                            pressed.press(fd, code)
                         else:
-                            pressed.discard(code)
-                        chord = bool(pressed & group_a) and bool(pressed & group_b)
+                            pressed.release(fd, code)
+                        chord = pressed.chord(group_a, group_b)
 
                         if chord and not before:        # Chord komplett gedrückt
                             if st == "idle" and not pending:
@@ -411,7 +444,7 @@ class Daemon(dictation.DictationCore):
                         # Tastenkürzel (z.B. Strg+Meta+Pfeil) -> abbrechen
                         if value == KEY_PRESS and st in ("hold", "toggle_armed"):
                             self.cancel_recording("canceled_key")
-                            st = "drain" if (pressed & group_a and pressed & group_b) else "idle"
+                            st = "drain" if pressed.chord(group_a, group_b) else "idle"
 
             # Ausstehendes Einfügen, sobald alle Modifier losgelassen sind
             # (Fallback nach 2 s, falls ein Release-Event verloren ging)
@@ -423,8 +456,65 @@ class Daemon(dictation.DictationCore):
                 self.finish_now()
 
 
-def scan_devices(fds):
-    """Alle lesbaren /dev/input/event* öffnen (neue Geräte nachladen)."""
+class PressedKeys:
+    """Gedrückte Modifier je Eingabegerät (Audit B35). Ein Gerät, das
+    verschwindet (Bluetooth-Tastatur schläft ein, Hub), sendet kein Loslassen
+    mehr; ohne Zuordnung blieben seine Tasten für immer gedrückt, und der
+    nächste Chord würde nicht mehr erkannt."""
+
+    def __init__(self):
+        self._by_fd = {}
+
+    def press(self, fd, code):
+        self._by_fd.setdefault(fd, set()).add(code)
+
+    def release(self, fd, code):
+        keys = self._by_fd.get(fd)
+        if keys is not None:
+            keys.discard(code)
+            if not keys:
+                del self._by_fd[fd]
+
+    def drop(self, fd):
+        """Tasten eines verschwundenen Geräts vergessen. True = es war eine
+        gedrückt."""
+        return bool(self._by_fd.pop(fd, None))
+
+    def codes(self):
+        out = set()
+        for keys in self._by_fd.values():
+            out |= keys
+        return out
+
+    def chord(self, group_a, group_b):
+        codes = self.codes()
+        return bool(codes & group_a) and bool(codes & group_b)
+
+    def clear(self):
+        self._by_fd.clear()
+
+    def __bool__(self):
+        return any(self._by_fd.values())
+
+
+def keys_lost(st, chord_down):
+    """Übergang, wenn Tasten durch ein verschwundenes Gerät wegfallen: fehlt
+    der Chord jetzt, gilt er als losgelassen. Rückgabe (Zustand, einfügen?)."""
+    if chord_down:
+        return st, False
+    if st == "hold":
+        return "idle", True          # wie Loslassen nach dem Halten
+    if st == "toggle_armed":
+        return "toggle", False       # Freihand läuft weiter
+    if st == "drain":
+        return "idle", False
+    return st, False
+
+
+def scan_devices(fds, on_close=None):
+    """Alle lesbaren /dev/input/event* öffnen (neue Geräte nachladen).
+    on_close(fd) erfährt jedes geschlossene Gerät, BEVOR seine Nummer an ein
+    neues gehen kann."""
     present = set()
     try:
         entries = os.listdir("/dev/input")
@@ -444,6 +534,8 @@ def scan_devices(fds):
             pass
     for fd, path in list(fds.items()):
         if path not in present:
+            if on_close is not None:
+                on_close(fd)
             os.close(fd)
             del fds[fd]
 

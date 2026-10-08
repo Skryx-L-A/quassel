@@ -51,6 +51,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a few seconds after the pill has shown it. A recording that had to be rescued
   keeps only its rescue file; if even the rescue fails, the raw recording stays
   as the last copy.
+- Linux: if your keyboard disappears while you hold the hotkey (a Bluetooth
+  keyboard falls asleep, a hub disconnects), the dictation now ends as if you
+  had let go, instead of recording forever. Keys that were held on the vanished
+  keyboard no longer count as pressed, so the hotkey works again right away.
+  Hold-to-talk recordings also stop after five minutes, like hands-free ones.
 - macOS can again copy history and file-transcription results without relying
   on the Linux-only `xclip` command.
 - Known Whisper subtitle and “for watching” silence artifacts are discarded;
