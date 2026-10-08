@@ -171,3 +171,25 @@ def test_every_chord_label_has_a_mac_variant():
     from quassel import config
     for key in config.CHORD_LABEL_KEYS.values():
         assert key + "_mac" in i18n.STRINGS, key
+
+
+# ------------------------------------------- D57 / Tray-Not-Aus (bau-windows OPEN 3, 5)
+@pytest.mark.parametrize("lang,text", [
+    ("en", "Text is on the clipboard – press Ctrl+V"),
+    ("de", "Text liegt in der Zwischenablage – Strg+V drücken"),
+])
+def test_clipboard_only_hint_comes_from_the_table(monkeypatch, lang, text):
+    from quassel import dictation
+    monkeypatch.setattr(i18n, "IS_MAC", False)
+    i18n.set_language(lang)
+    assert "paste_clipboard_only" in i18n.STRINGS
+    assert dictation.clipboard_only_text() == text == i18n.tr("paste_clipboard_only")
+
+
+@pytest.mark.parametrize("lang,text", [("en", "Stop dictation now"),
+                                       ("de", "Diktat sofort beenden")])
+def test_tray_panic_label_is_shared(lang, text):
+    """Windows-Tray (bisher fest in win/app.py:_panic_label) und macOS-Menü
+    benutzen denselben Schlüssel."""
+    i18n.set_language(lang)
+    assert i18n.tr("tray_panic") == text

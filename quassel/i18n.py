@@ -104,6 +104,9 @@ STRINGS = {
                      "Das Mikrofon ließ sich nicht öffnen. Vielleicht nutzt es eine andere App, oder es wurde abgezogen."),
     "err_recorder_missing": ("The recording program is missing: {tool}.",
                              "Das Aufnahmeprogramm fehlt: {tool}."),
+    # Einfügen gescheitert, Text liegt aber in der Zwischenablage (D57)
+    "paste_clipboard_only": ("Text is on the clipboard – press Ctrl+V",
+                             "Text liegt in der Zwischenablage – Strg+V drücken"),
     "err_paste_blocked": ("The text couldn't be inserted. On macOS, allow Quassel in System Settings → Privacy & Security → Accessibility. The text is on the clipboard.",
                           "Der Text ließ sich nicht einfügen. Unter macOS Quassel in Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen freigeben. Der Text liegt in der Zwischenablage."),
     # macOS-Rechte (hotkey_mac.py), mit dem tatsächlich eingestellten Chord
@@ -150,6 +153,7 @@ STRINGS = {
     "tray_done": ("Done", "Fertig"),
     "tray_error": ("Error", "Fehler"),
     "tray_off": ("Off", "Aus"),
+    # Not-Aus im Tray-Menü (macOS traymac.py, Windows win/app.py)
     "tray_panic": ("Stop dictation now", "Diktat sofort beenden"),
     "tray_open_center": ("Open Control Center", "Kontrollzentrum öffnen"),
     "tray_secure": ("Secure input is on, hotkey paused", "Sichere Eingabe aktiv, Hotkey pausiert"),
