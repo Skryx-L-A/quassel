@@ -1,50 +1,101 @@
 # Maintainer: Skryx-L-A
 # ENTWURF / DRAFT — noch nicht im AUR veröffentlicht (Issue #9).
-# Installiert Quassel systemweit; whisper.cpp kommt als Abhängigkeit aus
-# dem AUR, das Sprachmodell lädt das Kontrollzentrum beim ersten Start.
-pkgname=quassel-git
-pkgver=2.1.0
+# Installiert Quassel systemweit. whisper-server wird aus dem festen
+# whisper.cpp-Stand gebaut, den auch install.sh benutzt (scripts/whisper-cpp-pin.sh;
+# _whisper unten muss dazu passen, tests/test_install_scripts.py prüft das). Das
+# AUR hat kein Paket "whisper.cpp" (nur das alte whisper.cpp-git), darum baut
+# dieses Paket den Server selbst: nur CPU, statisch gelinkt, unter
+# /usr/lib/quassel/engine/. Wer eine GPU nutzen will, trägt in
+# ~/.config/quassel/server.env SERVER_BIN=<eigener Vulkan-/CUDA-Server> ein.
+# Das Sprachmodell wählt das Kontrollzentrum beim ersten Start (lädt es
+# herunter und schreibt MODEL_PATH nach ~/.config/quassel/server.env).
+#
+# Der Paketname ist quassel-type-git, weil quassel-git im AUR der IRC-Client
+# Quassel ist; der Befehl der App heißt ebenfalls quassel-type.
+pkgname=quassel-type-git
+_name=quassel
+_whisper=1.9.5
+pkgver=2.7.0.r0.g0000000
 pkgrel=1
 pkgdesc="Local, private voice typing — hold Ctrl+Meta, speak, release"
-arch=('any')
+arch=('x86_64')
 url="https://github.com/Skryx-L-A/quassel"
 license=('PolyForm-Noncommercial-1.0.0')
-depends=('python' 'python-gobject' 'gtk4' 'gtk4-layer-shell' 'pyside6'
-         'ydotool' 'wl-clipboard' 'xclip' 'pipewire' 'libnotify' 'curl'
-         'whisper.cpp')
-makedepends=('git')
-source=("git+$url.git")
-sha256sums=('SKIP')
+depends=('python' 'python-gobject' 'python-numpy' 'python-sounddevice'
+         'pyside6' 'gtk4' 'gtk4-layer-shell' 'ydotool' 'wl-clipboard' 'xclip'
+         'pipewire' 'libnotify' 'curl' 'gcc-libs')
+makedepends=('git' 'cmake')
+provides=('quassel-type')
+conflicts=('quassel-type')
+install=quassel.install
+source=("$_name::git+$url.git"
+        "whisper.cpp-$_whisper.tar.gz::https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v$_whisper.tar.gz")
+sha256sums=('SKIP'
+            'ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720')
 
 pkgver() {
-  cd quassel
-  git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 2.1.0
+  cd "$srcdir/$_name"
+  local described
+  if described="$(git describe --long --tags --match 'v[0-9]*' 2>/dev/null)"; then
+    printf '%s\n' "$described" | sed 's/^v//; s/\([^-]*-g\)/r\1/; s/-/./g'
+  else
+    printf 'r%s.%s\n' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  fi
+}
+
+build() {
+  cmake -S "whisper.cpp-$_whisper" -B build-whisper \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DWHISPER_BUILD_TESTS=OFF \
+    -DWHISPER_BUILD_EXAMPLES=ON \
+    -DWHISPER_BUILD_SERVER=ON \
+    -Wno-dev
+  cmake --build build-whisper --target whisper-server
 }
 
 package() {
-  cd quassel
+  install -Dm755 build-whisper/bin/whisper-server \
+    "$pkgdir/usr/lib/quassel/engine/whisper-server"
+
+  cd "$srcdir/$_name"
   install -d "$pkgdir/usr/lib/quassel"
   cp -r quassel "$pkgdir/usr/lib/quassel/quassel"
   cp -r assets "$pkgdir/usr/lib/quassel/assets"
+  find "$pkgdir/usr/lib/quassel" -name __pycache__ -type d -prune -exec rm -rf {} +
 
-  for b in quasseld quassel quassel-pill quassel-ctl; do
-    sed 's|\$HOME/.local/lib/quassel|/usr/lib/quassel|; s|\$HOME/.local/share/quassel/venv/bin/python3|python3|' \
-        "bin/$b" > "$pkgdir/usr/bin/.tmp-$b" || true
+  # Startskripte: die Quellen suchen unter $HOME/.local/lib/quassel
+  for b in quasseld quassel-type quassel-pill quassel-ctl quassel-python; do
     install -Dm755 "bin/$b" "$pkgdir/usr/bin/$b"
-    sed -i 's|$HOME/.local/lib/quassel|/usr/lib/quassel|' "$pkgdir/usr/bin/$b"
+    sed -i 's|\$HOME/\.local/lib/quassel|/usr/lib/quassel|g' "$pkgdir/usr/bin/$b"
   done
-  rm -f "$pkgdir"/usr/bin/.tmp-*
 
   install -d "$pkgdir/usr/lib/systemd/user"
   install -m644 systemd/*.service "$pkgdir/usr/lib/systemd/user/"
-  sed -i 's|%h/.local/bin/|/usr/bin/|' "$pkgdir"/usr/lib/systemd/user/*.service
+  sed -i -e 's|%h/\.local/bin/|/usr/bin/|g' \
+         -e 's|\${SERVER_BIN:-whisper-server}|${SERVER_BIN:-/usr/lib/quassel/engine/whisper-server}|' \
+         "$pkgdir"/usr/lib/systemd/user/*.service
 
-  sed "s|@HOME@/.local/bin|/usr/bin|g" desktop/quassel.desktop.in \
-      > "$pkgdir/.quassel.desktop"
-  install -Dm644 "$pkgdir/.quassel.desktop" \
-      "$pkgdir/usr/share/applications/quassel.desktop" && rm "$pkgdir/.quassel.desktop"
+  sed -e 's|@HOME@/\.local/bin/||g' -e 's|^Icon=.*|Icon=quassel-voice|' \
+      desktop/quassel.desktop.in > quassel.desktop
+  install -Dm644 quassel.desktop "$pkgdir/usr/share/applications/quassel.desktop"
+  rm quassel.desktop
+
+  # "quassel" ist der Icon-Name des IRC-Clients; unser Symbol heißt quassel-voice.
   install -Dm644 assets/quassel.svg \
-      "$pkgdir/usr/share/icons/hicolor/scalable/apps/quassel.svg"
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/quassel-voice.svg"
+  for sz in 48 64 128 256; do
+    install -Dm644 "assets/icons/quassel-$sz.png" \
+      "$pkgdir/usr/share/icons/hicolor/${sz}x${sz}/apps/quassel-voice.png"
+  done
+
+  # Tastatur lesen und virtuell tippen (wie install.sh, Schritt 2)
+  echo 'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"' |
+    install -Dm644 /dev/stdin "$pkgdir/usr/lib/udev/rules.d/80-quassel-uinput.rules"
+  echo uinput |
+    install -Dm644 /dev/stdin "$pkgdir/usr/lib/modules-load.d/quassel-uinput.conf"
+
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 ADDITIONAL-PERMISSIONS.md "$pkgdir/usr/share/licenses/$pkgname/ADDITIONAL-PERMISSIONS.md"
+  install -Dm644 ADDITIONAL-PERMISSIONS.md \
+    "$pkgdir/usr/share/licenses/$pkgname/ADDITIONAL-PERMISSIONS.md"
 }

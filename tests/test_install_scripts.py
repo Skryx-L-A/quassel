@@ -132,6 +132,7 @@ def test_install_guide_lists_current_models_and_python_minimum():
 # Linux installer: engine packages, pinned whisper.cpp, --model
 # --------------------------------------------------------------------------
 import hashlib
+import shutil
 import io
 import stat
 import tarfile
@@ -245,8 +246,14 @@ class Release:
         return log.read_text().splitlines() if log.exists() else []
 
 
+def _need_posix_shell():
+    if sys.platform == "win32":
+        pytest.skip("the Linux installer scripts are exercised on POSIX hosts")
+
+
 @pytest.fixture
 def release(tmp_path):
+    _need_posix_shell()
     return Release(tmp_path)
 
 
@@ -515,6 +522,7 @@ def test_model_option_updates_an_existing_installation():
 
 
 def test_model_option_rejects_a_path_before_anything_is_installed(tmp_path):
+    _need_posix_shell()
     shims = tmp_path / "bin"
     shims.mkdir()
     _shim(shims, "systemctl", "exit 0\n")
@@ -595,3 +603,150 @@ def test_website_offline_packages_are_labelled_as_v2_2_0_only():
     site = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
     assert site.count("Only available as v2.2.0") >= 3
     assert "releases/latest/download/quassel-install.sh" in site
+
+
+# --------------------------------------------------------------------------
+# AUR draft: no makepkg here, so source the PKGBUILD and run its functions
+# --------------------------------------------------------------------------
+PKGBUILD = ROOT / "packaging" / "aur" / "PKGBUILD"
+
+# macOS has no `install -D`; this stands in for GNU install in the tests.
+INSTALL_SHIM = textwrap.dedent("""\
+    mode=""; dirs=0; mk=0; args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -Dm*) mk=1; mode="${1#-Dm}"; shift ;;
+            -m) mode="$2"; shift 2 ;;
+            -m*) mode="${1#-m}"; shift ;;
+            -D) mk=1; shift ;;
+            -d) dirs=1; shift ;;
+            *) args+=("$1"); shift ;;
+        esac
+    done
+    if [[ $dirs -eq 1 ]]; then mkdir -p "${args[@]}"; exit 0; fi
+    dest="${args[${#args[@]}-1]}"
+    srcs=("${args[@]:0:${#args[@]}-1}")
+    if [[ $mk -eq 1 ]]; then mkdir -p "$(dirname "$dest")"; fi
+    for s in "${srcs[@]}"; do
+        target="$dest"; [[ -d "$dest" ]] && target="$dest/$(basename "$s")"
+        if [[ "$s" == /dev/stdin ]]; then cat > "$target"; else cp "$s" "$target"; fi
+        [[ -n "$mode" ]] && chmod "$mode" "$target"
+    done
+""")
+
+
+def _run_pkgbuild(tmp_path, body, srcdir=None):
+    _need_posix_shell()
+    shims = tmp_path / "shims"
+    shims.mkdir(exist_ok=True)
+    _shim(shims, "install", INSTALL_SHIM)
+    # BSD sed wants a suffix argument after -i; makepkg runs GNU sed.
+    _shim(shims, "sed", 'if [[ "${1:-}" == "-i" ]] && ! /usr/bin/sed --version '
+          '>/dev/null 2>&1; then shift; exec /usr/bin/sed -i "" "$@"; fi\n'
+          'exec /usr/bin/sed "$@"\n')
+    script = (f'set -euo pipefail\nsource "{PKGBUILD}"\n'
+              f'srcdir="{srcdir or tmp_path / "src"}"\n'
+              f'pkgdir="{tmp_path / "pkg"}"\n') + textwrap.dedent(body)
+    return subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, text=True, capture_output=True,
+        env={"PATH": f"{shims}:{os.environ['PATH']}", "HOME": str(tmp_path)},
+        check=False)
+
+
+def test_pkgbuild_has_the_fields_makepkg_and_namcap_expect():
+    _need_posix_shell()
+    text = PKGBUILD.read_text(encoding="utf-8")
+    assert subprocess.run(["bash", "-n", str(PKGBUILD)]).returncode == 0
+    result = subprocess.run(
+        ["bash", "-c", f'source "{PKGBUILD}"; '
+         'printf "%s\\n" "$pkgname" "$pkgver" "${arch[*]}" "${#source[@]}" '
+         '"${#sha256sums[@]}" "$install" "${provides[*]}"; '
+         'declare -F build package pkgver | wc -l'],
+        text=True, capture_output=True, check=True)
+    name, ver, arch, nsrc, nsum, install, provides, funcs = result.stdout.split("\n")[:8]
+    assert name == "quassel-type-git"          # quassel-git is the IRC client
+    assert ver[0].isdigit() and "-" not in ver
+    assert arch == "x86_64"                    # a compiled binary is inside
+    assert nsrc == nsum == "2"
+    assert install == "quassel.install" and provides == "quassel-type"
+    assert funcs.strip() == "3"
+    assert (ROOT / "packaging" / "aur" / install).exists()
+    assert "2.1.0" not in text
+
+
+def test_pkgbuild_builds_the_same_whisper_cpp_as_the_installer():
+    text = PKGBUILD.read_text(encoding="utf-8")
+    assert f"_whisper={_pinned_tag().lstrip('v')}\n" in text
+    assert "refs/tags/v$_whisper.tar.gz" in text
+    assert "-DWHISPER_BUILD_SERVER=ON" in text
+    assert "--target whisper-server" in text
+    # No package of that name exists in the AUR, so it must not be a dependency.
+    depends = text.split("depends=(", 1)[1].split(")", 1)[0]
+    assert "whisper.cpp" not in depends
+
+
+def test_pkgbuild_pkgver_comes_from_tags_with_a_commit_fallback(tmp_path):
+    _need_posix_shell()
+    repo = tmp_path / "src" / "quassel"
+    repo.mkdir(parents=True)
+    _git("init", "-q", cwd=repo)
+    (repo / "f").write_text("1")
+    _git("add", "f", cwd=repo)
+    _git("commit", "-q", "-m", "one", cwd=repo)
+    untagged = _run_pkgbuild(tmp_path, "pkgver")
+    assert untagged.returncode == 0, untagged.stderr
+    assert untagged.stdout.strip().startswith("r1.")
+    _git("tag", "-a", "v2.8.0", "-m", "v", cwd=repo)
+    (repo / "f").write_text("2")
+    _git("commit", "-q", "-am", "two", cwd=repo)
+    tagged = _run_pkgbuild(tmp_path, "pkgver")
+    assert tagged.returncode == 0, tagged.stderr
+    assert tagged.stdout.strip().startswith("2.8.0.r1.g")
+
+
+def test_pkgbuild_package_installs_every_launcher_unit_and_icon(tmp_path):
+    _need_posix_shell()
+    src = tmp_path / "src" / "quassel"
+    for name in ("bin", "systemd", "desktop", "assets", "quassel"):
+        shutil.copytree(ROOT / name, src / name,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+    for name in ("LICENSE", "ADDITIONAL-PERMISSIONS.md"):
+        shutil.copy(ROOT / name, src / name)
+    engine = tmp_path / "src" / "build-whisper" / "bin"
+    engine.mkdir(parents=True)
+    (engine / "whisper-server").write_text("#!/bin/sh\n")
+    result = _run_pkgbuild(tmp_path, "cd \"$srcdir\"; package")
+    assert result.returncode == 0, result.stderr
+    pkg = tmp_path / "pkg"
+
+    for launcher in ("quasseld", "quassel-type", "quassel-pill", "quassel-ctl",
+                     "quassel-python"):
+        text = (pkg / "usr" / "bin" / launcher).read_text(encoding="utf-8")
+        assert ".local/lib/quassel" not in text
+    assert "/usr/lib/quassel" in (pkg / "usr/bin/quasseld").read_text(encoding="utf-8")
+    assert not (pkg / "usr" / "bin" / "quassel").exists()      # the old typo
+    assert (pkg / "usr/lib/quassel/quassel/daemon.py").exists()
+    assert (pkg / "usr/lib/quassel/assets/quassel.svg").exists()
+    assert os.access(pkg / "usr/lib/quassel/engine/whisper-server", os.X_OK)
+
+    units = {p.name: p.read_text(encoding="utf-8")
+             for p in (pkg / "usr/lib/systemd/user").glob("*.service")}
+    assert set(units) >= {"quasseld.service", "quassel-server.service"}
+    assert all("%h/.local" not in text for text in units.values())
+    assert "ExecStart=/usr/bin/quasseld" in units["quasseld.service"]
+    assert "${SERVER_BIN:-/usr/lib/quassel/engine/whisper-server}" \
+        in units["quassel-server.service"]
+
+    desktop = (pkg / "usr/share/applications/quassel.desktop").read_text(
+        encoding="utf-8")
+    assert "@HOME@" not in desktop and "/.local/" not in desktop
+    assert "Exec=quassel-type\n" in desktop
+    assert "Icon=quassel-voice\n" in desktop
+    icons = pkg / "usr/share/icons/hicolor"
+    assert (icons / "scalable/apps/quassel-voice.svg").exists()
+    assert (icons / "128x128/apps/quassel-voice.png").exists()
+    assert not (icons / "scalable/apps/quassel.svg").exists()   # IRC client's name
+    assert "uinput" in (pkg / "usr/lib/udev/rules.d/80-quassel-uinput.rules").read_text()
+    assert (pkg / "usr/lib/modules-load.d/quassel-uinput.conf").read_text().strip() == "uinput"
+    assert (pkg / "usr/share/licenses/quassel-type-git/LICENSE").exists()
+    assert not list(pkg.rglob(".tmp-*")) and not list(pkg.rglob(".quassel.desktop"))
