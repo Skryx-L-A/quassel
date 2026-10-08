@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 
-from . import audio, config, i18n, profile, server_mac
+from . import audio, config, i18n, profile, server_mac, selfheal
 from .i18n import tr
 from .state import state_read
 
@@ -206,6 +206,7 @@ class MacApp:
                   file=sys.stderr, flush=True)
             self.enabled = False
             self._sync_ui()
+            selfheal.report_daemon_crash(self, code)
             return
         now = now if now is not None else time.monotonic()
         self._restarts = [t for t in self._restarts if now - t < RESTART_WINDOW]

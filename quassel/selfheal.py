@@ -63,3 +63,16 @@ def recover(probe=functional_probe, restart=restart_owned):
     if probe():
         return False
     return bool(restart() and probe())
+
+
+def report_daemon_crash(app, code):
+    """Persist an error and show it even after supervision disabled the pill."""
+    from .state import state_set
+    message = "Dictation service stopped (exit %s). Turn it on to retry." % code
+    state_set("error", message)
+    if app.tray is not None:
+        app.tray.set_mode("error", message)
+        app.tray.showMessage("Quassel", message)
+    if app.pill is not None:
+        app.pill.on = True
+        app.pill.set_mode("error", message)

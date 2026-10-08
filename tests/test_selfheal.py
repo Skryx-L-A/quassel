@@ -45,3 +45,18 @@ def test_recovery_restarts_once_and_probes_again():
     calls = []
     assert selfheal.recover(lambda: next(probes), lambda: calls.append(1) or True)
     assert calls == [1]
+
+
+def test_daemon_crash_is_visible_and_persisted(monkeypatch):
+    from types import SimpleNamespace
+    from quassel import state
+    calls = []
+    monkeypatch.setattr(state, "state_set", lambda *args: calls.append(("state", args)))
+    tray = SimpleNamespace(set_mode=lambda *args: calls.append(("tray", args)),
+                           showMessage=lambda *args: calls.append(("notice", args)))
+    pill = SimpleNamespace(on=False,
+                           set_mode=lambda *args: calls.append(("pill", args)))
+    selfheal.report_daemon_crash(SimpleNamespace(tray=tray, pill=pill), 1)
+    assert pill.on
+    assert [name for name, _ in calls] == ["state", "tray", "notice", "pill"]
+    assert calls[0][1][0] == "error"
