@@ -36,7 +36,8 @@ from .config import CHORDS
 from .i18n import tr
 from .platform import (mic_is_bluetooth, notify, paste, send_backspaces,
                        send_enter, type_chunk, streaming_begin, streaming_restore)
-from .state import PARTWAV, RUNDIR, WAV, state_clear_text, state_set  # noqa: F401
+from .state import (PARTWAV, RUNDIR, WAV, level_set, state_clear_text,  # noqa: F401
+                    state_set)
 
 EVENT_FORMAT = "llHHi"
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
@@ -139,6 +140,11 @@ class Daemon(dictation.DictationCore):
 
     def _mic_is_bluetooth(self):
         return mic_is_bluetooth(self.cfg.mic)
+
+    def _level_target(self):
+        # Pegel über state.json an die Pille (eigener Prozess); level_set
+        # schreibt nur im Zustand "recording" und höchstens 15-mal je Sekunde.
+        return lambda level: level_set(level)
 
     def _server_vad(self):
         return bool(config.read_serverenv().get("VAD_MODEL"))

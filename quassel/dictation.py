@@ -30,7 +30,7 @@ import time
 
 from . import (aimodes, beep, config, dictprompt, i18n, progmode, stats, textproc,
                textreplace, vad, wakeword, whisperclient)
-from .audio import RATE, SAMPLE_BYTES
+from .audio import LevelPump, RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
 from .streaming import StreamTyper
@@ -265,6 +265,7 @@ class DictationCore:
     _sync_action = None
     _runner = None              # ActionRunner, wo die Plattform einen nutzt
     _handsfree = False          # Freihand-Modus (Doppeltipp) im laufenden Diktat
+    _level_pump = None          # misst den Mikrofonpegel für die Pille (H112)
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -312,6 +313,12 @@ class DictationCore:
 
     def _mic_is_bluetooth(self):
         return False
+
+    def _level_target(self):
+        """Wohin der Mikrofonpegel während der Aufnahme geht (Callable mit
+        einem Wert 0..1), None = keine Pegelanzeige. Linux/macOS schreiben
+        ihn nach state.json, Windows reicht ihn an die Pille im Prozess."""
+        return None
 
     def _server_vad(self):
         return False
@@ -362,6 +369,24 @@ class DictationCore:
     def _wake_busy(self):
         return self.rec.active
 
+    # ---------------------------------------------------------------- Pegel
+    def _start_level(self):
+        """Pegelpumpe für dieses Diktat starten. Ein Fehler hier kostet nur
+        die Anzeige, nie das Diktat."""
+        self._stop_level()
+        target = self._level_target()
+        if target is None:
+            return
+        try:
+            self._level_pump = LevelPump(target).start()
+        except Exception as exc:  # noqa: BLE001
+            self._log("level: Pegelanzeige nicht gestartet: %r" % exc)
+
+    def _stop_level(self):
+        pump, self._level_pump = self._level_pump, None
+        if pump is not None:
+            pump.stop()
+
     # ------------------------------------------------------------- Aufnahme
     def _refresh_cfg(self):
         self.cfg.reload()
@@ -388,6 +413,7 @@ class DictationCore:
         self.partial = self._new_partial()
         self.partial.start()
         self._state("recording")
+        self._start_level()
         return True
 
     def enable_streaming(self):
@@ -411,6 +437,7 @@ class DictationCore:
             if self.streamer is not None:
                 self._streaming_restore(self._clip_backup)
                 self.streamer = None
+            self._stop_level()
             discard(self.rec.stop())     # verworfenes Diktat: Ton gleich mit
             if self.cfg.beep:
                 beep.stop()
@@ -448,6 +475,7 @@ class DictationCore:
             self._streaming_restore(self._clip_backup)
             self.streamer = None
         try:
+            self._stop_level()
             self.rec.stop()
         except Exception as exc:   # noqa: BLE001 — der Not-Aus darf an nichts scheitern
             self._log("panic: rec.stop() fehlgeschlagen: %r" % exc)
@@ -526,6 +554,7 @@ class DictationCore:
         # (Bluetooth braucht mehr). Dann stoppen + Stopp-Ton.
         pad_ms = self._tail_pad_ms()
         time.sleep(pad_ms / 1000.0)
+        self._stop_level()
         t_stop = time.monotonic()
         # Der Rückgabewert ist die eben geschlossene Rohdatei: ein neues Diktat
         # schreibt in die andere, gelesen wird trotzdem diese hier.
