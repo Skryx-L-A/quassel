@@ -14,6 +14,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Optional neural voice detection (Silero VAD) for the wake word and hands-free auto-stop.
+  Quassel does not ship the model and never downloads it: put `silero_vad.onnx` into the
+  models folder (or set `silero_model` under `[vad]` in `config.ini`) and install
+  `onnxruntime` yourself. Without either, the built-in loudness threshold keeps working
+  as before. `backend = rms` under `[vad]` switches the neural detector off.
+
 ### Changed
 - Short hold-to-talk dictations get their text sooner. The live preview used
   to send its first request after two seconds, and the speech engine works on

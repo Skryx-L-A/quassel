@@ -2,15 +2,18 @@
 
 Arbeitet auf rohem PCM im Quassel-Aufnahmeformat: 16 kHz, mono, signed
 16-bit little-endian (s16le). Dieses Modul braucht nur die Standardbibliothek
-(struct/math), damit es ohne numpy o. ae. laeuft.
+(struct/math), damit es ohne numpy o. ae. laeuft; das optionale Silero-Backend
+steht in vad_silero.py und wird erst geladen, wenn eine Funktion es braucht.
 
 Aufbau:
   * Ein Klassifikator beurteilt einen Rahmen (frame) als Sprache oder nicht.
-    RmsClassifier ist die Energieschwelle (fest oder adaptiv am Grundrauschen).
+    RmsClassifier ist die Energieschwelle (immer vorhanden, auch adaptiv am
+    Grundrauschen), SileroVad (vad_silero.py) das neuronale Backend.
   * Der SilenceDetector zaehlt ZUSAMMENHAENGENDE Sprache (kurze Luecken werden
     ueberbrueckt, einzelne Klicks addieren sich nicht auf), merkt sich, ob
     Sprache begonnen hat, und misst danach die nachlaufende Stille.
 """
+import configparser
 import math
 import struct
 
@@ -197,3 +200,97 @@ class SilenceDetector:
     def silence_sec(self):
         """Aktuelle Dauer der nachlaufenden Stille in Sekunden."""
         return self._silence_sec
+
+
+# ------------------------------------------------------------- Einstellungen
+class Settings:
+    """VAD-Einstellungen. Quelle: Attribute der Cfg (vad_autostop, ...), sonst
+    die Abschnitte [vad] der config.ini.
+
+        [vad]
+        backend = auto            # auto | rms (rms schaltet Silero ab)
+        silero_model =            # Pfad zu silero_vad.onnx; leer = Modellordner
+        autostop = false          # Freihand-Modus nach Stille beenden
+        autostop_silence = 1.5    # Sekunden Stille bis zum Auto-Stopp
+    """
+
+    def __init__(self, backend="auto", silero_model="", autostop=False,
+                 autostop_silence=AUTOSTOP_SILENCE_DEFAULT):
+        self.backend = backend
+        self.silero_model = silero_model
+        self.autostop = autostop
+        self.autostop_silence = autostop_silence
+
+
+def _read_ini():
+    """config.ini als Parser; unlesbar oder kaputt: leerer Parser. Wirft nie."""
+    p = configparser.ConfigParser(interpolation=None)
+    try:
+        from . import config
+        p.read(config.CONFIG, encoding="utf-8")
+    except Exception:    # noqa: BLE001 -- kaputte Datei: Vorgaben nehmen
+        return configparser.ConfigParser(interpolation=None)
+    return p
+
+
+def _bool(value, default):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _float(value, default, lo, hi):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(v):
+        return default
+    return min(max(v, lo), hi)
+
+
+def settings(cfg=None):
+    """Aktuelle VAD-Einstellungen. Eine Cfg mit den Attributen vad_backend,
+    vad_silero_model, vad_autostop, vad_autostop_silence gewinnt; was ihr
+    fehlt, kommt aus der config.ini."""
+    ini = None
+
+    def pick(attr, key, default):
+        nonlocal ini
+        value = getattr(cfg, attr, None) if cfg is not None else None
+        if value is not None:
+            return value
+        if ini is None:
+            ini = _read_ini()
+        return ini.get("vad", key, fallback=default)
+
+    backend = str(pick("vad_backend", "backend", "auto")).strip().lower()
+    return Settings(
+        backend=backend if backend in ("auto", "rms") else "auto",
+        silero_model=str(pick("vad_silero_model", "silero_model", "")).strip(),
+        autostop=_bool(pick("vad_autostop", "autostop", False), False),
+        autostop_silence=_float(pick("vad_autostop_silence", "autostop_silence",
+                                     AUTOSTOP_SILENCE_DEFAULT),
+                                AUTOSTOP_SILENCE_DEFAULT, *AUTOSTOP_SILENCE_RANGE))
+
+
+def make_classifier(cfg=None, log=None, silero_factory=None):
+    """Klassifikator nach Einstellung: Silero, wenn onnxruntime UND das Modell da
+    sind und ``backend`` es nicht abschaltet, sonst die adaptive Energieschwelle.
+    Silero wird erst hier geladen -- wer VAD nicht braucht, importiert nichts."""
+    s = settings(cfg)
+    if s.backend != "rms":
+        try:
+            if silero_factory is None:
+                from . import vad_silero
+                silero_factory = vad_silero.create
+            silero = silero_factory(s.silero_model, log=log)
+        except Exception as exc:    # noqa: BLE001 -- Rueckfall auf RMS, nie ein Absturz
+            silero = None
+            if log:
+                log("vad: Silero nicht nutzbar (%s) -> Energieschwelle" % type(exc).__name__)
+        if silero is not None:
+            return silero
+    return RmsClassifier()
