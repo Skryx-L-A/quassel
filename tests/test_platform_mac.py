@@ -78,6 +78,20 @@ def test_paste_writes_concealed_then_restores_original(clip):
     assert clip["concealed"] is False     # Original wird normal geschrieben
 
 
+def test_paste_uses_key_from_current_layout(monkeypatch):
+    events = []
+    monkeypatch.setattr(pm, "_HAS_OBJC", True)
+    monkeypatch.setattr(pm, "_paste_keycode", lambda: 42)
+    monkeypatch.setattr(pm, "CGEventCreateKeyboardEvent",
+                        lambda _source, key, down: (key, down))
+    monkeypatch.setattr(pm, "CGEventSetFlags", lambda event, flags: None)
+    monkeypatch.setattr(pm, "CGEventPost", lambda tap, event: events.append(event))
+    monkeypatch.setattr(pm, "kCGHIDEventTap", 0, raising=False)
+    monkeypatch.setattr(pm, "kCGEventFlagMaskCommand", 1, raising=False)
+    pm._send_cmd_v()
+    assert events == [(42, True), (42, False)]
+
+
 def test_ai_double_paste_keeps_user_original(clip):
     """Review-H1-Kernszenario: paste(mech) -> paste(final) liest den eigenen
     Paste — am Ende muss das NUTZER-Original zurückkommen, nie 'mech'."""
@@ -300,6 +314,13 @@ def test_mic_is_bluetooth_by_name_positive():
     assert pm.mic_is_bluetooth("Bluetooth Headset Mic") is True
 
 
+def test_coreaudio_uses_absolute_framework_path(monkeypatch):
+    paths = []
+    monkeypatch.setattr(pm.ctypes, "CDLL", lambda path: paths.append(path) or object())
+    assert pm._coreaudio_lib() is not None
+    assert paths == ["/System/Library/Frameworks/CoreAudio.framework/CoreAudio"]
+
+
 def test_mic_is_bluetooth_by_name_negative():
     assert pm.mic_is_bluetooth("MacBook Pro Microphone") is False
 
@@ -422,6 +443,20 @@ def test_duck_apply_music_pauses_playing_apps(monkeypatch):
 
     assert token == {"apps": ["Music", "Spotify"]}
     assert paused == ["Music", "Spotify"]
+
+
+def test_detects_additional_scriptable_players_without_browsers(monkeypatch):
+    scripts = []
+    def osa(script):
+        scripts.append(script)
+        if 'application "Podcasts"' in script:
+            return SimpleNamespace(stdout="playing\n")
+        if 'application "VLC"' in script:
+            return SimpleNamespace(stdout="true\n")
+        return SimpleNamespace(stdout="no\n")
+    monkeypatch.setattr(pm, "_osa", osa)
+    assert pm._playing_apps() == ["Podcasts", "VLC"]
+    assert not any("Safari" in script or "Chrome" in script for script in scripts)
 
 
 def test_duck_restore_music_resumes_only_paused_apps(monkeypatch):

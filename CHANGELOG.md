@@ -99,6 +99,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- On GNOME Wayland without layer-shell, the pill uses XWayland when available
+  and reports when it may be hidden behind other windows.
+- macOS music ducking also checks Podcasts and VLC and resumes only players
+  that were playing before dictation.
+- Pasting on macOS follows the current keyboard layout, including layouts
+  where the V key has a different physical position.
+- Bluetooth microphones are recognized in the packaged macOS app even when
+  framework discovery is unavailable.
 - On Wayland systems with a recent wl-copy, Linux marks dictated clipboard
   text as sensitive so compatible clipboard managers can omit it from history.
 - Linux leaves images, files and rich clipboard contents alone when inserting
