@@ -263,6 +263,26 @@ def restart_server():
         sysctl("try-restart", "quassel-server")
 
 
+def mac_mic_permission():
+    """Mikrofonfreigabe dieses Prozesses unter macOS: "granted", "denied",
+    "undetermined" oder None (nicht ermittelbar). Reine Statusabfrage über
+    AVCaptureDevice, löst keinen Dialog aus und öffnet kein Mikrofon."""
+    try:
+        import ctypes
+        import objc
+        ctypes.cdll.LoadLibrary(
+            "/System/Library/Frameworks/AVFoundation.framework/AVFoundation")
+        device = objc.lookUpClass("AVCaptureDevice")
+        status = int(device.authorizationStatusForMediaType_("soun"))
+    except Exception:  # noqa: BLE001 — ohne pyobjc: unbekannt
+        return None
+    return {0: "undetermined", 1: "denied", 2: "denied", 3: "granted"}.get(status)
+
+
+class MicTestError(Exception):
+    """Mikrofontest konnte nicht aufnehmen; args[0] ist der i18n-Schlüssel."""
+
+
 def app_icon():
     for p in ICON_PATHS:
         if os.path.exists(p):
@@ -1294,7 +1314,7 @@ class Center(QMainWindow):
             from .win.audio_win import Recorder
             rec = Recorder()
             if not rec.start(self.cfg.mic):
-                return None
+                raise MicTestError(self._mic_open_error())
             time.sleep(2.5)
             rec.stop()
             return rec.raw_bytes()
@@ -1304,13 +1324,14 @@ class Center(QMainWindow):
             from .audio import Recorder
             rec = Recorder(raw_path=os.path.join(RUNDIR, "mictest.raw"))
             if not rec.start(self.cfg.mic):
-                return None
+                raise MicTestError(self._mic_open_error())
             time.sleep(2.5)
             rec.stop()
             return rec.raw_bytes()
         cmd = record_command(self.cfg.mic)
         if cmd is None:
-            return None
+            raise MicTestError(tr("err_recorder_missing", tool=(
+                "ffmpeg" if IS_MAC else "pw-record/parecord")))
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                              stderr=subprocess.DEVNULL)
         try:
@@ -1324,37 +1345,56 @@ class Center(QMainWindow):
                 data, _ = p.communicate()
         return data
 
+    def _mic_open_error(self):
+        """Warum ließ sich das Mikrofon nicht öffnen? Auf dem Mac zuerst die
+        Freigabe prüfen — fehlt sie, hilft nur die Systemeinstellung."""
+        if IS_MAC and mac_mic_permission() == "denied":
+            return tr("err_mic_denied")
+        return tr("err_mic_open")
+
+    def _server_error(self):
+        """Server antwortet nicht: fehlt das Modell, oder lädt/hängt er?"""
+        model_path = config.read_serverenv().get("MODEL_PATH", "")
+        if model_path and not os.path.exists(model_path):
+            return tr("err_model_missing", model=os.path.basename(model_path))
+        return tr("err_server_down")
+
     def on_mictest(self):
         self.test_out.setText(tr("mic_testing"))
+        threading.Thread(target=self._mictest_run, daemon=True).start()
 
-        def run():
-            try:
-                data = self._mictest_record()
-            except Exception:  # noqa: BLE001 — Audio-Backend kaputt
-                data = None
-            if not data or len(data) < 8000:
-                self.bridge.message.emit("✕ " + tr("mic_nothing"))
-                return
-            self.bridge.message.emit(tr("mic_transcribing"))
-            wavpath = os.path.join(config.DATADIR, "mictest.wav")
-            os.makedirs(config.DATADIR, exist_ok=True)
-            with wave.open(wavpath, "wb") as w:
-                w.setnchannels(1)
-                w.setsampwidth(2)
-                w.setframerate(RATE)
-                w.writeframes(data)
+    def _mictest_run(self):
+        try:
+            data = self._mictest_record()
+        except MicTestError as e:
+            self.bridge.message.emit("✕ " + e.args[0])
+            return
+        except Exception:  # noqa: BLE001 — Audio-Backend kaputt
+            self.bridge.message.emit("✕ " + self._mic_open_error())
+            return
+        if not data or len(data) < 8000:
+            self.bridge.message.emit("✕ " + tr("mic_nothing"))
+            return
+        self.bridge.message.emit(tr("mic_transcribing"))
+        wavpath = os.path.join(config.DATADIR, "mictest.wav")
+        os.makedirs(config.DATADIR, exist_ok=True)
+        with wave.open(wavpath, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(RATE)
+            w.writeframes(data)
+        try:
             if not whisperclient.ensure_server():
-                os.unlink(wavpath)
-                self.bridge.message.emit("✕ " + tr("no_server"))
+                self.bridge.message.emit("✕ " + self._server_error())
                 return
             text = whisperclient.transcribe(wavpath, self.cfg, timeout=60)
+        finally:
             os.unlink(wavpath)
-            if text is None:
-                self.bridge.message.emit("✕ " + tr("no_server"))
-                return
-            text = " ".join(text.split()).strip() or "—"
-            self.bridge.message.emit("✓ " + tr("mic_result", text=text))
-        threading.Thread(target=run, daemon=True).start()
+        if text is None:
+            self.bridge.message.emit("✕ " + tr("err_transcribe"))
+            return
+        text = " ".join(text.split()).strip() or "—"
+        self.bridge.message.emit("✓ " + tr("mic_result", text=text))
 
     # ------------------------------------------------ Datei transkribieren (#21)
     def on_pick_file(self):

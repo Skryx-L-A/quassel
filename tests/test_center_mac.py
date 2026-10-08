@@ -219,3 +219,88 @@ def test_chord_choices_and_hint_use_mac_key_names(mac, qapp, isolated_cfg, monke
     finally:
         c.close()
         i18n.set_language(None)
+
+
+# ------------------------------------------- H113 konkrete Fehlermeldungen
+@pytest.fixture
+def mictest(mac, qapp, isolated_cfg, tmp_path, monkeypatch):
+    """Kontrollzentrum mit eigenem Datenordner und mitgeschnittenen Meldungen;
+    nie ein echtes Mikrofon, nie ein echter Server."""
+    from quassel import i18n
+    monkeypatch.setattr(config, "DATADIR", str(tmp_path / "data"))
+    monkeypatch.setattr(config, "SERVERENV", str(tmp_path / "server.env"))
+    config.save({("ui", "language"): "en"})
+    c = center.Center()
+    c.msgs = []
+    c.bridge.message.connect(c.msgs.append)
+    yield c
+    c.close()
+    i18n.set_language(None)
+
+
+class _DeadRecorder:
+    def __init__(self, raw_path=None):
+        pass
+
+    def start(self, mic):
+        return False
+
+
+def test_mic_test_names_missing_mac_permission(mictest, monkeypatch):
+    from quassel import audio
+    monkeypatch.setattr(audio, "Recorder", _DeadRecorder)
+    monkeypatch.setattr(center, "mac_backend", lambda: "sd16")
+    monkeypatch.setattr(center, "mac_mic_permission", lambda: "denied")
+    mictest._mictest_run()
+    assert mictest.msgs == ["✕ " + center.tr("err_mic_denied")]
+    assert "Privacy & Security → Microphone" in mictest.msgs[0]
+
+
+def test_mic_test_busy_microphone_is_not_called_a_permission_problem(mictest, monkeypatch):
+    from quassel import audio
+    monkeypatch.setattr(audio, "Recorder", _DeadRecorder)
+    monkeypatch.setattr(center, "mac_backend", lambda: "sd16")
+    monkeypatch.setattr(center, "mac_mic_permission", lambda: "granted")
+    mictest._mictest_run()
+    assert mictest.msgs == ["✕ " + center.tr("err_mic_open")]
+
+
+def test_mic_test_silence_says_nothing_captured(mictest, monkeypatch):
+    monkeypatch.setattr(mictest, "_mictest_record", lambda: b"\0" * 100)
+    mictest._mictest_run()
+    assert mictest.msgs == ["✕ " + center.tr("mic_nothing")]
+
+
+def test_mic_test_names_a_missing_model(mictest, tmp_path, monkeypatch):
+    with open(config.SERVERENV, "w", encoding="utf-8") as f:
+        f.write("MODEL_PATH=%s\n" % (tmp_path / "ggml-small.bin"))
+    monkeypatch.setattr(mictest, "_mictest_record", lambda: b"\1\0" * 8000)
+    monkeypatch.setattr(center.whisperclient, "ensure_server", lambda: False)
+    mictest._mictest_run()
+    assert mictest.msgs[-1] == "✕ " + center.tr("err_model_missing", model="ggml-small.bin")
+    assert not os.path.exists(os.path.join(config.DATADIR, "mictest.wav"))
+
+
+def test_mic_test_server_down_with_model_present(mictest, tmp_path, monkeypatch):
+    model = tmp_path / "ggml-small.bin"
+    model.write_bytes(b"x")
+    with open(config.SERVERENV, "w", encoding="utf-8") as f:
+        f.write("MODEL_PATH=%s\n" % model)
+    monkeypatch.setattr(mictest, "_mictest_record", lambda: b"\1\0" * 8000)
+    monkeypatch.setattr(center.whisperclient, "ensure_server", lambda: False)
+    mictest._mictest_run()
+    assert mictest.msgs[-1] == "✕ " + center.tr("err_server_down")
+
+
+def test_mic_test_transcription_failure_is_not_called_unreachable(mictest, monkeypatch):
+    monkeypatch.setattr(mictest, "_mictest_record", lambda: b"\1\0" * 8000)
+    monkeypatch.setattr(center.whisperclient, "ensure_server", lambda: True)
+    monkeypatch.setattr(center.whisperclient, "transcribe", lambda *a, **k: None)
+    mictest._mictest_run()
+    assert mictest.msgs[-1] == "✕ " + center.tr("err_transcribe")
+    assert not os.path.exists(os.path.join(config.DATADIR, "mictest.wav"))
+
+
+def test_mac_mic_permission_is_a_known_answer():
+    """Echte, rein lesende Statusabfrage (kein Dialog, kein Mikrofon)."""
+    assert center.mac_mic_permission() in ("granted", "denied", "undetermined", None)
