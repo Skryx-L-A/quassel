@@ -293,6 +293,7 @@ class Bridge(QObject):
     message = Signal(str)
     model_done = Signal(str)
     file_done = Signal(str, str)      # (Statuszeile, Ergebnistext)
+    file_progress = Signal(float, float)  # (erledigt, gesamt) in Sekunden Audio
     update_done = Signal(dict)        # updatecheck.check()-Resultat
     ai_models = Signal(dict)          # {"available":bool,"models":[...]}
     ai_test_done = Signal(str)        # Ergebnis des KI-Tests
@@ -312,6 +313,7 @@ class Center(QMainWindow):
         self.bridge.message.connect(self.on_message)
         self.bridge.model_done.connect(self.on_model_done)
         self.bridge.file_done.connect(self.on_file_done)
+        self.bridge.file_progress.connect(self.on_file_progress)
         self.bridge.update_done.connect(self.on_update_done)
         self.bridge.ai_models.connect(self.on_ai_models)
         self.bridge.ai_test_done.connect(self.on_ai_test_done)
@@ -900,10 +902,27 @@ class Center(QMainWindow):
     def page_file(self):
         scroll, lay = self.page()
         g = self.group(tr("sec_file"), lay)
-        self.desc(tr("file_hint"), g)
-        pick = QPushButton(tr("file_pick"))
-        pick.clicked.connect(self.on_pick_file)
-        g.addWidget(pick)
+        self.desc(tr("file_hint_manual"), g)
+        self.file_format = self.guard(QComboBox())
+        for fmt in ("text", "srt", "vtt"):
+            self.file_format.addItem(tr("file_format_" + fmt), fmt)
+        self.labeled_row(tr("file_format"), self.file_format, g)
+        row = QHBoxLayout()
+        self.file_pick = QPushButton(tr("file_pick"))
+        self.file_pick.clicked.connect(self.on_pick_file)
+        row.addWidget(self.file_pick)
+        self.file_cancel = QPushButton(tr("file_cancel"))
+        self.file_cancel.setEnabled(False)
+        self.file_cancel.clicked.connect(self.on_file_cancel)
+        row.addWidget(self.file_cancel)
+        row.addStretch(1)
+        g.addLayout(row)
+        self.file_bar = QProgressBar()
+        self.file_bar.setRange(0, 1000)
+        self.file_bar.setTextVisible(False)
+        self.file_bar.setAccessibleName(tr("file_progress"))
+        self.file_bar.setVisible(False)
+        g.addWidget(self.file_bar)
         self.file_status = QLabel()
         self.file_status.setObjectName("desc")
         self.file_status.setWordWrap(True)
@@ -912,10 +931,10 @@ class Center(QMainWindow):
         self.file_result.setReadOnly(True)
         self.file_result.setAccessibleName(tr("sec_file"))
         g.addWidget(self.file_result)
-        copy = QPushButton(tr("copy"))
-        copy.clicked.connect(lambda: clip_copy(self.file_result.toPlainText()))
-        g.addWidget(copy)
-        lay.addStretch(1)
+        self.file_copy = QPushButton(tr("copy"))
+        self.file_copy.clicked.connect(self.on_file_copy)
+        g.addWidget(self.file_copy)
+        self._file_cancel_event = None
         return scroll
 
     # --------------------------------------------------------- Seite: KI (Ollama)
@@ -1583,36 +1602,72 @@ class Center(QMainWindow):
     # ------------------------------------------------ Datei transkribieren (#21)
     def on_pick_file(self):
         path, _ = QFileDialog.getOpenFileName(self, tr("file_pick"))
-        if not path:
-            return
+        if path:
+            self.start_file(path)
+
+    def start_file(self, path, run_async=True):
+        """Datei transkribieren: Fortschritt und Abbruch laufen bis in
+        transcribe_file() durch; das Ergebnis landet nur im Feld, kopiert wird
+        erst auf Knopfdruck."""
         if not transcribe_file.is_supported(path):
             self.file_status.setText("✕ " + tr("file_failed"))
             return
         if not transcribe_file.have_ffmpeg() and not path.lower().endswith(".wav"):
             self.file_status.setText("✕ " + tr("file_no_ffmpeg"))
             return
-        name = os.path.basename(path)
-        self.file_status.setText(tr("file_running", name=name))
+        fmt = self.file_format.currentData() or "text"
+        cancel = self._file_cancel_event = threading.Event()
+        self.file_status.setText(tr("file_running", name=os.path.basename(path)))
         self.file_result.setPlainText("")
+        self.file_bar.setValue(0)
+        self.file_bar.setVisible(True)
+        self.file_pick.setEnabled(False)
+        self.file_cancel.setEnabled(True)
 
         def run():
             try:
-                text = transcribe_file.transcribe_file(path, self.cfg)
+                text = transcribe_file.transcribe_file(
+                    path, self.cfg, output_format=fmt, cancel_event=cancel,
+                    progress=lambda done, total: self.bridge.file_progress.emit(
+                        float(done), float(total)))
             except Exception:    # noqa: BLE001
                 text = None
-            if not text or not text.strip():
+            if cancel.is_set():
+                self.bridge.file_done.emit(tr("file_canceled"), "")
+            elif not text or not text.strip():
                 self.bridge.file_done.emit("✕ " + tr("file_failed"), "")
-                return
-            text = text.strip()
-            self.bridge.file_done.emit(
-                "✓ " + tr("file_done", chars=len(text)), text)
-        threading.Thread(target=run, daemon=True).start()
+            else:
+                text = text.strip()
+                self.bridge.file_done.emit(
+                    "✓ " + tr("file_ready", chars=len(text)), text)
+        if run_async:
+            threading.Thread(target=run, daemon=True).start()
+        else:
+            run()
+
+    def on_file_progress(self, done, total):
+        if total > 0:
+            self.file_bar.setValue(int(1000 * min(1.0, done / total)))
+
+    def on_file_cancel(self):
+        if self._file_cancel_event is not None:
+            self._file_cancel_event.set()
+        self.file_cancel.setEnabled(False)
 
     def on_file_done(self, status, text):
         self.file_status.setText(status)
+        self.file_bar.setVisible(False)
+        self.file_pick.setEnabled(True)
+        self.file_cancel.setEnabled(False)
+        self._file_cancel_event = None
         if text:
             self.file_result.setPlainText(text)
+
+    def on_file_copy(self):
+        text = self.file_result.toPlainText()
+        if text:
             clip_copy(text)
+            self.file_status.setText("✓ " + tr("copied"))
 
     # ------------------------------------------------------- Update-Prüfung
     def on_check_update(self):

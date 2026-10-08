@@ -127,3 +127,60 @@ def test_mac_microphone_indicator_hint(tmp_path, monkeypatch, qapp, mac):
         assert (win.preroll_mac_note is not None) is mac
     finally:
         win.close()
+
+
+# ------------------------------------------------- (d) Datei transkribieren
+@pytest.fixture
+def fake_tf(monkeypatch):
+    calls = {}
+
+    def transcribe(path, cfg, timeout=600, *, progress=None, cancel_event=None,
+                   output_format="text"):
+        calls.update(path=path, fmt=output_format, cancel=cancel_event)
+        progress(30.0, 60.0)
+        if calls.get("cancel_now"):
+            cancel_event.set()
+            return None
+        return {"text": "hallo welt", "srt": "1\n00:00:00,000 --> 00:00:01,000\nhallo\n",
+                "vtt": "WEBVTT\n\n00:00.000 --> 00:01.000\nhallo\n"}[output_format]
+    monkeypatch.setattr(center.transcribe_file, "transcribe_file", transcribe)
+    monkeypatch.setattr(center.transcribe_file, "have_ffmpeg", lambda: True)
+    return calls
+
+
+@pytest.mark.parametrize("fmt,start", [("text", "hallo welt"), ("srt", "1\n00:00"),
+                                       ("vtt", "WEBVTT")])
+def test_file_format_progress_and_no_automatic_copy(c, fake_tf, monkeypatch, fmt, start):
+    copied = []
+    monkeypatch.setattr(center, "clip_copy", copied.append)
+    progress = []
+    c.bridge.file_progress.connect(lambda d, t: progress.append(c.file_bar.value()))
+    c.file_format.setCurrentIndex(c.file_format.findData(fmt))
+    c.start_file("/tmp/talk.wav", run_async=False)
+    assert fake_tf["fmt"] == fmt and fake_tf["cancel"] is not None
+    assert progress == [500]                       # 30 von 60 s
+    assert c.file_result.toPlainText().startswith(start)
+    assert copied == []                            # nichts ohne Nutzeraktion
+    assert c.file_pick.isEnabled() and not c.file_cancel.isEnabled()
+    c.file_copy.click()
+    assert copied == [c.file_result.toPlainText()]
+
+
+def test_cancel_reaches_transcribe_file(c, fake_tf):
+    fake_tf["cancel_now"] = True
+    c.start_file("/tmp/talk.wav", run_async=False)
+    assert c.file_status.text() == i18n.tr("file_canceled")
+    assert c.file_result.toPlainText() == ""
+
+
+def test_cancel_button_sets_the_event(c):
+    import threading
+    ev = c._file_cancel_event = threading.Event()
+    c.file_cancel.setEnabled(True)
+    c.file_cancel.click()
+    assert ev.is_set() and not c.file_cancel.isEnabled()
+
+
+def test_file_formats_offered(c):
+    assert [c.file_format.itemData(i) for i in range(c.file_format.count())] == \
+        ["text", "srt", "vtt"]

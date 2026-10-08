@@ -95,6 +95,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `onnxruntime` must be installed. Without a model, the wake word works as before.
 
 ### Changed
+- Transcribe file: you can choose plain text or subtitles (SRT or WebVTT),
+  follow the progress and cancel a long file. The result is no longer copied to
+  the clipboard automatically, which used to replace whatever you had copied;
+  press Copy when you want it.
 - The Control Center has shorter pages, each about one thing: General (status
   and hotkey), Pill, While dictating (sound, media and live typing), Speech,
   Microphone, and About on its own. Unfinished features such as the wake word
