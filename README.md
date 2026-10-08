@@ -85,14 +85,14 @@ yet — click "More info" → "Run anyway".
 
 **No internet on the target PC?** Use the offline all-in-one package
 (`Quassel-Offline-Windows.exe` plus its `.7z` parts) from the
-[releases page](https://github.com/Skryx-L-A/quassel/releases/latest) — it
+[v2.2.0 release](https://github.com/Skryx-L-A/quassel/releases/tag/v2.2.0) — it
 already contains the app, every speech engine and all five models (~4.3 GB).
 Keep all parts in one folder, double-click the `.exe` to extract, then run
 `Quassel.exe`. Nothing is ever downloaded.
 
 > **Note:** the offline all-in-one packages are currently **v2.2.0** (an older
 > build); the quick installer above is **v2.4.0** — the Windows build has not
-> caught up with 2.6.0 yet, because it is built on Windows.
+> caught up with the latest release yet, because it is built on Windows.
 
 > **Status:** the Windows build passed full hands-on testing (dictation,
 > hands-free mode, settings, autostart) on Windows 11 with an NVIDIA GPU —
@@ -113,14 +113,22 @@ manager):
 git clone https://github.com/Skryx-L-A/quassel.git && cd quassel && ./install.sh
 ```
 
-It installs distro packages, builds whisper.cpp (NVIDIA/CUDA and AMD/Intel/
-Vulkan auto-detected), downloads a speech model and sets up the app. Log out
-and back in once if the script says so. Details: [INSTALL.md](INSTALL.md).
+It installs distro packages, builds whisper.cpp at a fixed, known version
+(v1.9.5; NVIDIA/CUDA and AMD/Intel/Vulkan auto-detected, a few minutes the first
+time), downloads a speech model and sets up the app. Log out and back in once if
+the script says so. `./install.sh --model small-q5_1` picks another model, also
+on an existing installation. Details: [INSTALL.md](INSTALL.md).
 
-**No internet on the target Linux PC?** Use the offline all-in-one package
-(`quassel-linux-x86_64.tar.gz.part-*`) from the
-[releases page](https://github.com/Skryx-L-A/quassel/releases/latest): download
-all parts into one folder, then
+The small online installer (`quassel-install.sh` on the
+[releases page](https://github.com/Skryx-L-A/quassel/releases/latest)) does the
+same for the latest release. If a release carries prebuilt engine packages, it
+loads the matching one after checking its checksum and skips the build; if not,
+it says so and builds from source.
+
+**No internet on the target Linux PC?** The offline all-in-one package
+(`quassel-linux-x86_64.tar.gz.part-*`) exists only for the older **v2.2.0** — get
+it from the [v2.2.0 release](https://github.com/Skryx-L-A/quassel/releases/tag/v2.2.0):
+download all parts into one folder, then
 
 ```bash
 cat quassel-linux-x86_64.tar.gz.part-* | tar xzf -
@@ -131,9 +139,8 @@ It bundles a portable Python + Qt, both the CPU **and** CUDA engines (CUDA
 runtime included; the NVIDIA driver is used from your system) and **all** speech
 models — nothing is ever downloaded. Runs on x86_64 with glibc ≥ 2.28.
 
-> **Note:** the offline all-in-one package is currently **v2.2.0** (an older
-> build); the quick installer / `git clone … && ./install.sh` above give the
-> latest (**v2.7.0**).
+> **Note:** newer releases do not ship offline packages. The quick installer /
+> `git clone … && ./install.sh` above give the latest (**v2.7.0**).
 
 > **Tested:** Fedora / Nobara (daily driver). **Untested but prepared:**
 > Ubuntu/Debian/Mint, Arch and openSUSE — the package lists are verified in

@@ -34,6 +34,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- README, INSTALL and the website no longer point Linux and Windows users to offline
+  packages "in the latest release": those exist only for v2.2.0. The pages now say so
+  and link that release, and the Linux quick-installer text describes what it really
+  does (sets up the speech engine, building it when no prebuilt one exists).
 - The Linux quick installer works again. Releases after v2.2.0 never had the
   prebuilt speech engines it asked for, so the one-line install stopped with
   "Engine download failed". It now checks the release first and, when the engine

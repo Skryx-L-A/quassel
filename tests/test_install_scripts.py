@@ -564,3 +564,34 @@ def test_engine_build_scripts_use_the_pinned_whisper_cpp():
         assert '--branch "$WHISPER_CPP_TAG"' in script
         assert "git clone --depth 1 https://github.com/ggml-org/whisper.cpp" not in script
         assert "$WHISPER_CPP_COMMIT" in script
+
+
+def _pinned_tag():
+    pin = PIN.read_text(encoding="utf-8")
+    return pin.split('WHISPER_CPP_TAG="', 1)[1].split('"', 1)[0]
+
+
+def test_docs_name_the_pinned_whisper_cpp_version():
+    for name in ("README.md", "INSTALL.md"):
+        assert _pinned_tag() in (ROOT / name).read_text(encoding="utf-8"), name
+
+
+def test_docs_do_not_send_users_to_offline_packages_missing_from_latest():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    site = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+    for text in (readme, site):
+        assert "latest/download/quassel-engine" not in text
+        assert "latest/download/quassel-linux" not in text
+        assert "latest/download/Quassel-Offline" not in text
+    # The offline packages are linked through the tag that has them.
+    assert readme.count("releases/tag/v2.2.0") >= 2
+    assert "releases/latest) — it" not in readme
+    # The old claim that the quick installer never compiles is wrong now.
+    assert "no compiling" not in site
+    assert "v2.6.0" not in site
+
+
+def test_website_offline_packages_are_labelled_as_v2_2_0_only():
+    site = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+    assert site.count("Only available as v2.2.0") >= 3
+    assert "releases/latest/download/quassel-install.sh" in site
