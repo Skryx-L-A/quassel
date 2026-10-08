@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Beta features page: the pre-roll (0 to 2000 ms of audio kept from before
+  the hotkey, Linux and macOS) can be set in the Control Center instead of only
+  through an environment variable. The page says that the microphone stays
+  open for three seconds after each dictation and, on macOS, that the
+  microphone indicator stays visible during that time.
 - Beta features page, wake word: you can pick a keyword model (openWakeWord
   format, trained yourself) that listens for the phrase before speech
   recognition runs, set its trigger threshold, and choose whether the phrase is

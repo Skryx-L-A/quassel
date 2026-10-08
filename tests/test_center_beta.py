@@ -99,3 +99,31 @@ def test_wake_spotter_settings_round_trip(c, tmp_path, monkeypatch):
 
 def test_threshold_range_matches_wake_settings(c):
     assert (c.wake_threshold.minimum(), c.wake_threshold.maximum()) == (0.05, 0.99)
+
+
+# ------------------------------------------------------ (c) Vorlaufpuffer
+def test_preroll_is_off_by_default_and_saves_in_range(c):
+    assert c.preroll.value() == 0 and c.preroll.text() == "Off"
+    assert (c.preroll.minimum(), c.preroll.maximum()) == (0, 2000)
+    c.preroll.setValue(300)
+    c.save_timer.timeout.emit()
+    assert saved().getint("speech", "preroll_ms") == 300
+    c.cfg.reload(force=True)
+    assert c.cfg.preroll_ms == 300
+    assert beta(c).isAncestorOf(c.preroll)
+
+
+@pytest.mark.parametrize("mac", [True, False])
+def test_mac_microphone_indicator_hint(tmp_path, monkeypatch, qapp, mac):
+    monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
+    monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
+    monkeypatch.setattr(center, "IS_MAC", mac)
+    monkeypatch.setattr(center, "IS_WINDOWS", False)
+    monkeypatch.setattr(center, "autostart_enabled", lambda: False)
+    monkeypatch.setattr(center, "daemon_active", lambda: True)
+    monkeypatch.setattr(center.beep, "list_outputs", lambda: [], raising=False)
+    win = center.Center(controller=SimpleNamespace(enabled=True))
+    try:
+        assert (win.preroll_mac_note is not None) is mac
+    finally:
+        win.close()

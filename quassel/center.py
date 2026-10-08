@@ -18,6 +18,7 @@ from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
+    QSpinBox,
     QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
@@ -751,6 +752,21 @@ class Center(QMainWindow):
         self._file_row(tr("vad_silero_model"), self.vad_model, self.vad_model_pick, g)
         self.desc(tr("vad_silero_hint"), g)
         self._sync_vad_enabled(vs.autostop)
+
+        # --- Vorlaufpuffer ([speech] preroll_ms, 0–2000 ms) ---
+        g = self.group(tr("sec_preroll"), lay)
+        self.preroll = self.guard(QSpinBox())
+        self.preroll.setRange(0, 2000)
+        self.preroll.setSingleStep(100)
+        self.preroll.setSuffix(" ms")
+        self.preroll.setSpecialValueText(tr("preroll_off"))
+        self.preroll.setValue(self.cfg.preroll_ms)
+        self.preroll.valueChanged.connect(self.save_soon)
+        self.labeled_row(tr("preroll_ms"), self.preroll, g)
+        self.desc(tr("preroll_hint"), g)
+        self.preroll_mac_note = None
+        if IS_MAC:
+            self.preroll_mac_note = self.desc(tr("preroll_mac_hint"), g)
         g = self.group(tr("sec_wakeword"), lay)
         beta = self.desc(tr("wakeword_beta"), g)
         beta.setStyleSheet(f"color:{self._warn};font-weight:600;")   # Bernstein = Beta-Warnung
@@ -1271,6 +1287,7 @@ class Center(QMainWindow):
             ("wakeword", "spotter_model"): self.wake_model.text().strip(),
             ("wakeword", "spotter_threshold"): round(self.wake_threshold.value(), 2),
             ("wakeword", "verify"): str(self.wake_verify.isChecked()).lower(),
+            ("speech", "preroll_ms"): self.preroll.value(),
             ("vad", "autostop"): str(self.vad_autostop.isChecked()).lower(),
             ("vad", "autostop_silence"): round(self.vad_silence.value(), 1),
             ("vad", "backend"): self.vad_backend.currentData() or "auto",
