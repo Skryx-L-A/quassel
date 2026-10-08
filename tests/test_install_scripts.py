@@ -525,3 +525,42 @@ def test_model_option_rejects_a_path_before_anything_is_installed(tmp_path):
     assert result.returncode == 1
     assert "Ungültiger Modellname" in result.stderr
     assert "1/8" not in result.stdout
+
+
+def test_engine_workflow_runs_only_for_releases_and_manual_dispatch():
+    workflow = (ROOT / ".github" / "workflows" / "engine-packages.yml").read_text(
+        encoding="utf-8")
+    assert "  release:\n    types: [published]" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "  push:" not in workflow and "pull_request" not in workflow
+    # Only the built-in token; no other secret may be needed.
+    secrets = {part.split("}}")[0].strip()
+               for part in workflow.split("secrets.")[1:]}
+    assert secrets == {"GITHUB_TOKEN"}
+    assert "contents: write" in workflow
+    assert workflow.count("contents: write") == 1
+
+
+def test_engine_workflow_packs_what_the_installer_expects():
+    workflow = (ROOT / ".github" / "workflows" / "engine-packages.yml").read_text(
+        encoding="utf-8")
+    # <variant>/ at the top of the archive, a .sha256 next to it, the names
+    # install_prebuilt_engine asks for.
+    assert 'asset="quassel-engine-linux-$VARIANT-x86_64.tar.gz"' in workflow
+    assert 'tar -C out -czf "$asset" "$VARIANT"' in workflow
+    assert 'sha256sum "$asset" > "$asset.sha256"' in workflow
+    assert "build-engine-cpu.sh" in workflow and "build-engine-cuda.sh" in workflow
+    library = LIB.read_text(encoding="utf-8")
+    assert 'asset="quassel-engine-linux-$evar-x86_64.tar.gz"' in library
+    # The tag reaches shell code only through env, never by interpolation.
+    assert "TAG: ${{ github.event.release.tag_name || inputs.tag }}" in workflow
+    assert 'gh release upload "$TAG"' in workflow
+
+
+def test_engine_build_scripts_use_the_pinned_whisper_cpp():
+    for name in ("build-engine-cpu.sh", "build-engine-cuda.sh"):
+        script = (ROOT / "scripts" / "offline" / name).read_text(encoding="utf-8")
+        assert 'source "$HERE/../whisper-cpp-pin.sh"' in script
+        assert '--branch "$WHISPER_CPP_TAG"' in script
+        assert "git clone --depth 1 https://github.com/ggml-org/whisper.cpp" not in script
+        assert "$WHISPER_CPP_COMMIT" in script
