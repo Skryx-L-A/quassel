@@ -29,7 +29,7 @@ import threading
 import time
 
 from . import (aimodes, beep, config, dictprompt, i18n, progmode, stats, textproc,
-               textreplace, vad, wakeword, whisperclient)
+               textreplace, vad, wakeword, whisperclient, selfheal)
 from .audio import RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
@@ -592,6 +592,8 @@ class DictationCore:
         try:
             self._wav_from_raw(data, wav)
             result = whisperclient.transcribe_result(wav, self.cfg)
+            if result.text is None and selfheal.recover():
+                result = whisperclient.transcribe_result(wav, self.cfg)
         finally:
             discard(wav)
         raw_text = result.text

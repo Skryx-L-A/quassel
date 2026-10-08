@@ -46,6 +46,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- A failed transcription now checks whether the local speech server can
+  process a short silence clip. If Quassel owns a failed server child, it
+  restarts it once and retries the dictation once.
 - macOS: selecting the system default microphone now follows changes made
   between dictations when the device is already in the audio device list.
 - Linux recording now begins before the Bluetooth card check, avoiding a
