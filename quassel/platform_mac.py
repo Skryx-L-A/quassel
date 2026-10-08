@@ -182,12 +182,62 @@ def _restore_now():
 def _send_cmd_v():
     if not _HAS_OBJC:
         return
-    down = CGEventCreateKeyboardEvent(None, KEY_V, True)
+    key = _paste_keycode()
+    down = CGEventCreateKeyboardEvent(None, key, True)
     CGEventSetFlags(down, kCGEventFlagMaskCommand)
     CGEventPost(kCGHIDEventTap, down)
-    up = CGEventCreateKeyboardEvent(None, KEY_V, False)
+    up = CGEventCreateKeyboardEvent(None, key, False)
     CGEventSetFlags(up, kCGEventFlagMaskCommand)
     CGEventPost(kCGHIDEventTap, up)
+
+
+def _paste_keycode():
+    """Find the physical key producing V in the active Unicode keyboard layout.
+
+    The input source is queried per paste so switching layouts while Quassel is
+    running does not leave a stale shortcut. Carbon failures retain the old key.
+    """
+    try:
+        carbon = ctypes.CDLL("/System/Library/Frameworks/Carbon.framework/Carbon")
+        cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+        carbon.TISCopyCurrentKeyboardLayoutInputSource.restype = ctypes.c_void_p
+        carbon.TISGetInputSourceProperty.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        carbon.TISGetInputSourceProperty.restype = ctypes.c_void_p
+        carbon.UCKeyTranslate.argtypes = [ctypes.c_void_p, ctypes.c_uint16,
+            ctypes.c_uint16, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32), ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint16)]
+        cf.CFDataGetBytePtr.argtypes = [ctypes.c_void_p]
+        cf.CFDataGetBytePtr.restype = ctypes.c_void_p
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        prop = ctypes.c_void_p.in_dll(carbon, "kTISPropertyUnicodeKeyLayoutData")
+        source = carbon.TISCopyCurrentKeyboardLayoutInputSource()
+        if not source:
+            return KEY_V
+        try:
+            data = carbon.TISGetInputSourceProperty(source, prop)
+            layout = cf.CFDataGetBytePtr(data) if data else None
+            if not layout:
+                return KEY_V
+            keyboard_type = carbon.LMGetKbdType()
+            # Command may have its own mapping (for example Dvorak-QWERTY).
+            # Carbon's commandKey modifier occupies bit 8 of the EventRecord;
+            # UCKeyTranslate receives modifierKeyState after shifting by 8.
+            for modifiers in (1, 0):
+                for code in range(128):
+                    dead = ctypes.c_uint32()
+                    length = ctypes.c_uint32()
+                    chars = (ctypes.c_uint16 * 4)()
+                    status = carbon.UCKeyTranslate(layout, code, 0, modifiers,
+                        keyboard_type, 1, ctypes.byref(dead), 4,
+                        ctypes.byref(length), chars)
+                    if status == 0 and length.value == 1 and chars[0] in (ord("v"), ord("V")):
+                        return code
+        finally:
+            cf.CFRelease(source)
+    except (AttributeError, OSError, ValueError, TypeError, ctypes.ArgumentError):
+        pass
+    return KEY_V
 
 
 def paste(text):

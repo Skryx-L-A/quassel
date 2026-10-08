@@ -84,6 +84,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Pasting on macOS follows the current keyboard layout, including layouts
+  where the V key has a different physical position.
 - Bluetooth microphones are recognized in the packaged macOS app even when
   framework discovery is unavailable.
 - On Wayland systems with a recent wl-copy, Linux marks dictated clipboard

@@ -78,6 +78,20 @@ def test_paste_writes_concealed_then_restores_original(clip):
     assert clip["concealed"] is False     # Original wird normal geschrieben
 
 
+def test_paste_uses_key_from_current_layout(monkeypatch):
+    events = []
+    monkeypatch.setattr(pm, "_HAS_OBJC", True)
+    monkeypatch.setattr(pm, "_paste_keycode", lambda: 42)
+    monkeypatch.setattr(pm, "CGEventCreateKeyboardEvent",
+                        lambda _source, key, down: (key, down))
+    monkeypatch.setattr(pm, "CGEventSetFlags", lambda event, flags: None)
+    monkeypatch.setattr(pm, "CGEventPost", lambda tap, event: events.append(event))
+    monkeypatch.setattr(pm, "kCGHIDEventTap", 0, raising=False)
+    monkeypatch.setattr(pm, "kCGEventFlagMaskCommand", 1, raising=False)
+    pm._send_cmd_v()
+    assert events == [(42, True), (42, False)]
+
+
 def test_ai_double_paste_keeps_user_original(clip):
     """Review-H1-Kernszenario: paste(mech) -> paste(final) liest den eigenen
     Paste — am Ende muss das NUTZER-Original zurückkommen, nie 'mech'."""
