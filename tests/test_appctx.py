@@ -211,3 +211,10 @@ def test_live_query_on_this_machine_is_fast():
     assert isinstance(app, appctx.AppInfo)
     if sys.platform == "darwin" or os.name == "nt":
         assert time.perf_counter() - t < 0.02
+
+
+def test_tests_never_read_the_real_profiles_file():
+    """OPEN 4: conftest.py lenkt profiles.ini für jeden Test um."""
+    from quassel import config, profiles
+    assert not profiles.PROFILES.startswith(config.CONFDIR)
+    assert not os.path.exists(profiles.PROFILES)
