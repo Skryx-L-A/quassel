@@ -30,7 +30,7 @@ from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
 from .i18n import tr
 from .net import download as net_download
-from .state import RUNDIR
+from .state import RUNDIR, LevelMeter
 if os.name == "nt":
     from .win.audio_win import list_mics
     from .win.paste import clip_copy
@@ -465,6 +465,7 @@ class Center(QMainWindow):
         outer.addWidget(left)
         outer.addWidget(self.stack, 1)
 
+        self._page_keys = []
         for key, builder in [("nav_general", self.page_general),
                              ("nav_speech", self.page_speech),
                              ("nav_dict", self.page_dict),
@@ -476,9 +477,16 @@ class Center(QMainWindow):
                              ("nav_system", self.page_system)]:
             QListWidgetItem(tr(key), self.sidebar)
             self.stack.addWidget(builder())
+            self._page_keys.append(key)
         self.sidebar.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.sidebar.setCurrentRow(0)
         self.setCentralWidget(root)
+
+    def show_page(self, key):
+        """Seite über ihren Navigationsschlüssel wählen (nicht über die
+        Position — die ändert sich, wenn Seiten dazukommen)."""
+        if key in self._page_keys:
+            self.sidebar.setCurrentRow(self._page_keys.index(key))
 
     # --------------------------------------------------- Seite: Allgemein
     def page_general(self):
@@ -1216,10 +1224,13 @@ class Center(QMainWindow):
     def _maybe_onboard(self):
         if self.cfg.onboarded:
             return
-        dlg = OnboardingDialog(self, self.chord_label())
+        dlg = OnboardingDialog(self, self.chord_label(),
+                               record_fn=self._mictest_record)
         dlg.exec()
-        if dlg.open_settings:
-            self.sidebar.setCurrentRow(1)       # Spracherkennung (Wake-Word)
+        if dlg.open_page == "wake":
+            self.show_page("nav_speech")        # dort steht das Wake-Word
+        elif dlg.open_page == "speech":
+            self.show_page("nav_speech")
         config.save({("system", "onboarded"): "true"})
         self.cfg.reload(force=True)
 
@@ -1497,16 +1508,85 @@ class _StatsChart(QWidget):
         p.drawText(w - pad_r - 34, h - 5, series[-1][0][5:])     # heute MM-DD
 
 
-class OnboardingDialog(QDialog):
-    """Erst-Start-Begrüßung (#27): erklärt den Hotkey und „nichts einzustellen,
-    einfach schließen", plus den Hinweis, dass das Wake-Word änderbar ist."""
+PRIVACY_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_%s"
 
-    def __init__(self, parent, chord_label):
+
+def permission_status():
+    """Rechte, die Quassel braucht, je Plattform: [(Textschlüssel, Status,
+    Einstellungs-URL oder None)], Status "ok" | "missing" | "unknown".
+    Nur Statusabfragen (Preflight), kein Rechte-Dialog wird ausgelöst."""
+    if IS_WINDOWS:
+        return []
+    if IS_MAC:
+        mic = {"granted": "ok", "denied": "missing"}.get(mac_mic_permission(), "unknown")
+        listen = post = None
+        try:
+            import Quartz
+            if hasattr(Quartz, "CGPreflightListenEventAccess"):
+                listen = bool(Quartz.CGPreflightListenEventAccess())
+            if hasattr(Quartz, "CGPreflightPostEventAccess"):
+                post = bool(Quartz.CGPreflightPostEventAccess())
+        except ImportError:
+            pass
+
+        def st(v):
+            return "unknown" if v is None else ("ok" if v else "missing")
+        return [("ob_perm_mic", mic, PRIVACY_URL % "Microphone"),
+                ("ob_perm_input", st(listen), PRIVACY_URL % "ListenEvent"),
+                ("ob_perm_access", st(post), PRIVACY_URL % "Accessibility")]
+    try:
+        import grp
+        member = grp.getgrnam("input").gr_gid in os.getgroups()
+        status = "ok" if member else "missing"
+    except (ImportError, KeyError):
+        status = "unknown"
+    return [("ob_perm_input_linux", status, None)]
+
+
+def model_status():
+    """("ok", Name) | ("missing", Name) | ("none", "") für das eingestellte
+    Sprachmodell (server.env)."""
+    path = config.read_serverenv().get("MODEL_PATH", "")
+    if not path:
+        return "none", ""
+    name = os.path.basename(path)
+    return ("ok" if os.path.exists(path) else "missing"), name
+
+
+def clip_level(data):
+    """Lautstärke einer Aufnahme (s16le) auf der Skala von audio.rms_level."""
+    import array
+    samples = array.array("h")
+    samples.frombytes(data[:len(data) - len(data) % 2])
+    if not samples:
+        return 0.0
+    rms = (sum(x * x for x in samples) / len(samples)) ** 0.5
+    return min(rms / 8000.0, 1.0)
+
+
+class OnboardingDialog(QDialog):
+    """Erst-Einrichtung (#27, G110) in kurzen Schritten: Begrüßung mit Hotkey,
+    Rechte (nur anzeigen, was fehlt, und wohin), Mikrofontest ohne Wiedergabe,
+    Sprachmodell, „jetzt ausprobieren". Jeder Schritt ist überspringbar; der
+    Dialog lässt sich jederzeit schließen.
+
+    record_fn, permissions und models sind austauschbar (Tests): record_fn()
+    liefert rohe PCM-Bytes oder wirft MicTestError."""
+
+    mic_done = Signal(object)          # Bytes oder Fehlertext
+
+    def __init__(self, parent, chord_label, record_fn=None, permissions=None,
+                 models=None):
         super().__init__(parent)
-        self.open_settings = False
+        self.open_settings = False      # Wake-Word in den Einstellungen zeigen
+        self.open_page = None           # "wake" | "speech"
+        self.record_fn = record_fn
+        self.chord_label = chord_label
+        self._permissions = permissions or permission_status
+        self._models = models or model_status
         self.setWindowTitle(tr("ob_title"))
         self.setModal(True)
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(520)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 22, 24, 18)
         lay.setSpacing(12)
@@ -1515,31 +1595,200 @@ class OnboardingDialog(QDialog):
         logo = QLabel()
         logo.setPixmap(app_icon().pixmap(36, 36))
         head.addWidget(logo)
-        title = QLabel(tr("ob_title"))
-        title.setStyleSheet("font-size: 18px; font-weight: 800;")
-        head.addWidget(title)
+        self.title = QLabel(tr("ob_title"))
+        self.title.setStyleSheet("font-size: 18px; font-weight: 800;")
+        head.addWidget(self.title)
         head.addStretch(1)
+        self.step_lbl = QLabel()
+        self.step_lbl.setObjectName("desc")
+        head.addWidget(self.step_lbl)
         lay.addLayout(head)
 
-        body = QLabel(tr("ob_body", chord=chord_label))
-        body.setWordWrap(True)
-        lay.addWidget(body)
-        wake = QLabel(tr("ob_wake"))
-        wake.setWordWrap(True)
-        wake.setObjectName("desc")
-        lay.addWidget(wake)
-        lay.addStretch(1)
+        self.pages = QStackedWidget()
+        lay.addWidget(self.pages, 1)
+        self._titles = []
+        for title_key, build in (("ob_title", self._page_welcome),
+                                 ("ob_perm_title", self._page_permissions),
+                                 ("ob_mic_title", self._page_mic),
+                                 ("ob_model_title", self._page_model),
+                                 ("ob_try_title", self._page_try)):
+            self._titles.append(tr(title_key))
+            self.pages.addWidget(build())
 
-        buttons = QDialogButtonBox()
-        settings_btn = buttons.addButton(tr("ob_open_settings"),
-                                         QDialogButtonBox.ActionRole)
-        close_btn = buttons.addButton(tr("ob_close"), QDialogButtonBox.AcceptRole)
-        settings_btn.clicked.connect(self._go_settings)
-        close_btn.clicked.connect(self.accept)
-        lay.addWidget(buttons)
+        buttons = QHBoxLayout()
+        self.close_btn = QPushButton(tr("ob_close"))
+        self.close_btn.clicked.connect(self.accept)
+        buttons.addWidget(self.close_btn)
+        buttons.addStretch(1)
+        self.back_btn = QPushButton(tr("ob_back"))
+        self.back_btn.clicked.connect(lambda: self.go(self.pages.currentIndex() - 1))
+        buttons.addWidget(self.back_btn)
+        self.next_btn = QPushButton(tr("ob_next"))
+        self.next_btn.setDefault(True)
+        self.next_btn.clicked.connect(self._next)
+        buttons.addWidget(self.next_btn)
+        lay.addLayout(buttons)
+        self.mic_done.connect(self._on_mic_done)
+        self.go(0)
+
+    # ---------------------------------------------------------- Seiten
+    def _text(self, text, layout, desc=False):
+        lbl = QLabel(text)
+        lbl.setWordWrap(True)
+        if desc:
+            lbl.setObjectName("desc")
+        layout.addWidget(lbl)
+        return lbl
+
+    def _page_welcome(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        self._text(tr("ob_body", chord=self.chord_label), v)
+        self._text(tr("ob_wake"), v, desc=True)
+        wake_btn = QPushButton(tr("ob_open_settings"))
+        wake_btn.clicked.connect(self._go_settings)
+        v.addWidget(wake_btn, 0, Qt.AlignLeft)
+        v.addStretch(1)
+        return w
+
+    def _page_permissions(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        rows = self._permissions()
+        self.perm_rows = {}
+        if not rows:
+            self._text(tr("ob_perm_none"), v)
+        else:
+            self._text(tr("ob_perm_hint"), v, desc=True)
+        for key, status, url in rows:
+            # Name über der Zeile (darf umbrechen), darunter Status und Knopf:
+            # nebeneinander würden lange Rechtenamen abgeschnitten.
+            name = QLabel(tr(key))
+            name.setWordWrap(True)
+            name.setStyleSheet("font-weight: 600;")
+            v.addWidget(name)
+            row = QHBoxLayout()
+            state = QLabel(("✓ " if status == "ok" else "") + tr("ob_perm_" + (
+                "ok" if status == "ok" else "missing" if status == "missing" else "unknown")))
+            state.setAccessibleName(tr(key) + ": " + state.text())
+            row.addWidget(state)
+            row.addStretch(1)
+            btn = None
+            if url and status != "ok":
+                btn = QPushButton(tr("ob_perm_open"))
+                btn.setAccessibleName(tr("ob_perm_open") + ": " + tr(key))
+                btn.clicked.connect(lambda _c=False, u=url: QDesktopServices.openUrl(QUrl(u)))
+                row.addWidget(btn)
+            v.addLayout(row)
+            self.perm_rows[key] = (status, state, btn)
+        if IS_MAC and any(st != "ok" for _k, st, _u in rows):
+            self._text(tr("ob_perm_restart"), v, desc=True)
+        v.addStretch(1)
+        return w
+
+    def _page_mic(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        self._text(tr("ob_mic_hint"), v, desc=True)
+        self.mic_btn = QPushButton(tr("ob_mic_button"))
+        self.mic_btn.clicked.connect(self.start_mic_test)
+        self.mic_btn.setEnabled(self.record_fn is not None)
+        v.addWidget(self.mic_btn, 0, Qt.AlignLeft)
+        self.mic_bar = QProgressBar()
+        self.mic_bar.setRange(0, 100)
+        self.mic_bar.setValue(0)
+        self.mic_bar.setTextVisible(False)
+        self.mic_bar.setAccessibleName(tr("ob_mic_level"))
+        v.addWidget(self.mic_bar)
+        self.mic_result = self._text("", v)
+        v.addStretch(1)
+        return w
+
+    def _page_model(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        state, name = self._models()
+        if state == "ok":
+            text = "✓ " + tr("ob_model_ok", model=name)
+        elif state == "missing":
+            text = tr("err_model_missing", model=name)
+        else:
+            text = tr("ob_model_none")
+        self.model_lbl = self._text(text, v)
+        self.model_btn = None
+        if state != "ok":
+            self.model_btn = QPushButton(tr("ob_model_open"))
+            self.model_btn.clicked.connect(self._go_speech)
+            v.addWidget(self.model_btn, 0, Qt.AlignLeft)
+        v.addStretch(1)
+        return w
+
+    def _page_try(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        self._text(tr("ob_try_hint", chord=self.chord_label), v)
+        self.try_field = QPlainTextEdit()
+        self.try_field.setAccessibleName(tr("ob_try_field"))
+        self.try_field.setPlaceholderText(tr("ob_try_field"))
+        v.addWidget(self.try_field, 1)
+        return w
+
+    # -------------------------------------------------------- Steuerung
+    def go(self, index):
+        index = max(0, min(self.pages.count() - 1, index))
+        self.pages.setCurrentIndex(index)
+        self.title.setText(self._titles[index])
+        self.step_lbl.setText(tr("ob_step", n=index + 1, total=self.pages.count()))
+        self.back_btn.setEnabled(index > 0)
+        last = index == self.pages.count() - 1
+        self.next_btn.setText(tr("ob_finish") if last else tr("ob_next"))
+        if last:
+            self.try_field.setFocus()
+
+    def _next(self):
+        if self.pages.currentIndex() == self.pages.count() - 1:
+            self.accept()
+        else:
+            self.go(self.pages.currentIndex() + 1)
+
+    def start_mic_test(self, run_async=True):
+        """Aufnahme im Hintergrund; das Ergebnis kommt über mic_done zurück.
+        Kein Abspielen, keine Transkription, nichts wird gespeichert."""
+        self.mic_btn.setEnabled(False)
+        self.mic_result.setText(tr("mic_testing"))
+
+        def work():
+            try:
+                self.mic_done.emit(self.record_fn() or b"")
+            except MicTestError as e:
+                self.mic_done.emit(e.args[0])
+            except Exception:  # noqa: BLE001 — Audio-Backend kaputt
+                self.mic_done.emit(tr("err_mic_open"))
+        if run_async:
+            threading.Thread(target=work, daemon=True).start()
+        else:
+            work()
+
+    def _on_mic_done(self, result):
+        self.mic_btn.setEnabled(True)
+        if isinstance(result, str):
+            self.mic_bar.setValue(0)
+            self.mic_result.setText("✕ " + result)
+            return
+        level = clip_level(result)
+        self.mic_bar.setValue(int(round(100 * LevelMeter.to_frac(level))))
+        if len(result) < 8000 or level <= LevelMeter.SILENT_LEVEL:
+            self.mic_result.setText("✕ " + tr("mic_silent"))
+        else:
+            self.mic_result.setText("✓ " + tr("ob_mic_ok"))
 
     def _go_settings(self):
         self.open_settings = True
+        self.open_page = "wake"
+        self.accept()
+
+    def _go_speech(self):
+        self.open_page = "speech"
         self.accept()
 
 

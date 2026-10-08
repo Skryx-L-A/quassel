@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- The first-start window now walks you through setup in five short steps you
+  can skip at any time: the hotkey, the permissions Quassel needs (on macOS
+  with what is still missing and a button to the right System Settings page),
+  a microphone test that shows how loud you were without playing anything
+  back, whether the speech model is ready, and a field to try dictating.
 - macOS: when Secure Input is on (a password field, or Secure Keyboard Entry
   in Terminal), the system hides every key from Quassel and the hotkey does
   nothing. The pill now says so for a few seconds when it starts, and the menu
