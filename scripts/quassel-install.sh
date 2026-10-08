@@ -3,15 +3,17 @@
 #  Quassel — kleiner Online-Installer (Linux) / small online installer
 #
 #  Eine winzige Datei: herunterladen und ausführen. Sie lädt Quassel und richtet
-#  es ein. Standard ist SCHLANK: vorgebaute Engine + ein zur Hardware passendes
-#  Modell (kein Kompilieren). Die großen Offline-Komplettpakete gibt es separat
-#  auf der Release-Seite.
+#  es ein: ein zur Hardware passendes Modell und die Spracherkennungs-Engine.
+#  Hat das Release vorgebaute Engine-Pakete, werden sie geladen; sonst baut der
+#  Installer whisper.cpp (fester Stand) selbst – das dauert einige Minuten und
+#  braucht Compiler, die er mitinstalliert. Die großen Offline-Komplettpakete
+#  gibt es nur für ältere Releases (v2.2.0).
 #
 #  Aufruf:
 #     bash quassel-install.sh                 # schlank (Standard)
 #     bash quassel-install.sh --all           # alle 5 Modelle laden
 #     bash quassel-install.sh --model medium  # bestimmtes Modell
-#     bash quassel-install.sh --build-from-source   # Engine selbst kompilieren
+#     bash quassel-install.sh --build-from-source   # Engine immer selbst kompilieren
 #
 #  (Doppelklick: in vielen Linux-Dateimanagern muss eine .sh erst ausführbar
 #   gemacht werden — `chmod +x quassel-install.sh` — oder im Terminal starten.
@@ -27,7 +29,7 @@ while [[ $# -gt 0 ]]; do
         --build-from-source) PREBUILT=0; shift ;;
         --all)   EXTRA+=(--all); shift ;;
         --model) EXTRA+=(--model "${2:?--model braucht einen Wert}"); shift 2 ;;
-        -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "Unbekannte Option: $1"; exit 1 ;;
     esac
 done
@@ -55,4 +57,7 @@ DIR="$(find "$TMP" -maxdepth 1 -type d -name 'quassel-*' | head -1)"
 
 printf '\033[1;36m==> Installation starten…\033[0m\n'
 cd "$DIR"
-exec bash ./install.sh "${INSTALL_ARGS[@]}"
+# Der Installer kennt den Tag nicht aus dem Archiv; so fragt er die Pakete
+# genau dieses Release ab und nicht "latest".
+export QUASSEL_RELEASE_TAG="$TAG"
+exec bash ./install.sh ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}

@@ -2,6 +2,9 @@
 # whisper-server CUDA 12.x, portabel (UBI8/glibc 2.28). Nutzt gcc-toolset-12
 # (std::filesystem) + CUDA-Treiber-Stub. libcuda.so.1 NICHT bündeln (Treiber).
 set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/whisper-cpp-pin.sh
+source "$HERE/../whisper-cpp-pin.sh"
 export PATH="/usr/local/cuda/bin:$PATH"
 dnf -y install make cmake git gcc-toolset-12 >/dev/null 2>&1
 source /opt/rh/gcc-toolset-12/enable
@@ -12,8 +15,10 @@ ln -sf "$STUB/libcuda.so" "$STUB/libcuda.so.1" 2>/dev/null || true
 export LIBRARY_PATH="$STUB:${LIBRARY_PATH:-}"
 gcc --version | head -1; cmake --version | head -1
 WC=/work/wc
-[ -d "$WC/.git" ] || git clone --depth 1 https://github.com/ggml-org/whisper.cpp "$WC"
+[ -d "$WC/.git" ] || git clone --depth 1 --branch "$WHISPER_CPP_TAG" "$WHISPER_CPP_URL" "$WC"
 cd "$WC"
+[ "$(git rev-parse HEAD)" = "$WHISPER_CPP_COMMIT" ] \
+  || { echo "whisper.cpp $WHISPER_CPP_TAG zeigt nicht auf $WHISPER_CPP_COMMIT"; exit 1; }
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF \
       -DWHISPER_BUILD_SERVER=ON -DGGML_CUDA=1 \
       -DCMAKE_CUDA_ARCHITECTURES="61;70;75;80;86;89" \

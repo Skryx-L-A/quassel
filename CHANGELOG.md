@@ -128,6 +128,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it used to fall back to English even on a German system, because only the
   terminal sets the usual language variable. Windows now asks the system for
   its display language as well.
+- README, INSTALL and the website no longer point Linux and Windows users to offline
+  packages "in the latest release": those exist only for v2.2.0. The pages now say so
+  and link that release, and the Linux quick-installer text describes what it really
+  does (sets up the speech engine, building it when no prebuilt one exists).
+- The Linux quick installer works again. Releases after v2.2.0 never had the
+  prebuilt speech engines it asked for, so the one-line install stopped with
+  "Engine download failed". It now checks the release first and, when the engine
+  package is not there, builds the speech engine itself (a few minutes) and says
+  so. Downloaded engines are checked against a checksum.
+- The Linux installer builds a fixed, known version of whisper.cpp (v1.9.5)
+  instead of whatever was newest that day, and rebuilds it when that version
+  changes. An installation made earlier is moved to the same version on the
+  next run.
+- `./install.sh --model small-q5_1` now also switches an existing installation
+  to that model. Before, it only downloaded the file and left the old model
+  active. Without `--model`, a model you already chose is kept.
 - Windows now runs the same dictation flow as Linux and macOS instead of its own
   copy, which had drifted apart. Three Windows problems go away with it: a failed
   dictation (speech engine not reachable or transcription error) is saved as a
