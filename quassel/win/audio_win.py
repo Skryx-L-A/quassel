@@ -15,15 +15,36 @@ from ..state import RAW, RUNDIR
 
 
 def list_mics():
-    """[(geräte-index-str, beschreibung)] der Eingabegeräte."""
+    """[(stabiler Gerätename, Beschreibung)] der WASAPI-Eingabegeräte."""
     out = []
     try:
+        hosts = sd.query_hostapis()
+        seen = set()
         for i, dev in enumerate(sd.query_devices()):
-            if dev.get("max_input_channels", 0) > 0:
-                out.append((str(i), dev["name"]))
+            host = hosts[dev["hostapi"]]["name"]
+            if (host == "Windows WASAPI" and dev.get("max_input_channels", 0) > 0
+                    and dev["name"] not in seen):
+                out.append((dev["name"], dev["name"]))
+                seen.add(dev["name"])
     except Exception:  # noqa: BLE001 — Audio-Backend kaputt -> leere Liste
         pass
     return out
+
+
+def resolve_mic(mic):
+    """Resolve a saved name against the current device table at each start."""
+    if not mic or mic == "default":
+        return None
+    devices = sd.query_devices()
+    if str(mic).isdigit():  # existing configurations saved an index
+        index = int(mic)
+        return index if index < len(devices) and devices[index].get("max_input_channels", 0) else None
+    hosts = sd.query_hostapis()
+    for index, dev in enumerate(devices):
+        if (dev.get("max_input_channels", 0) > 0 and dev["name"] == mic
+                and hosts[dev["hostapi"]]["name"] == "Windows WASAPI"):
+            return index
+    raise ValueError("configured microphone is unavailable")
 
 
 class Recorder:
@@ -65,12 +86,6 @@ class Recorder:
         self._slot = (self._slot + 1) % len(self._paths)
         self.raw_path = self._paths[self._slot]
         outfile = open(self.raw_path, "wb")
-        device = None
-        if mic and mic != "default":
-            try:
-                device = int(mic)
-            except ValueError:
-                device = mic
 
         # Der Callback schreibt in SEINE Datei (lokale Referenz), nie in die
         # einer späteren Aufnahme.
@@ -79,6 +94,7 @@ class Recorder:
                 outfile.write(bytes(indata))
 
         try:
+            device = resolve_mic(mic)
             stream = sd.RawInputStream(
                 samplerate=RATE, channels=1, dtype="int16",
                 device=device, callback=callback)
