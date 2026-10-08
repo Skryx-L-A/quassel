@@ -26,6 +26,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local speech server provides them. The command line can write SRT or WebVTT,
   including for long files split into processing chunks, and file-processing
   callers can show progress or cancel safely.
+- Optional pre-roll on Linux and macOS: set `QUASSEL_PREROLL_MS=300` (up to
+  2000 ms) to include a short audio buffer before the next dictation starts.
+  The input stays open for three seconds after a dictation. The default is off.
+  On macOS, the microphone indicator remains visible while the input is open.
 - macOS: when Secure Input is on (a password field, or Secure Keyboard Entry
   in Terminal), the system hides every key from Quassel and the hotkey does
   nothing. The pill now says so for a few seconds when it starts, and the menu
@@ -95,6 +99,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   speech server processes are left alone.
 - macOS and Windows keep bounded speech server diagnostic logs in the profile
   data folder to make startup failures easier to diagnose.
+- On macOS and Linux, a detected sleep event now cancels an active dictation;
+  waking checks the microphone selection and local speech server again.
+- macOS now shows a notification and a pill error if its dictation service
+  crashes unexpectedly, with an option to turn dictation back on.
+- A failed transcription now checks whether the local speech server can
+  process a short silence clip. If Quassel owns a failed server child, it
+  restarts it once and retries the dictation once.
+- macOS: selecting the system default microphone now follows changes made
+  between dictations when the device is already in the audio device list.
+- Linux recording now begins before the Bluetooth card check, avoiding a
+  delay that could cut off the first word.
 - The microphone test in the Control Center now says what went wrong instead
   of "Whisper server unreachable" for everything: missing microphone access on
   macOS (with the place to allow it), a microphone that is busy or unplugged, a

@@ -30,8 +30,8 @@ import threading
 import time
 
 from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18n,
-               profiles, progmode, stats, textproc, textreplace, vad, wakeword,
-               whisperclient)
+               power, profiles, progmode, selfheal, stats, textproc, textreplace, vad,
+               wakeword, whisperclient)
 from .audio import RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
@@ -396,6 +396,7 @@ class DictationCore:
         if not self.rec.start(self.cfg.mic):
             self._report_mic_missing()
             return False
+        power.install(self)
         if self.cfg.beep:
             beep.start()                 # aufsteigender Ton: jetzt sprechen
         if sys.platform.startswith("linux"):
@@ -618,6 +619,8 @@ class DictationCore:
         try:
             self._wav_from_raw(data, wav)
             result = whisperclient.transcribe_result(wav, cfg)
+            if result.text is None and selfheal.recover():
+                result = whisperclient.transcribe_result(wav, cfg)
         finally:
             discard(wav)
         raw_text = result.text
