@@ -216,7 +216,8 @@ def start():
               file=sys.stderr, flush=True)
         return False
     env = config.read_serverenv()
-    # -pp/--print-progress (transcript printing) is absent from build_args.
+    # Upstream examples/server/server.cpp defaults print_realtime and
+    # print_progress to false. build_args removes -pr/-pp from config too.
     _proc = subprocess.Popen(
         build_args(env), cwd=os.path.dirname(env["SERVER_BIN"]) or None,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

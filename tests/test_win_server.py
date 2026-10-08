@@ -41,6 +41,7 @@ def test_start_uses_greedy_decode_with_nvidia(tmp_path):
              patch.object(subprocess, "Popen", return_value=proc) as popen:
             server.start()
         args = popen.call_args.args[0]
+        assert not {"-pr", "--print-realtime", "-pp", "--print-progress"} & set(args)
         assert "-bs" in args
         assert args[args.index("-bs") + 1] == "1"
         assert "5" not in args      # der alte Vorgabewert darf nirgends mehr auftauchen

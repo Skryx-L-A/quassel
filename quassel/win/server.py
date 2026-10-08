@@ -375,8 +375,9 @@ def start():
     vad = vad_model_path()
     if vad:                                   # Stille überspringen + keine Halluzinationen
         args += ["--vad", "--vad-model", vad]
-    # whisper-server prints transcripts only with -pp/--print-progress; neither
-    # flag is passed here. Keep startup diagnostics, never request transcript logs.
+    # Upstream examples/server/server.cpp defaults print_realtime and
+    # print_progress to false; -pr would print speech content in real time.
+    # Neither flag is passed here. Source: ggml-org/whisper.cpp server.cpp.
     _proc = subprocess.Popen(
         args, cwd=os.path.dirname(exe), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
