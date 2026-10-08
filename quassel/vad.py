@@ -225,7 +225,7 @@ class Settings:
         self.autostop_silence = autostop_silence
 
 
-def _read_ini():
+def read_ini():
     """config.ini als Parser; unlesbar oder kaputt: leerer Parser. Wirft nie."""
     p = configparser.ConfigParser(interpolation=None)
     try:
@@ -236,7 +236,7 @@ def _read_ini():
     return p
 
 
-def _bool(value, default):
+def as_bool(value, default):
     if isinstance(value, bool):
         return value
     if value is None:
@@ -244,7 +244,7 @@ def _bool(value, default):
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
-def _float(value, default, lo, hi):
+def as_float(value, default, lo, hi):
     try:
         v = float(value)
     except (TypeError, ValueError):
@@ -266,15 +266,15 @@ def settings(cfg=None):
         if value is not None:
             return value
         if ini is None:
-            ini = _read_ini()
+            ini = read_ini()
         return ini.get("vad", key, fallback=default)
 
     backend = str(pick("vad_backend", "backend", "auto")).strip().lower()
     return Settings(
         backend=backend if backend in ("auto", "rms") else "auto",
         silero_model=str(pick("vad_silero_model", "silero_model", "")).strip(),
-        autostop=_bool(pick("vad_autostop", "autostop", False), False),
-        autostop_silence=_float(pick("vad_autostop_silence", "autostop_silence",
+        autostop=as_bool(pick("vad_autostop", "autostop", False), False),
+        autostop_silence=as_float(pick("vad_autostop_silence", "autostop_silence",
                                      AUTOSTOP_SILENCE_DEFAULT),
                                 AUTOSTOP_SILENCE_DEFAULT, *AUTOSTOP_SILENCE_RANGE))
 

@@ -24,6 +24,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a double-tap dictation ends by itself after a pause (`autostop_silence`, default 1.5
   seconds), but only after you have actually spoken, so an accidental start never ends
   an empty recording. Off by default. Works on Windows now; Linux and macOS follow.
+- Optional wake-word detector in front of the speech engine. Instead of transcribing
+  every sentence said in the room, Quassel can listen with a small keyword model
+  (openWakeWord format) and only start the speech engine once it hears the wake word.
+  Quassel does not ship such a model: train or download one, then set `spotter_model`
+  (and optionally `spotter_threshold`, `verify`) under `[wakeword]` in `config.ini`;
+  `onnxruntime` must be installed. Without a model, the wake word works as before.
 
 ### Changed
 - Short hold-to-talk dictations get their text sooner. The live preview used
@@ -133,6 +139,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as it sounds. "Hey Castle", "He Quassel", "Heykassel" or "Ok, hey Quassel" now
   count, while similar-looking but different words ("Hey Russel") and very short
   phrases are held to a stricter match.
+- A wake-word dictation is no longer typed into a window while you have started a keyboard
+  dictation in the meantime. The check now happens right before typing, not only before
+  listening, and the two ways of typing take turns.
 
 ### Security
 - The dictation history file (`history.jsonl`) is now readable by you only.

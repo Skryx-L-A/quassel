@@ -40,7 +40,7 @@ def model_path(configured=""):
     return path if os.path.isfile(path) else None
 
 
-def _import_runtime():
+def import_runtime():
     try:
         import numpy
         import onnxruntime
@@ -49,7 +49,7 @@ def _import_runtime():
     return numpy, onnxruntime
 
 
-def _load_session(path, ort):
+def load_session(path, ort):
     """onnxruntime-Sitzung fuer path, je Modelldatei einmal geladen."""
     try:
         key = (path, os.stat(path).st_mtime)
@@ -124,12 +124,12 @@ def create(configured="", log=None, runtime=None):
     path = model_path(configured)
     if path is None:
         return None
-    np, ort = runtime if runtime is not None else _import_runtime()
+    np, ort = runtime if runtime is not None else import_runtime()
     if ort is None:
         if log:
             log("vad: Silero-Modell gefunden, aber onnxruntime fehlt -> Energieschwelle")
         return None
-    session = _load_session(path, ort)
+    session = load_session(path, ort)
     if session is None or not _compatible(session):
         if log:
             log("vad: Silero-Modell passt nicht (Ein-/Ausgaenge) -> Energieschwelle")

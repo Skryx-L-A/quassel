@@ -6,8 +6,12 @@ aus einer Queue, transcribe() bildet Bytes auf Text ab, insert() haengt an eine
 Liste an. run_once() wird direkt aufgerufen.
 """
 import sys, os
+import threading
+import time
+from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from quassel.wakeword import normalize, match_wake, WakeListener
+from quassel import config
+from quassel.wakeword import normalize, match_wake, WakeListener, InsertGate
 
 
 # ----------------------------------------------------------------- Fakes
@@ -191,6 +195,117 @@ def test_run_once_injected_exception_is_swallowed():
 
     listener = WakeListener(cfg, record_utterance, transcribe, insert)
     assert listener.run_once() is None
+    assert inserted == []
+
+
+# ----------------------------------------------------------- Einfuege-Sperre (G97)
+def test_wake_insert_is_dropped_when_dictation_started_after_recording():
+    """is_busy wurde frueher nur VOR der Aufnahme geprueft: ein inzwischen
+    gestartetes Tastatur-Diktat bekam das Wake-Einfuegen dazwischen."""
+    state = {"busy": False}
+    inserted = []
+    listener = WakeListener(
+        FakeCfg(), lambda: b"a", lambda pcm: "Hey Quassel mach das",
+        inserted.append, is_busy=lambda: state["busy"], gate=InsertGate())
+    real_transcribe = listener._transcribe
+
+    def transcribe(pcm):
+        text = real_transcribe(pcm)
+        state["busy"] = True           # Hotkey gedrueckt, waehrend Whisper rechnete
+        return text
+
+    listener._transcribe = transcribe
+    assert listener.run_once() is None
+    assert inserted == []
+
+
+def test_gate_refuses_a_second_wake_insert_and_a_wake_insert_during_dictation():
+    gate = InsertGate()
+    assert gate.enter_wake() is True
+    assert gate.wake_inserting
+    other = []
+    t = threading.Thread(target=lambda: other.append(gate.enter_wake()))
+    t.start()
+    t.join()
+    assert other == [False]
+    gate.exit_wake()
+    assert not gate.wake_inserting
+    with gate.dictation():
+        assert gate.enter_wake() is False
+    assert gate.enter_wake() is True
+
+
+def test_dictation_waits_for_a_running_wake_insert_then_goes_on():
+    gate = InsertGate()
+    assert gate.enter_wake()
+    order = []
+
+    def keyboard():
+        with gate.dictation(timeout=2.0):
+            order.append("dictation")
+
+    t = threading.Thread(target=keyboard)
+    t.start()
+    time.sleep(0.1)
+    assert order == []                    # wartet auf das Wake-Einfuegen
+    order.append("wake done")
+    gate.exit_wake()
+    t.join(2)
+    assert order == ["wake done", "dictation"]
+
+
+def test_dictation_never_blocks_for_good():
+    gate = InsertGate()
+    assert gate.enter_wake()
+    done = []
+
+    def keyboard():
+        with gate.dictation(timeout=0.05):
+            done.append(1)
+
+    t = threading.Thread(target=keyboard)
+    t.start()
+    t.join(2)
+    assert done == [1]
+
+
+def test_wake_thread_may_pass_through_dictation():
+    """Wake und Tastatur teilen dictation._insert: der Wake-Thread darf durch."""
+    gate = InsertGate()
+    assert gate.enter_wake()
+    with gate.dictation(timeout=0.05):
+        pass
+    gate.exit_wake()
+
+
+def test_followup_recording_uses_its_own_callable():
+    calls = []
+    listener = WakeListener(
+        FakeCfg(), lambda: calls.append("first") or b"a",
+        lambda pcm: {b"a": "Hey Quassel", b"b": "naechster Satz"}[pcm],
+        calls.append, record_followup=lambda: calls.append("followup") or b"b",
+        gate=InsertGate())
+    assert listener.run_once() == "naechster Satz"
+    assert calls == ["first", "followup", "naechster Satz"]
+
+
+def test_spotter_capture_is_verified_by_default_and_trusted_when_verify_is_off(
+        tmp_path, monkeypatch):
+    ini = tmp_path / "config.ini"
+    monkeypatch.setattr(config, "CONFIG", str(ini))
+    for verify, expected in (("true", []), ("false", ["schreib das"])):
+        ini.write_text("[wakeword]\nverify = %s\n" % verify, encoding="utf-8")
+        inserted = []
+        listener = WakeListener(
+            FakeCfg(), lambda: b"a", lambda pcm: "schreib das", inserted.append,
+            gate=InsertGate(), trust_capture=True)
+        listener.run_once()
+        assert inserted == expected, (verify, inserted)
+    # ohne Spotter (trust_capture False) gilt immer die Phrasenpruefung
+    ini.write_text("[wakeword]\nverify = false\n", encoding="utf-8")
+    inserted = []
+    WakeListener(FakeCfg(), lambda: b"a", lambda pcm: "schreib das", inserted.append,
+                 gate=InsertGate()).run_once()
     assert inserted == []
 
 
