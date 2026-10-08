@@ -1,0 +1,346 @@
+"""Audit G102: Per-App-Profile — Datei, Treffer, Überlagerung und ihre
+Wirkung im Diktatpfad. appctx ist überall eine Attrappe; kein Fenster, kein
+Mikrofon, kein Server."""
+import os
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(__file__))
+
+from quassel import appctx, dictation, profiles
+
+TERMINAL = appctx.make("com.apple.Terminal", "Terminal", "Terminal")
+KITTY = appctx.make(process="kitty", wm_class="kitty")
+VSCODE_WIN = appctx.make(process=r"C:\Programs\Code.exe", wm_class="Chrome_WidgetWin_1")
+MAIL = appctx.make("com.apple.mail", "Mail", "Mail")
+BROWSER = appctx.make("org.mozilla.firefox", "firefox", "Firefox")
+
+
+@pytest.fixture(autouse=True)
+def isolated(monkeypatch, tmp_path):
+    """Nie die echte profiles.ini des Nutzers lesen."""
+    monkeypatch.setattr(profiles, "PROFILES", str(tmp_path / "profiles.ini"))
+    profiles._cache["key"] = None
+    yield
+    profiles._cache["key"] = None
+
+
+def write(tmp_path, text):
+    path = tmp_path / "profiles.ini"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+# ------------------------------------------------------------------- parse
+def test_parse_reads_all_settings():
+    [p] = profiles.parse("""
+[profile:Code]
+match = code*, com.microsoft.VSCode
+language = EN
+ai = off
+ai_mode = cleanup
+programmer_mode = on
+punctuation = aus
+allow_enter = no
+""")
+    assert p.name == "Code"
+    assert p.patterns == ("code*", "com.microsoft.vscode")
+    assert p.settings == {"language": "en", "ai": False, "ai_mode": "cleanup",
+                          "programmer_mode": True, "punctuation": False,
+                          "allow_enter": False}
+
+
+def test_parse_skips_invalid_and_disabled():
+    out = profiles.parse("""
+[general]
+x = 1
+[profile:NoMatch]
+language = de
+[profile:Off]
+match = kitty
+enabled = off
+[profile:Bad]
+match = foo
+language = ../etc
+programmer_mode = vielleicht
+ai_mode = off
+""")
+    assert [p.name for p in out] == ["Bad"]
+    assert out[0].settings == {"ai_mode": None}
+    assert profiles.parse("kaputt [") == []
+
+
+def test_defaults_parse_and_cover_terminals_ides_mail():
+    out = profiles.parse(profiles.DEFAULTS)
+    assert [p.name for p in out] == ["Terminal", "IDE", "Mail"]
+    term = profiles.find(TERMINAL, out)
+    assert term.name == "Terminal" and term.allow_enter is False
+    assert term.settings["programmer_mode"] is True
+    assert profiles.find(KITTY, out).name == "Terminal"
+    assert profiles.find(appctx.make(process="WindowsTerminal.exe"), out).name == "Terminal"
+    assert profiles.find(appctx.make(wm_class="gnome-terminal"), out).name == "Terminal"
+    assert profiles.find(VSCODE_WIN, out).name == "IDE"
+    assert profiles.find(appctx.make(wm_class="jetbrains-pycharm"), out).name == "IDE"
+    assert profiles.find(MAIL, out).name == "Mail"
+    assert profiles.find(BROWSER, out) is None
+
+
+# -------------------------------------------------------------- find/match
+def test_first_matching_profile_wins_and_is_case_insensitive():
+    out = profiles.parse("""
+[profile:A]
+match = KIT?Y
+language = de
+[profile:B]
+match = kitty
+language = en
+""")
+    assert profiles.find(KITTY, out).name == "A"
+
+
+def test_unknown_app_never_matches_wildcards():
+    out = profiles.parse("[profile:All]\nmatch = *\nlanguage = de\n")
+    assert profiles.find(appctx.UNKNOWN, out) is None
+    assert profiles.find(None, out) is None
+    assert profiles.find(BROWSER, out).name == "All"
+
+
+# -------------------------------------------------------------- load/write
+def test_missing_file_means_no_profiles(tmp_path):
+    assert profiles.load() == []
+    assert not profiles.exists()
+
+
+def test_load_rereads_after_change(tmp_path):
+    path = write(tmp_path, "[profile:A]\nmatch = kitty\nlanguage = de\n")
+    assert profiles.load(path)[0].settings["language"] == "de"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("[profile:A]\nmatch = kitty\nlanguage = en\n# länger\n")
+    assert profiles.load(path)[0].settings["language"] == "en"
+
+
+def test_write_defaults_is_atomic_and_never_overwrites(tmp_path, monkeypatch):
+    path = str(tmp_path / "sub" / "profiles.ini")
+    calls = []
+    real = profiles.fsutil.atomic_write
+    monkeypatch.setattr(profiles.fsutil, "atomic_write",
+                        lambda p, t: calls.append(p) or real(p, t))
+    assert profiles.write_defaults(path) is True
+    assert calls == [path]
+    assert open(path, encoding="utf-8").read() == profiles.DEFAULTS
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("mine")
+    assert profiles.write_defaults(path) is False
+    assert open(path, encoding="utf-8").read() == "mine"
+
+
+def test_profile_path_sits_next_to_config():
+    assert os.path.dirname(profiles.config.CONFIG) == profiles.config.CONFDIR
+    assert os.path.basename(profiles.PROFILES) == "profiles.ini"
+
+
+# ----------------------------------------------------------------- overlay
+def base_cfg(**kw):
+    values = dict(language="auto", punctuation=True, commands=True,
+                  programmer_mode=False, ai_enabled=True, ai_post_process=False,
+                  ai_post_mode="cleanup", ai_voice_modes=True, mic="default")
+    values.update(kw)
+    return SimpleNamespace(**values)
+
+
+def test_overlay_changes_only_the_layer():
+    cfg = base_cfg()
+    [p] = profiles.parse("""[profile:T]
+match = kitty
+language = de
+programmer_mode = on
+punctuation = off
+ai_mode = email
+allow_enter = off
+""")
+    layer = profiles.overlay(cfg, p)
+    assert (layer.language, layer.programmer_mode, layer.punctuation) == ("de", True, False)
+    assert (layer.ai_post_process, layer.ai_post_mode) == (True, "email")
+    assert layer.mic == "default"                    # nicht genannt -> Basis
+    assert profiles.allow_enter(layer) is False
+    layer.ai_modes_text = "x"                        # Zuweisung bleibt oben
+    assert cfg == base_cfg()                         # Basis unberührt
+    assert profiles.allow_enter(cfg) is True
+
+
+def test_overlay_ai_off_and_mode_off():
+    [p] = profiles.parse("[profile:X]\nmatch = x\nai = off\nai_mode = off\n")
+    layer = profiles.overlay(base_cfg(ai_post_process=True), p)
+    assert layer.ai_enabled is False and layer.ai_post_process is False
+
+
+def test_overlay_without_profile_is_the_base():
+    cfg = base_cfg()
+    assert profiles.overlay(cfg, None) is cfg
+
+
+def test_without_file_the_app_is_not_even_queried():
+    cfg = base_cfg()
+
+    def never():
+        raise AssertionError("appctx must not be asked without profiles.ini")
+    assert profiles.for_active_app(cfg, active_app=never) is cfg
+
+
+def test_for_active_app_logs_name_and_id_only(tmp_path):
+    path = write(tmp_path, profiles.DEFAULTS)
+    logs = []
+    layer = profiles.for_active_app(base_cfg(), active_app=lambda: TERMINAL,
+                                    path=path, log=logs.append)
+    assert layer.programmer_mode is True
+    assert logs == ["profile: Terminal (com.apple.terminal)"]
+
+
+def test_for_active_app_survives_a_failing_query(tmp_path):
+    path = write(tmp_path, profiles.DEFAULTS)
+    cfg = base_cfg()
+
+    def boom():
+        raise RuntimeError("x")
+    assert profiles.for_active_app(cfg, active_app=boom, path=path) is cfg
+    assert profiles.for_active_app(cfg, active_app=lambda: appctx.UNKNOWN, path=path) is cfg
+
+
+def test_strip_trailing_enter():
+    assert profiles.strip_trailing_enter("ls -la\n") == "ls -la"
+    assert profiles.strip_trailing_enter("a\nb\r\n \n") == "a\nb"
+    assert profiles.strip_trailing_enter("a\nb") == "a\nb"
+    assert profiles.strip_trailing_enter("echo hi ") == "echo hi "
+
+
+# ----------------------------------------------------------- Diktatpfad
+from test_dictation_privacy import setup  # noqa: E402
+
+
+def run_dictation(monkeypatch, tmp_path, app, transcript="hallo welt", ini=None,
+                  postprocess=None, **cfg):
+    if ini is not None:
+        write(tmp_path, ini)
+    monkeypatch.setattr(appctx, "active_app", lambda: app)
+    core = setup(monkeypatch, tmp_path, transcript=transcript)
+    if postprocess is not None:
+        monkeypatch.setattr(dictation.textproc, "postprocess", postprocess)
+    for k, v in cfg.items():
+        setattr(core.cfg, k, v)
+    seen = {}
+    real = dictation.whisperclient.transcribe_result
+
+    def spy(wav, c, **kw):
+        seen["language"] = getattr(c, "language", None)
+        return real(wav, c, **kw)
+    monkeypatch.setattr(dictation.whisperclient, "transcribe_result", spy)
+    core.entered = 0
+    core._send_enter = lambda: setattr(core, "entered", core.entered + 1)
+    core._send_backspaces = lambda n: None
+    core.cfg.language = "auto"
+    assert core.start_recording()
+    core.finish_now()
+    return core, seen
+
+
+TERM_INI = """[profile:Terminal]
+match = kitty
+allow_enter = off
+programmer_mode = on
+language = en
+"""
+
+
+def test_without_profiles_file_nothing_changes(monkeypatch, tmp_path):
+    def never():
+        raise AssertionError("no query without profiles.ini")
+    monkeypatch.setattr(appctx, "active_app", never)
+    core = setup(monkeypatch, tmp_path, transcript="ls\n")
+    assert core.start_recording()
+    core.finish_now()
+    assert core.pasted == ["ls\n"]
+
+
+def test_terminal_profile_strips_the_trailing_enter(monkeypatch, tmp_path):
+    core, _ = run_dictation(monkeypatch, tmp_path, KITTY, transcript="ls -la\n",
+                            ini=TERM_INI)
+    assert core.pasted == ["ls -la"]
+    assert core.cfg.programmer_mode is False         # gespeicherte Cfg unberührt
+
+
+def test_terminal_profile_blocks_a_spoken_enter(monkeypatch, tmp_path):
+    core, _ = run_dictation(monkeypatch, tmp_path, KITTY, ini=TERM_INI,
+                            postprocess=lambda raw, cfg: ("command", "enter"))
+    assert core.entered == 0 and core.pasted == []
+    assert core.states[-1][0] == "error"
+
+
+def test_other_apps_still_get_enter(monkeypatch, tmp_path):
+    core, _ = run_dictation(monkeypatch, tmp_path, BROWSER, ini=TERM_INI,
+                            postprocess=lambda raw, cfg: ("command", "enter"))
+    assert core.entered == 1
+
+
+def test_profile_language_reaches_transcription_and_textproc(monkeypatch, tmp_path):
+    got = {}
+
+    def post(raw, cfg):
+        got["language"] = cfg.language
+        return "text", raw
+    _, seen = run_dictation(monkeypatch, tmp_path, KITTY, ini=TERM_INI, postprocess=post)
+    assert seen["language"] == "en"
+    assert got["language"] == "en"
+
+
+def test_profile_programmer_mode_applies_for_this_dictation_only(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(dictation.progmode, "apply_if_addressed",
+                        lambda t: calls.append(t) or t)
+    run_dictation(monkeypatch, tmp_path, KITTY, ini=TERM_INI)
+    assert calls == ["hallo welt"]
+    calls.clear()
+    run_dictation(monkeypatch, tmp_path, BROWSER, ini=TERM_INI)
+    assert calls == []
+
+
+def test_profile_ai_mode_and_ai_off(monkeypatch, tmp_path):
+    modes = []
+    monkeypatch.setattr(dictation.aimodes, "transform",
+                        lambda text, mode, cfg: modes.append(mode) or text.upper())
+    monkeypatch.setattr(dictation.config, "ai_modes_text", lambda: "")
+    ini = """[profile:Mail]
+match = com.apple.mail
+ai_mode = email
+[profile:Quiet]
+match = kitty
+ai = off
+"""
+    core, _ = run_dictation(monkeypatch, tmp_path, MAIL, ini=ini, ai_enabled=True,
+                            ai_voice_modes=False, ai_post_process=False,
+                            ai_post_mode="cleanup")
+    assert modes == ["email"]
+    assert core.pasted == ["hallo welt", "HALLO WELT"]
+    modes.clear()
+    core, _ = run_dictation(monkeypatch, tmp_path, KITTY, ini=ini, ai_enabled=True,
+                            ai_voice_modes=False, ai_post_process=True,
+                            ai_post_mode="cleanup")
+    assert modes == [] and core.pasted == ["hallo welt"]
+
+
+def test_profile_layer_is_cleared_after_the_dictation(monkeypatch, tmp_path):
+    core, _ = run_dictation(monkeypatch, tmp_path, KITTY, ini=TERM_INI)
+    assert core._cfg_now() is core.cfg
+
+
+def test_wake_insert_uses_the_profile_too(monkeypatch, tmp_path):
+    write(tmp_path, TERM_INI)
+    monkeypatch.setattr(appctx, "active_app", lambda: KITTY)
+    core = setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(dictation.textproc, "postprocess",
+                        lambda raw, cfg: ("text", "make test\n"))
+    core._wake_insert("make test")
+    assert core.pasted == ["make test"]
+    assert core._cfg_now() is core.cfg

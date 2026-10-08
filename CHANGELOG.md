@@ -14,6 +14,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Per-app profiles: Quassel can use different settings depending on the app you
+  dictate into. A profile can set the language, turn the AI clean-up on or off or
+  pick an AI mode, switch programmer dictation and spoken punctuation, and forbid
+  Enter. With Enter forbidden (meant for terminals), "press enter" does nothing and
+  a line break at the end of the text is dropped, so a dictated command is never
+  run by accident. Profiles live in `profiles.ini` next to `config.ini`; without
+  that file nothing changes. Ready-made profiles cover terminals, IDEs and mail
+  programs. On Wayland, the active app is only known under Hyprland and Sway;
+  GNOME and KDE keep the normal settings. Window titles are never read.
+
 ### Changed
 - Short hold-to-talk dictations get their text sooner. The live preview used
   to send its first request after two seconds, and the speech engine works on

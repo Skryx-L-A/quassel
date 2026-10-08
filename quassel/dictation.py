@@ -28,8 +28,8 @@ import queue
 import threading
 import time
 
-from . import (aimodes, beep, config, dictprompt, i18n, progmode, stats, textproc,
-               textreplace, vad, wakeword, whisperclient)
+from . import (aimodes, beep, config, dictprompt, i18n, profiles, progmode, stats,
+               textproc, textreplace, vad, wakeword, whisperclient)
 from .audio import RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
@@ -568,6 +568,15 @@ class DictationCore:
             self._after_audio_released()
 
     def _transcribe_and_insert(self, streamer, clip_backup, data, panic):
+        # Per-App-Profil der Anwendung, in die gleich eingefügt wird. Gilt nur
+        # für dieses Diktat und nur auf diesem Thread; self.cfg bleibt, wie es ist.
+        cfg = self._run.cfg = self._profile_cfg()
+        try:
+            return self._transcribe_and_insert_with(cfg, streamer, clip_backup, data, panic)
+        finally:
+            self._run.cfg = None
+
+    def _transcribe_and_insert_with(self, cfg, streamer, clip_backup, data, panic):
         # Beim Kaltstart lädt der Server erst das Modell; eine kurze Frist wäre
         # dort gleichbedeutend mit einem weggeworfenen Diktat.
         deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
@@ -577,7 +586,7 @@ class DictationCore:
         wav = scratch_wav("rec")
         try:
             self._wav_from_raw(data, wav)
-            result = whisperclient.transcribe_result(wav, self.cfg)
+            result = whisperclient.transcribe_result(wav, cfg)
         finally:
             discard(wav)
         raw_text = result.text
@@ -592,8 +601,8 @@ class DictationCore:
             self._state("idle")
             return
         kind, value = postprocess_transcript(
-            raw_text, self.cfg,
-            result.language or getattr(self.cfg, "language", "auto"), data)
+            raw_text, cfg,
+            result.language or getattr(cfg, "language", "auto"), data)
         if kind is None:
             if streamer is not None:
                 self._streaming_restore(clip_backup)
@@ -606,6 +615,13 @@ class DictationCore:
             live_typed = len(streamer.typed) if streamer is not None else 0
             if streamer is not None:
                 self._streaming_restore(clip_backup)
+            if action == "enter" and not profiles.allow_enter(cfg):
+                # Terminal-Schutz: ein gesprochenes Enter führte den Befehl aus.
+                if live_typed:
+                    self._send_backspaces(live_typed)
+                self._log("profile: enter blocked")
+                self._state("error", tr("nothing"))
+                return
             if action == "enter":
                 if live_typed:
                     self._send_backspaces(live_typed)
@@ -622,23 +638,24 @@ class DictationCore:
             else:
                 self._state("error", tr("nothing"))
             return
-        mech = self._refine_mechanical(value)
+        mech = self._finish_text(self._refine_mechanical(value), cfg)
         inserted = True             # Streaming tippt selbst, ohne Rückmeldung
         if streamer is not None:
             # Streaming: KI auf den Endtext, dann Zielfenster exakt darauf bringen.
-            final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
+            final = (self._finish_text(self._ai_refine(mech), cfg)
+                     if cfg.ai_enabled else mech)
             typed = streamer.finish(final)
             self.last_paste_len = len(typed)
             self._streaming_restore(clip_backup)
             value = final
-        elif self.cfg.ai_enabled:
+        elif cfg.ai_enabled:
             # Lokale KI braucht Sekunden. ERST den Rohtext einfügen (solange der
             # Fokus sicher im Zielfeld ist), DANN durch die KI-Fassung ersetzen —
             # sonst landet bei langsamen Modellen nichts mehr im Fenster.
             inserted = self._insert(mech)
             self.last_paste_len = len(mech) if inserted else 0
             self._state("transcribing")
-            final = self._ai_refine(mech)
+            final = self._finish_text(self._ai_refine(mech), cfg)
             if final != mech and inserted:
                 self._send_backspaces(len(mech))
                 inserted = self._insert(final)
@@ -721,11 +738,32 @@ class DictationCore:
                 pass
 
     # ------------------------------------------------------ Nachbearbeitung
+    # Cfg mit Per-App-Profil des laufenden Diktats, je Thread: Aktions- und
+    # Wake-Thread können gleichzeitig arbeiten und haben je ihr eigenes Profil.
+    _run = threading.local()
+
+    def _cfg_now(self):
+        return getattr(self._run, "cfg", None) or self.cfg
+
+    def _profile_cfg(self):
+        """self.cfg mit dem Per-App-Profil der aktiven Anwendung (Audit G102).
+        Ohne profiles.ini ist es self.cfg selbst, die Anwendung wird dann gar
+        nicht erst abgefragt."""
+        return profiles.for_active_app(self.cfg, log=self._log)
+
+    @staticmethod
+    def _finish_text(text, cfg):
+        """Terminal-Schutz: verbietet das Profil Enter, kein Umbruch am Ende."""
+        if profiles.allow_enter(cfg):
+            return text
+        return profiles.strip_trailing_enter(text)
+
     def _refine_mechanical(self, text):
         """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
-        if self.cfg.programmer_mode:
+        cfg = self._cfg_now()
+        if cfg.programmer_mode:
             text = progmode.apply_if_addressed(text)
-        if self.cfg.text_replace:
+        if cfg.text_replace:
             rules = config.replacement_rules()
             if rules:
                 text = textreplace.apply_rules(text, rules)
@@ -733,28 +771,30 @@ class DictationCore:
 
     def _refine(self, text):
         """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
+        cfg = self._cfg_now()
         text = self._refine_mechanical(text)
-        if self.cfg.ai_enabled:
+        if cfg.ai_enabled:
             text = self._ai_refine(text)
-        return text
+        return self._finish_text(text, cfg)
 
     def _ai_refine(self, text):
         """Lokale KI-Nachbearbeitung (Ollama): Sprach-Modus ('als E-Mail', …) hat
         Vorrang, sonst optional ein Auto-Modus auf jedes Diktat. Schlägt etwas fehl
         oder läuft Ollama nicht, bleibt der Rohtext (KI darf nie Worte verlieren)."""
+        cfg = self._cfg_now()
         self.cfg.ai_modes_text = config.ai_modes_text()
         mode, remaining = None, text
-        if self.cfg.ai_voice_modes:
+        if cfg.ai_voice_modes:
             m, rest = aimodes.detect_voice_mode(text)
             if m is None:
                 m, rest = self._detect_custom_voice(text)
             if m:
                 mode, remaining = m, rest
-        if mode is None and self.cfg.ai_post_process:
-            mode = self.cfg.ai_post_mode
+        if mode is None and cfg.ai_post_process:
+            mode = cfg.ai_post_mode
         if mode is None or not remaining.strip():
             return text
-        return aimodes.transform(remaining, mode, self.cfg)
+        return aimodes.transform(remaining, mode, cfg)
 
     def _detect_custom_voice(self, text):
         """Eigenen Modusnamen als Eröffnungsphrase erkennen ('tweet: …')."""
@@ -842,7 +882,14 @@ class DictationCore:
                                self._wav_from_raw, self._log)
 
     def _wake_insert(self, raw_text):
-        kind, value = postprocess_transcript(raw_text, self.cfg)
+        cfg = self._run.cfg = self._profile_cfg()
+        try:
+            self._wake_insert_with(cfg, raw_text)
+        finally:
+            self._run.cfg = None
+
+    def _wake_insert_with(self, cfg, raw_text):
+        kind, value = postprocess_transcript(raw_text, cfg)
         if kind != "text" or not value.strip():
             return
         value = self._refine(value)
