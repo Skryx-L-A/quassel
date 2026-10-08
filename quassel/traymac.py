@@ -1,14 +1,49 @@
 """macOS menu bar icon via QSystemTrayIcon.
 
-Status line (non-clickable): Bereit/Aufnahme
-Menu items: Ausschalten, Diktat sofort beenden, Kontrollzentrum öffnen, Beenden
+Status line (non-clickable): Ready/Recording/…
+Menu items: Turn off, Stop dictation now, Open Control Center, Quit Quassel
+(English or German, following the app language; retranslate() after a switch).
 Icon: monochromatic template-style for native macOS menu bar rendering.
 """
+import ctypes
 import os
 import sys
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+
+from .i18n import tr
+
+STATUS_KEYS = {
+    "ready": "tray_ready",
+    "recording": "tray_recording",
+    "transcribing": "tray_transcribing",
+    "done": "tray_done",
+    "error": "tray_error",
+    "off": "tray_off",
+}
+
+
+CARBON = "/System/Library/Frameworks/Carbon.framework/Carbon"
+_secure_fn = []
+
+
+def secure_input_enabled():
+    """Ist irgendwo „Sichere Eingabe" an (Passwortfeld, Terminal mit
+    „Sichere Tastatureingabe")? Dann liefert macOS keinem Event-Tap mehr
+    Tasten, der Diktier-Hotkey kommt nicht an (H120). Reine Abfrage über
+    Carbon/HIToolbox, systemweit gültig; False, wenn nicht ermittelbar."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        if not _secure_fn:
+            fn = ctypes.cdll.LoadLibrary(CARBON).IsSecureEventInputEnabled
+            fn.restype = ctypes.c_bool
+            fn.argtypes = []
+            _secure_fn.append(fn)
+        return bool(_secure_fn[0]())
+    except (OSError, AttributeError):
+        return False
 
 
 def _create_mic_icon(size=22, dpr=2.0):
@@ -65,12 +100,13 @@ class TrayMenu(QSystemTrayIcon):
         self.on_open_center = on_open_center
         self.on_quit = on_quit
         self.mode = "ready"  # ready, recording, off, error, transcribing
+        self.secure_input = False
 
         # Create menu
         self.menu = QMenu()
 
         # Status label (non-clickable separator)
-        self.status_action = self.menu.addAction("Bereit")
+        self.status_action = self.menu.addAction(tr("tray_ready"))
         self.status_action.setEnabled(False)
 
         self.menu.addSeparator()
@@ -78,20 +114,20 @@ class TrayMenu(QSystemTrayIcon):
         # Toggle on/off (only when the app provides a controller callback)
         self.toggle_action = None
         if on_toggle is not None:
-            self.toggle_action = self.menu.addAction("Ausschalten", on_toggle)
+            self.toggle_action = self.menu.addAction(tr("turn_off"), on_toggle)
 
         # Not-Aus: beendet eine laufende Aufnahme auch dann, wenn der Hotkey
         # nicht mehr reagiert (schickt SIGUSR2 an den Daemon-Prozess).
         self.panic_action = None
         if on_panic is not None:
-            self.panic_action = self.menu.addAction("Diktat sofort beenden",
-                                                    on_panic)
+            self.panic_action = self.menu.addAction(tr("tray_panic"), on_panic)
 
         # Open control center
-        self.menu.addAction("Kontrollzentrum öffnen", self.on_open_center)
+        self.open_action = self.menu.addAction(tr("tray_open_center"),
+                                               self.on_open_center)
 
         # Quit
-        self.menu.addAction("Beenden", self.on_quit)
+        self.quit_action = self.menu.addAction(tr("quit"), self.on_quit)
 
         self.setContextMenu(self.menu)
 
@@ -118,18 +154,29 @@ class TrayMenu(QSystemTrayIcon):
             text: optional detail text (ignored in status line)
         """
         self.mode = mode
-        status_map = {
-            "ready": "Bereit",
-            "recording": "Aufnahme",
-            "transcribing": "Transkription",
-            "done": "Fertig",
-            "error": "Fehler",
-            "off": "Aus",
-        }
-        self.status_action.setText(status_map.get(mode, "Bereit"))
+        status = tr(STATUS_KEYS.get(mode, "tray_ready"))
+        if self.secure_input and mode != "off":
+            status += " · " + tr("tray_secure")
+        self.status_action.setText(status)
         if self.toggle_action is not None:
             self.toggle_action.setText(
-                "Einschalten" if mode == "off" else "Ausschalten")
+                tr("turn_on") if mode == "off" else tr("turn_off"))
+
+    def refresh_secure_input(self, query=None):
+        """Statuszeile um „Sichere Eingabe aktiv" ergänzen, solange sie an ist."""
+        on = (query or secure_input_enabled)()
+        if on != self.secure_input:
+            self.secure_input = on
+            self.set_mode(self.mode)
+        return on
+
+    def retranslate(self):
+        """Nach einem Wechsel der App-Sprache alle Menütexte neu setzen."""
+        if self.panic_action is not None:
+            self.panic_action.setText(tr("tray_panic"))
+        self.open_action.setText(tr("tray_open_center"))
+        self.quit_action.setText(tr("quit"))
+        self.set_mode(self.mode)
 
 
 def start_tray(app, on_open_center, on_quit, on_toggle=None, on_panic=None):

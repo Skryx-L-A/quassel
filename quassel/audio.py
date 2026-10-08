@@ -125,10 +125,19 @@ def newest_raw():
     return best
 
 
-def rms_level(window_s=0.15):
+# Wächst die Rohdatei so lange nicht mehr, liefert die Aufnahme nichts (Gerät
+# verklemmt, Stream tot): rms_level() meldet dann 0 statt des letzten Werts,
+# damit die Pille die Stille zeigt und nicht einen eingefrorenen Ausschlag.
+LEVEL_STALE_S = 0.5
+
+
+def rms_level(window_s=0.15, now=None):
     """Pegel 0.0–1.0 aus dem Ende der laufenden Roh-Aufnahme (für die Pille)."""
     raw = newest_raw()
     try:
+        now = time.time() if now is None else now
+        if now - os.path.getmtime(raw) > LEVEL_STALE_S:
+            return 0.0
         size = os.path.getsize(raw)
         n = int(RATE * SAMPLE_BYTES * window_s)
         with open(raw, "rb") as f:
@@ -145,6 +154,43 @@ def rms_level(window_s=0.15):
         acc += s * s
     rms = (acc / len(samples)) ** 0.5
     return min(rms / 8000.0, 1.0)
+
+
+class LevelPump:
+    """Misst während einer Aufnahme den Pegel (rms_level) und reicht ihn
+    LEVEL_HZ-mal je Sekunde an publish weiter — im Daemon an
+    state.level_set, unter Windows an die Pille im selben Prozess.
+
+    Läuft als eigener Thread, damit die Messung weder die Hotkey-Schleife
+    noch die Live-Vorschau aufhält. Ein Fehler beim Messen oder Melden
+    beendet nur die Anzeige, nie das Diktat."""
+
+    def __init__(self, publish, hz=15, level=None):
+        self.publish = publish
+        self.interval = 1.0 / hz
+        self.level = level or rms_level
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        self._thread = threading.Thread(target=self._run, name="level-pump",
+                                        daemon=True)
+        self._thread.start()
+        return self
+
+    def _run(self):
+        while not self._stop.wait(self.interval):
+            try:
+                self.publish(self.level())
+            except Exception as e:  # noqa: BLE001 — Anzeige darf nie stören
+                _log("audio: Pegelanzeige aus (%s)" % e)
+                return
+
+    def stop(self):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
 
 
 def _sd():

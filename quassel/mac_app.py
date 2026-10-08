@@ -16,7 +16,8 @@ import subprocess
 import sys
 import time
 
-from . import audio, profile, server_mac
+from . import audio, config, i18n, profile, server_mac
+from .i18n import tr
 from .state import state_read
 
 DAEMON_STOP_TIMEOUT = 5
@@ -31,16 +32,59 @@ RESTART_LIMIT = 5
 # Nur dieser Code bedeutet „bitte neu starten"; wer den Daemon von außen beendet,
 # bekommt ihn nicht ungefragt zurück.
 DAEMON_RESTART_EXIT = 3
-RESTART_GIVEUP_HINT = ("Diktat-Dienst startet wiederholt neu, bitte Log prüfen: "
-                       "~/Library/Logs/Quassel/daemon.log")
+
+# Ausgaben des Daemon-Kindprozesses (bei Start über Finder/open gingen sie
+# sonst verloren). Je Profil getrennt, wie alle übrigen Verzeichnisse.
+LOG_DIR = os.path.expanduser("~/Library/Logs/" + profile.dirname("Quassel"))
+# Rotation: ab ~1 MB wandert das Log nach daemon.log.1 (und das vorige nach
+# .2); höchstens drei Dateien, also rund 3 MB. Windows rotiert sein
+# debug.log ab derselben Größe (win/app.py).
+LOG_MAX_BYTES = 1_000_000
+LOG_KEEP = 2
 
 # Finder startet Apps mit minimalem PATH (/usr/bin:/bin:...) — ohne die
 # Homebrew-Pfade findet shutil.which("ffmpeg") nichts. Die Aufnahme braucht
 # ffmpeg seit dem sounddevice-Backend nicht mehr; die Datei-Transkription
 # von Nicht-WAV-Formaten schon. ffmpeg wird bewusst NICHT mitgebündelt.
 BREW_PATHS = ["/opt/homebrew/bin", "/usr/local/bin"]
-FFMPEG_HINT = ("ffmpeg fehlt — ohne ffmpeg keine Aufnahme.\n"
-               "Installieren: brew install ffmpeg")
+
+
+def daemon_log_path():
+    return os.path.join(LOG_DIR, "daemon.log")
+
+
+def rotate_log(path, max_bytes=LOG_MAX_BYTES, keep=LOG_KEEP):
+    """Ist das Log größer als max_bytes, eine Generation weiterschieben
+    (path -> path.1 -> path.2, die älteste fällt weg). True, wenn rotiert.
+
+    Kopieren und Kürzen statt Umbenennen: der laufende Daemon hält die Datei
+    offen und schriebe nach einem Umbenennen weiter in die alte. Er hat sie
+    mit O_APPEND geöffnet ("ab"), also landet jede Zeile nach dem Kürzen
+    wieder am Dateianfang, ohne Loch. Was genau zwischen Kopieren und Kürzen
+    geschrieben wird, geht verloren; bei einem Log ist das hinnehmbar."""
+    try:
+        if os.path.getsize(path) <= max_bytes:
+            return False
+        for i in range(keep - 1, 0, -1):
+            older = "%s.%d" % (path, i)
+            if os.path.exists(older):
+                os.replace(older, "%s.%d" % (path, i + 1))
+        shutil.copyfile(path, path + ".1")
+        with open(path, "r+b") as f:
+            f.truncate(0)
+        return True
+    except OSError as e:
+        print("mac_app: Log nicht rotierbar: %s" % e, file=sys.stderr, flush=True)
+        return False
+
+
+def restart_giveup_hint():
+    path = daemon_log_path().replace(os.path.expanduser("~"), "~", 1)
+    return tr("daemon_giveup", path=path)
+
+
+def ffmpeg_hint():
+    return tr("ffmpeg_missing")
 
 
 def frozen():
@@ -80,8 +124,8 @@ def check_ffmpeg(tray):
     if shutil.which("ffmpeg"):
         return True
     if tray is not None:
-        tray.showMessage("Quassel", FFMPEG_HINT)
-    print("mac_app: " + FFMPEG_HINT.replace("\n", " "),
+        tray.showMessage("Quassel", ffmpeg_hint())
+    print("mac_app: " + ffmpeg_hint().replace("\n", " "),
           file=sys.stderr, flush=True)
     return False
 
@@ -114,9 +158,9 @@ class MacApp:
         # (erwischt auch Kinder des Daemons wie ffmpeg).
         # stderr/stdout in Logdatei: bei Start über Finder/open ginge die
         # Ausgabe (u.a. fehlende TCC-Freigaben) sonst verloren.
-        log_dir = os.path.expanduser("~/Library/Logs/" + profile.dirname("Quassel"))
-        os.makedirs(log_dir, exist_ok=True)
-        with open(os.path.join(log_dir, "daemon.log"), "ab") as log_f:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        rotate_log(daemon_log_path())
+        with open(daemon_log_path(), "ab") as log_f:
             self.daemon = subprocess.Popen(daemon_command(), cwd=self._repo,
                                            start_new_session=True,
                                            stdout=log_f, stderr=log_f)
@@ -151,6 +195,7 @@ class MacApp:
         gestartet."""
         if not self.enabled or self.daemon is None:
             return
+        rotate_log(daemon_log_path())     # billig: ein stat je Aufruf
         if self.daemon.poll() is None:
             return
         code = self.daemon.returncode
@@ -170,7 +215,7 @@ class MacApp:
             self.enabled = False
             self._sync_ui()
             if self.tray is not None:
-                self.tray.showMessage("Quassel", RESTART_GIVEUP_HINT)
+                self.tray.showMessage("Quassel", restart_giveup_hint())
             return
         self._restarts.append(now)
         print("mac_app: Daemon beendet (code=%s) -> Neustart (%d in %d Minuten)"
@@ -200,6 +245,12 @@ class MacApp:
             self.pill.on = self.enabled
             self.pill.set_mode(mode)
 
+    def retranslate(self):
+        """Das Kontrollzentrum hat die App-Sprache gewechselt (es läuft im
+        selben Prozess und hat i18n schon umgestellt): Menü nachziehen."""
+        if self.tray is not None and hasattr(self.tray, "retranslate"):
+            self.tray.retranslate()
+
     def open_center(self):
         """Kontrollzentrum IM Prozess öffnen (wie die Windows-Tray-App) —
         nur so bekommt es den controller und kann an/aus schalten."""
@@ -224,6 +275,8 @@ class MacApp:
         st = state_read()
         s = st.get("state", "idle")
         self.tray.set_mode("ready" if s == "idle" else s, st.get("text", ""))
+        if hasattr(self.tray, "refresh_secure_input"):
+            self.tray.refresh_secure_input()
 
     def shutdown(self):
         """Kindprozesse beenden — idempotent (Signal-Handler UND das Ende von
@@ -249,6 +302,8 @@ def main():
     app.setApplicationName("Quassel")
     app.setQuitOnLastWindowClosed(False)   # Menüleisten-App: kein Fenster nötig
     app.setWindowIcon(pill_qt.app_icon())
+    lang = config.Cfg().ui_language
+    i18n.set_language(None if lang == "auto" else lang)
 
     augment_path()
     mac = MacApp(app)

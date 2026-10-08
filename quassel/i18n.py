@@ -1,9 +1,19 @@
 """Tiny bilingual string table (English base, German translation).
 
-UI language: config [ui] language = auto|en|de; auto follows the system locale.
+UI language: config [ui] language = auto|en|de; auto follows the system:
+LC_ALL / LC_MESSAGES as explicit overrides, then the language chosen in the
+operating system (macOS AppleLanguages, Windows UI language), then LANG and
+the C locale.
 """
+import functools
 import locale
 import os
+import subprocess
+import sys
+
+SUPPORTED = ("en", "de")
+# Auf macOS gewinnt ein Eintrag "<key>_mac" über "<key>" (Tastennamen).
+IS_MAC = sys.platform == "darwin"
 
 STRINGS = {
     "app_name": ("Quassel", "Quassel"),
@@ -20,12 +30,19 @@ STRINGS = {
     "pill_movable": ("Pill can be moved", "Pille frei verschiebbar"),
     "pill_click_center": ("Click on the pill opens the control center",
                            "Klick auf die Pille öffnet das Kontrollzentrum"),
+    "pill_movable_linux": ("On Linux only the portable pill can be moved, and only under X11. The standard pill always sits at the bottom center of the active screen.",
+                           "Unter Linux lässt sich nur die Pille der portablen Fassung verschieben, und nur unter X11. Die Standard-Pille sitzt immer unten mittig auf dem aktiven Bildschirm."),
     "pill_reset_pos": ("Reset position", "Position zurücksetzen"),
     "pill_preview": ("Show live preview text in the pill", "Live-Vorschautext in der Pille zeigen"),
     "sec_hotkey": ("Hotkey", "Hotkey"),
     "chord_ctrl_meta": ("Ctrl + Meta (Windows key)", "Strg + Meta (Windows-Taste)"),
     "chord_alt_meta": ("Alt + Meta", "Alt + Meta"),
     "chord_ctrl_alt": ("Ctrl + Alt", "Strg + Alt"),
+    # macOS: dieselben Chords mit den Namen der Mac-Tastatur (tr() wählt die
+    # _mac-Variante dort automatisch). Meta ist auf dem Mac die Befehlstaste.
+    "chord_ctrl_meta_mac": ("Control + Command (⌃⌘)", "Control + Befehl (⌃⌘)"),
+    "chord_alt_meta_mac": ("Option + Command (⌥⌘)", "Wahl + Befehl (⌥⌘)"),
+    "chord_ctrl_alt_mac": ("Control + Option (⌃⌥)", "Control + Wahl (⌃⌥)"),
     "sec_dictating": ("While dictating", "Beim Diktieren"),
     "mute_label": ("Audio", "Audio"),
     "mute_off": ("Do nothing", "Nichts ändern"),
@@ -62,13 +79,41 @@ STRINGS = {
     "model_switched": ("Model switched: {model}", "Modell gewechselt: {model}"),
     "download_failed": ("Download failed: {err}", "Download fehlgeschlagen: {err}"),
     "sec_mic": ("Microphone", "Mikrofon"),
+    "mic_refresh": ("Refresh microphone list", "Mikrofonliste aktualisieren"),
     "mic_default": ("System default (follows sound settings)", "System-Standard (folgt den Soundeinstellungen)"),
     "mic_test": ("Test microphone (records 2.5 s)", "Mikrofon testen (2,5 s Aufnahme)"),
     "mic_testing": ("Recording… speak now!", "Aufnahme läuft… jetzt sprechen!"),
     "mic_transcribing": ("Transcribing…", "Transkribiere…"),
     "mic_nothing": ("No audio captured — check your microphone!", "Keine Audiodaten — Mikrofon prüfen!"),
     "mic_result": ("Recognized: {text}", "Erkannt: {text}"),
+    "mic_silent": ("No sound from the microphone. Check mute, the selected input and microphone access.",
+                   "Kein Ton vom Mikrofon. Stummschaltung, gewähltes Gerät und Mikrofonfreigabe prüfen."),
     "no_server": ("Whisper server unreachable", "Whisper-Server nicht erreichbar"),
+    # --- Konkrete Fehlermeldungen (H113): was ist los, was hilft ---
+    "err_server_down": ("The speech server isn't answering. If Quassel just started, it may still be loading the model. Try again in a moment.",
+                        "Der Sprach-Server antwortet nicht. Kurz nach dem Start lädt er eventuell noch das Modell. Gleich noch einmal versuchen."),
+    "err_model_missing": ("The speech model is missing ({model}). Choose a model under Speech recognition to download it.",
+                          "Das Sprachmodell fehlt ({model}). Unter Spracherkennung ein Modell wählen, dann wird es geladen."),
+    "err_timeout": ("The speech server took too long to answer. A smaller model is faster.",
+                    "Der Sprach-Server hat zu lange gebraucht. Ein kleineres Modell ist schneller."),
+    "err_transcribe": ("The speech server couldn't transcribe this recording.",
+                       "Der Sprach-Server konnte diese Aufnahme nicht umwandeln."),
+    "err_mic_denied": ("Quassel isn't allowed to use the microphone. Allow it in System Settings → Privacy & Security → Microphone.",
+                       "Quassel darf das Mikrofon nicht benutzen. Freigabe in Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon."),
+    "err_mic_open": ("The microphone couldn't be opened. Another app may be using it, or it was unplugged.",
+                     "Das Mikrofon ließ sich nicht öffnen. Vielleicht nutzt es eine andere App, oder es wurde abgezogen."),
+    "err_recorder_missing": ("The recording program is missing: {tool}.",
+                             "Das Aufnahmeprogramm fehlt: {tool}."),
+    # Einfügen gescheitert, Text liegt aber in der Zwischenablage (D57)
+    "paste_clipboard_only": ("Text is on the clipboard – press Ctrl+V",
+                             "Text liegt in der Zwischenablage – Strg+V drücken"),
+    "err_paste_blocked": ("The text couldn't be inserted. On macOS, allow Quassel in System Settings → Privacy & Security → Accessibility. The text is on the clipboard.",
+                          "Der Text ließ sich nicht einfügen. Unter macOS Quassel in Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen freigeben. Der Text liegt in der Zwischenablage."),
+    # macOS-Rechte (hotkey_mac.py), mit dem tatsächlich eingestellten Chord
+    "perm_input_monitoring": ("Quassel needs the “Input Monitoring” permission to notice the dictation hotkey ({chord}). Allow it in System Settings → Privacy & Security → Input Monitoring, then restart Quassel.",
+                              "Quassel braucht die Berechtigung „Eingabeüberwachung“, um den Diktier-Hotkey ({chord}) zu erkennen. Bitte in Systemeinstellungen → Datenschutz & Sicherheit → Eingabeüberwachung freigeben und Quassel danach neu starten."),
+    "perm_accessibility": ("Quassel needs the “Accessibility” permission to insert dictated text. Allow it in System Settings → Privacy & Security → Accessibility, then restart Quassel.",
+                           "Quassel braucht die Berechtigung „Bedienungshilfen“, um diktierten Text einzufügen. Bitte in Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen freigeben und Quassel danach neu starten."),
     "no_mic": ("No microphone — is it on and connected?",
                "Kein Mikrofon — ist es an und verbunden?"),
     "sec_dict": ("Personal dictionary", "Persönliches Wörterbuch"),
@@ -101,8 +146,27 @@ STRINGS = {
     "rescued": ("recording saved: {path}", "Aufnahme gesichert: {path}"),
     "nothing_running": ("No dictation is running", "Es läuft kein Diktat"),
     "ready": ("Quassel ready", "Quassel bereit"),
+    # --- macOS-Menüleiste ---
+    "tray_ready": ("Ready", "Bereit"),
+    "tray_recording": ("Recording", "Aufnahme"),
+    "tray_transcribing": ("Transcribing", "Transkription"),
+    "tray_done": ("Done", "Fertig"),
+    "tray_error": ("Error", "Fehler"),
+    "tray_off": ("Off", "Aus"),
+    # Not-Aus im Tray-Menü (macOS traymac.py, Windows win/app.py)
+    "tray_panic": ("Stop dictation now", "Diktat sofort beenden"),
+    "tray_open_center": ("Open Control Center", "Kontrollzentrum öffnen"),
+    "tray_secure": ("Secure input is on, hotkey paused", "Sichere Eingabe aktiv, Hotkey pausiert"),
+    "secure_input": ("Secure input is on (a password field, or Secure Keyboard Entry in Terminal). Quassel can't hear the hotkey until it ends.",
+                     "Sichere Eingabe ist aktiv (Passwortfeld oder „Sichere Tastatureingabe“ im Terminal). Quassel hört den Hotkey erst danach wieder."),
+    # --- macOS-App (Hinweise der Menüleisten-App) ---
+    "daemon_giveup": ("The dictation service keeps restarting. Please check the log: {path}",
+                      "Der Diktat-Dienst startet wiederholt neu, bitte Log prüfen: {path}"),
+    "ffmpeg_missing": ("ffmpeg is missing, so nothing can be recorded.\nInstall it with: brew install ffmpeg",
+                       "ffmpeg fehlt, ohne ffmpeg keine Aufnahme.\nInstallieren: brew install ffmpeg"),
     "settings": ("Settings", "Einstellungen"),
     "quit": ("Quit Quassel", "Quassel beenden"),
+    "nav_sections": ("Sections", "Bereiche"),
     "nav_general": ("General", "Allgemein"),
     "nav_speech": ("Speech", "Spracherkennung"),
     "nav_dict": ("Dictionary", "Wörterbuch"),
@@ -248,22 +312,88 @@ _lang = None
 
 def set_language(lang):
     global _lang
-    _lang = lang if lang in ("en", "de") else None
+    _lang = lang if lang in SUPPORTED else None
+
+
+def _tag(loc):
+    """'de_DE.UTF-8', 'de-CH', 'German_Germany' -> 'de'; unbekannt -> ''."""
+    loc = (loc or "").strip().lower()
+    if loc.startswith("german"):            # Windows: locale.getlocale()
+        return "de"
+    if loc.startswith("english"):
+        return "en"
+    code = loc.replace("-", "_").split("_")[0].split(".")[0]
+    return code if code in SUPPORTED else ""
+
+
+def _parse_apple_languages(out):
+    """Ausgabe von `defaults read -g AppleLanguages` -> ['de-DE', 'en-US']."""
+    langs = []
+    for line in out.splitlines():
+        item = line.strip().strip("(),").strip().strip('"')
+        if item:
+            langs.append(item)
+    return langs
+
+
+def _langid_to_tag(langid):
+    """Windows-LANGID -> 'de'/'en'/'' (Primärsprache in den unteren 10 Bit)."""
+    return {0x07: "de", 0x09: "en"}.get(langid & 0x3FF, "")
+
+
+def _query_os_ui_languages():
+    """Sprachen der Systemoberfläche in Vorzugsreihenfolge.
+
+    macOS: ein Start aus dem Finder setzt kein LANG, die Wahl in den
+    Systemeinstellungen steht nur in AppleLanguages (NSLocale). Windows:
+    GetUserDefaultUILanguage. Linux: nichts — dort gilt LANG."""
+    if sys.platform == "darwin":
+        try:
+            from Foundation import NSLocale
+            return [str(x) for x in NSLocale.preferredLanguages()]
+        except Exception:  # noqa: BLE001 — ohne pyobjc über defaults
+            pass
+        out = subprocess.run(["defaults", "read", "-g", "AppleLanguages"],
+                             capture_output=True, text=True, timeout=2,
+                             check=False).stdout
+        return _parse_apple_languages(out)
+    if os.name == "nt":
+        import ctypes
+        tag = _langid_to_tag(ctypes.windll.kernel32.GetUserDefaultUILanguage())
+        return [tag] if tag else []
+    return []
+
+
+@functools.lru_cache(maxsize=1)
+def _os_ui_languages():
+    """Einmal je Prozess abfragen: tr() läuft bei jedem Neuzeichnen."""
+    try:
+        return tuple(_query_os_ui_languages())
+    except Exception:  # noqa: BLE001 — Erkennung darf die App nie stoppen
+        return ()
 
 
 def current():
     if _lang:
         return _lang
-    loc = os.environ.get("LC_ALL") or os.environ.get("LANG") or ""
+    for var in ("LC_ALL", "LC_MESSAGES"):
+        if os.environ.get(var):
+            return _tag(os.environ[var]) or "en"
+    for lang in _os_ui_languages():
+        if _tag(lang):
+            return _tag(lang)
+    loc = os.environ.get("LANG") or ""
     if not loc:
         try:
             loc = locale.getlocale()[0] or ""
         except ValueError:
             loc = ""
-    return "de" if loc.lower().startswith("de") else "en"
+    return _tag(loc) or "en"
 
 
 def tr(key, **kw):
+    if IS_MAC and key + "_mac" in STRINGS:
+        key += "_mac"
     en, de = STRINGS.get(key, (key, key))
     s = de if current() == "de" else en
     return s.format(**kw) if kw else s

@@ -14,7 +14,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- macOS: when Secure Input is on (a password field, or Secure Keyboard Entry
+  in Terminal), the system hides every key from Quassel and the hotkey does
+  nothing. The pill now says so for a few seconds when it starts, and the menu
+  bar status line shows "Secure input is on, hotkey paused" for as long as it
+  lasts.
+
 ### Changed
+- The pill now shows your real microphone level while you dictate instead of a
+  fixed animation. If nothing arrives from the microphone for 1.5 seconds, the
+  bars turn into a flat amber line and the pill says so, so a muted or wrong
+  microphone, or missing microphone access, is visible right away instead of
+  after a dictation that comes back empty.
 - Short hold-to-talk dictations get their text sooner. The live preview used
   to send its first request after two seconds, and the speech engine works on
   one request at a time: if you let go while that preview was being worked on,
@@ -34,6 +46,56 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- The microphone test in the Control Center now says what went wrong instead
+  of "Whisper server unreachable" for everything: missing microphone access on
+  macOS (with the place to allow it), a microphone that is busy or unplugged, a
+  missing speech model, a server that is still starting, or a recording the
+  server could not transcribe.
+- Linux: turning off "Click on the pill opens the control center" now also
+  works for the standard pill. The settings page also explains that on Linux
+  only the portable pill can be moved, and only under X11.
+- The microphone list in the Control Center has a Refresh button, so a
+  microphone you plug in shows up without reopening the window. A saved
+  microphone that is unplugged at the moment stays selected instead of being
+  silently replaced by the system default.
+- The Control Center works better with screen readers and the keyboard: every
+  field has a name, labels are linked to their fields (clicking a label moves
+  the focus there), the keyboard focus is visible in the sidebar and on the
+  main button, and the grey help texts and the amber beta warning now have
+  enough contrast in light and dark mode. The beta warning used to reach only
+  about 2:1 on a light background.
+- Moving the pill size or transparency slider now saves once when you let go
+  (or after a short pause when you use the arrow keys), and typing an AI model
+  name saves after you stop typing. Each step used to rewrite the settings file
+  and make the dictation service reload it, dozens of times per drag. A remote
+  AI address you have confirmed is no longer asked about again on every change.
+- The text bubble above the pill (live preview, results, hints) now has its
+  dark background behind the text again and stays readable when the pill
+  itself is set almost transparent. The background was drawn as a small piece
+  in a corner, so the text stood on whatever was on your screen.
+- The pill is easier to read without relying on color or motion: each state
+  has its own shape (off, ready, transcribing, done, error), screen readers get
+  its name and current state, and with "Reduce motion" turned on in the system
+  settings the pill stops animating and shows the level as a calm bar.
+- On macOS the dictation service log (`~/Library/Logs/Quassel/daemon.log`) no
+  longer grows without limit. From about 1 MB on it moves to `daemon.log.1`,
+  the one before to `daemon.log.2`; older logs are dropped, so it takes up
+  about 3 MB at most.
+- On macOS the hotkey is now named with Mac keys: "Control + Command (⌃⌘)",
+  "Option + Command (⌥⌘)" and "Control + Option (⌃⌥)". The Control Center used
+  to call it "Ctrl + Meta (Windows key)".
+- The macOS warnings about a missing ffmpeg and about a dictation service that
+  keeps restarting are now shown in English as well, and the restart warning
+  points to the log file that is actually used.
+- The macOS menu bar menu is now in English or German, following the app
+  language, and switches right away when you change the language in the
+  Control Center. It used to be German only ("Bereit", "Ausschalten",
+  "Beenden"). The last item is now called "Quit Quassel".
+- On macOS, Quassel now follows the language you picked in System Settings when
+  the app language is set to "Automatic". Started from the Finder or at login,
+  it used to fall back to English even on a German system, because only the
+  terminal sets the usual language variable. Windows now asks the system for
+  its display language as well.
 - Windows now runs the same dictation flow as Linux and macOS instead of its own
   copy, which had drifted apart. Three Windows problems go away with it: a failed
   dictation (speech engine not reachable or transcription error) is saved as a
