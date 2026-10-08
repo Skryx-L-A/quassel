@@ -160,7 +160,11 @@ def build_args(env):
     """Serverargumente aus server.env (Spiegel der systemd-ExecStart-Zeile)."""
     args = [env["SERVER_BIN"], "-m", env["MODEL_PATH"],
             "-t", env.get("WHISPER_THREADS", "4")]
-    args += env.get("WHISPER_DECODE", "-nf").split()
+    # Even an older/custom server.env must not enable transcript printing in
+    # the diagnostic log. whisper.cpp defaults both print switches to false.
+    print_switches = {"-pr", "--print-realtime", "-pp", "--print-progress"}
+    args += [arg for arg in env.get("WHISPER_DECODE", "-nf").split()
+             if arg not in print_switches]
     vad = env.get("VAD_MODEL", "")
     if vad and os.path.exists(vad):
         args += ["--vad", "--vad-model", vad]

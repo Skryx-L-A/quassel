@@ -15,5 +15,7 @@ def test_mac_log_rotates_while_streaming(tmp_path, monkeypatch):
 
 
 def test_mac_args_do_not_enable_transcript_printing():
-    args = server_mac.build_args({"SERVER_BIN": "/offline/server", "MODEL_PATH": "/offline/model"})
+    args = server_mac.build_args({"SERVER_BIN": "/offline/server", "MODEL_PATH": "/offline/model",
+                                  "WHISPER_DECODE": "-bs 1 -pr --print-progress"})
+    assert "-pr" not in args and "--print-realtime" not in args
     assert "-pp" not in args and "--print-progress" not in args
