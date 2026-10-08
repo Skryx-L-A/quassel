@@ -300,6 +300,13 @@ def test_mic_is_bluetooth_by_name_positive():
     assert pm.mic_is_bluetooth("Bluetooth Headset Mic") is True
 
 
+def test_coreaudio_uses_absolute_framework_path(monkeypatch):
+    paths = []
+    monkeypatch.setattr(pm.ctypes, "CDLL", lambda path: paths.append(path) or object())
+    assert pm._coreaudio_lib() is not None
+    assert paths == ["/System/Library/Frameworks/CoreAudio.framework/CoreAudio"]
+
+
 def test_mic_is_bluetooth_by_name_negative():
     assert pm.mic_is_bluetooth("MacBook Pro Microphone") is False
 

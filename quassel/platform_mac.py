@@ -6,7 +6,6 @@ Accessibility/Input-Monitoring-Sonderrechte für reines Senden braucht, wohl
 aber für globale Hotkeys (siehe hook.py-Äquivalent).
 """
 import ctypes
-import ctypes.util
 import subprocess
 import threading
 import time
@@ -310,10 +309,12 @@ _kAudioDeviceTransportTypeBluetoothLE = _fourcc("blea")
 
 
 def _coreaudio_lib():
-    path = ctypes.util.find_library("CoreAudio")
-    if not path:
+    # A fixed system framework path also works in a frozen app, where
+    # find_library() may not see the host frameworks.
+    try:
+        return ctypes.CDLL("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")
+    except OSError:
         return None
-    return ctypes.CDLL(path)
 
 
 def _get_property_uint32(lib, object_id, selector):

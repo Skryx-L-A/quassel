@@ -84,6 +84,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Bluetooth microphones are recognized in the packaged macOS app even when
+  framework discovery is unavailable.
 - On Wayland systems with a recent wl-copy, Linux marks dictated clipboard
   text as sensitive so compatible clipboard managers can omit it from history.
 - Linux leaves images, files and rich clipboard contents alone when inserting
