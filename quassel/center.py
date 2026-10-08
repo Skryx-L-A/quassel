@@ -646,14 +646,16 @@ class Center(QMainWindow):
 
         g = self.group(tr("sec_mic"), lay)
         self.mic = self.guard(QComboBox())
-        self.mic.addItem(tr("mic_default"), "default")
-        for name, desc in list_mics():
-            self.mic.addItem(desc, name)
-            if name == self.cfg.mic:
-                self.mic.setCurrentIndex(self.mic.count() - 1)
+        self._fill_mics(self.cfg.mic)
         self.mic.currentIndexChanged.connect(self.save_settings)
         self.mic.setAccessibleName(tr("sec_mic"))
-        g.addWidget(self.mic)
+        mic_row = QHBoxLayout()
+        mic_row.addWidget(self.mic, 1)
+        self.mic_refresh = QPushButton(tr("ai_refresh"))
+        self.mic_refresh.setAccessibleName(tr("mic_refresh"))
+        self.mic_refresh.clicked.connect(self.on_mic_refresh)
+        mic_row.addWidget(self.mic_refresh)
+        g.addLayout(mic_row)
         test = QPushButton(tr("mic_test"))
         test.clicked.connect(self.on_mictest)
         g.addWidget(test)
@@ -678,6 +680,24 @@ class Center(QMainWindow):
 
         lay.addStretch(1)
         return scroll
+
+    def _fill_mics(self, selected):
+        """Mikrofonliste neu aufbauen. Ein gespeichertes Gerät, das gerade
+        nicht angeschlossen ist, bleibt als Eintrag ausgewählt — sonst setzte
+        schon das Öffnen des Fensters die Wahl still auf den Standard zurück."""
+        self.mic.blockSignals(True)
+        self.mic.clear()
+        self.mic.addItem(tr("mic_default"), "default")
+        for name, desc in list_mics():
+            self.mic.addItem(desc, name)
+        if selected not in ("", "default") and self.mic.findData(selected) < 0:
+            self.mic.addItem(selected, selected)
+        self.select_data(self.mic, selected)
+        self.mic.blockSignals(False)
+
+    def on_mic_refresh(self):
+        """Neu angeschlossene Mikrofone ohne Neustart des Fensters zeigen."""
+        self._fill_mics(self.mic.currentData())
 
     # -------------------------------------------------- Seite: Wörterbuch
     def page_dict(self):

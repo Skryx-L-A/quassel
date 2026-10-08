@@ -77,6 +77,7 @@ STRINGS = {
     "model_switched": ("Model switched: {model}", "Modell gewechselt: {model}"),
     "download_failed": ("Download failed: {err}", "Download fehlgeschlagen: {err}"),
     "sec_mic": ("Microphone", "Mikrofon"),
+    "mic_refresh": ("Refresh microphone list", "Mikrofonliste aktualisieren"),
     "mic_default": ("System default (follows sound settings)", "System-Standard (folgt den Soundeinstellungen)"),
     "mic_test": ("Test microphone (records 2.5 s)", "Mikrofon testen (2,5 s Aufnahme)"),
     "mic_testing": ("Recording… speak now!", "Aufnahme läuft… jetzt sprechen!"),

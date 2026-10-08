@@ -230,3 +230,31 @@ def test_primary_button_shows_keyboard_focus(qapp, isolated_cfg):
         assert "QPushButton:focus" in c.toggle_btn.styleSheet()
     finally:
         c.close()
+
+
+# ------------------------------------------- H122 Mikrofonliste aktualisieren
+def test_mic_list_can_be_refreshed_and_keeps_the_choice(qapp, isolated_cfg, monkeypatch, saves):
+    mics = [("usb", "USB-Mikrofon")]
+    monkeypatch.setattr(center, "list_mics", lambda: list(mics))
+    config.save({("speech", "mic"): "usb"})
+    saves.clear()
+    c = center.Center()
+    try:
+        assert c.mic.currentData() == "usb"
+        mics.append(("headset", "Headset"))           # neu angesteckt
+        c.mic_refresh.click()
+        assert c.mic.findData("headset") >= 0
+        assert c.mic.currentData() == "usb"
+        assert saves == []                              # Aktualisieren speichert nichts
+    finally:
+        c.close()
+
+
+def test_unplugged_saved_mic_stays_selected(qapp, isolated_cfg, monkeypatch, saves):
+    monkeypatch.setattr(center, "list_mics", lambda: [])
+    config.save({("speech", "mic"): "usb"})
+    c = center.Center()
+    try:
+        assert c.mic.currentData() == "usb"
+    finally:
+        c.close()

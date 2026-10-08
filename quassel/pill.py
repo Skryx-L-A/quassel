@@ -2,10 +2,11 @@
 (an Wispr Flow orientiert).
 
 - Folgt dem aktiven Monitor (KWin-Skript meldet Fensteraktivierung per D-Bus)
-- Linksklick: Diktat ein-/ausschalten · Rechtsklick: Kontrollzentrum öffnen
-- Zustände: grauer Punkt (aus) · heller Punkt (bereit) · rotes Glühen +
-  Wellenform mit echtem Mikrofon-Pegel + Live-Transkript (Aufnahme) ·
-  „…" (Transkription) · kurz das Ergebnis
+- Linksklick: Kontrollzentrum öffnen (abschaltbar) · Rechtsklick: Diktat an/aus
+- Zustände: fünf Balken, je Zustand eigene Form — graue flache Punkte (aus) ·
+  ruhige Pine-Welle (bereit) · echter Mikrofonpegel + Live-Transkript
+  (Aufnahme; flache Bernstein-Linie + Hinweis, wenn nichts ankommt) ·
+  gleichmäßige Reihe (Transkription) · kurz das Ergebnis
 - Größe/Transparenz/Sichtbarkeit aus config.ini ([pill]), live übernommen
 
 Wayland-Overlay über gtk4-layer-shell (KWin/GNOME/wlroots), Fallback:

@@ -40,6 +40,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- The microphone list in the Control Center has a Refresh button, so a
+  microphone you plug in shows up without reopening the window. A saved
+  microphone that is unplugged at the moment stays selected instead of being
+  silently replaced by the system default.
 - The Control Center works better with screen readers and the keyboard: every
   field has a name, labels are linked to their fields (clicking a label moves
   the focus there), the keyboard focus is visible in the sidebar and on the
