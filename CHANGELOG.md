@@ -14,6 +14,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Dictated questions and instruction-override examples now stay exactly as
+  spoken when text cleanup or number formatting would change them.
+
 ### Added
 - Per-app profiles: the "While dictating" page has a button that creates the
   profiles file with the default profiles (terminal, mail, editor and so on) if
@@ -44,6 +48,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with what is still missing and a button to the right System Settings page),
   a microphone test that shows how loud you were without playing anything
   back, whether the speech model is ready, and a field to try dictating.
+- The optional text-cleanup benchmark can save case IDs and safety outcomes
+  without saving dictated or generated text, and now reports how often the
+  cleanup model was called.
 - A command-line client can show Quassel's local status, manage the dictionary
   and installed speech-model selection, transcribe an existing file, and safely
   request the Linux service toggle or emergency stop. It never starts a
