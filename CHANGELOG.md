@@ -20,6 +20,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing. The pill now says so for a few seconds when it starts, and the menu
   bar status line shows "Secure input is on, hotkey paused" for as long as it
   lasts.
+- Prepared an optional, default-off dictation clean-up path with conservative
+  German and English filler removal, number formatting, and a protected local
+  AI step. When a clean-up result fails validation, the original dictation is
+  kept. The settings and insertion flow still need to be connected before this
+  option appears in the app.
 
 ### Changed
 - The pill now shows your real microphone level while you dictate instead of a
