@@ -66,6 +66,8 @@ app = BUNDLE(
         "NSMicrophoneUsageDescription":
             "Quassel nimmt deine Stimme über das Mikrofon auf und wandelt sie "
             "lokal auf diesem Mac in Text um (Diktat). Es werden keine "
-            "Audiodaten ins Internet gesendet.",
+            "Audiodaten ins Internet gesendet. / Quassel records your voice "
+            "through the microphone and converts it to text locally on this "
+            "Mac for dictation. No audio is sent over the internet.",
     },
 )

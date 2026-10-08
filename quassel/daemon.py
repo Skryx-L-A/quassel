@@ -248,7 +248,7 @@ class Daemon(dictation.DictationCore):
         from .hotkey_mac import MacHotkeyListener, check_permissions
         # Prüft Lesen (Eingabeüberwachung) UND Senden (Bedienungshilfen);
         # benachrichtigt je fehlender Freigabe, degradiert nur, stürzt nie ab.
-        missing = check_permissions()
+        missing = check_permissions(chord_name=self.cfg.chord)
         if missing:
             log("mac: fehlende TCC-Freigaben: " + ", ".join(missing))
         state_set("idle")

@@ -57,6 +57,7 @@ import sys
 import threading
 import time
 
+from .i18n import tr
 from .win.machine import ChordMachine
 
 # macOS Virtual-Keycodes (Carbon/HIToolbox kVK_*), links + rechts getrennt
@@ -146,7 +147,7 @@ def _ax_trusted(request):
     return None
 
 
-def check_permissions(request=True):
+def check_permissions(request=True, chord_name="ctrl+meta"):
     """Liste fehlender TCC-Freigaben (leer = alles erteilt):
       'input-monitoring'  — Events LESEN (CGEventTap, der Diktier-Hotkey)
       'accessibility'     — Events SENDEN (CGEventPost; ohne sie verwirft
@@ -175,11 +176,12 @@ def check_permissions(request=True):
         if request and hasattr(Quartz, "CGRequestListenEventAccess"):
             Quartz.CGRequestListenEventAccess()
         _log("mac-hotkey: Berechtigung 'Eingabeüberwachung' fehlt -> Chord-Hotkey inaktiv")
-        _notify_mac(
-            "Quassel braucht die Berechtigung „Eingabeüberwachung“, um den "
-            "Diktier-Hotkey (Strg+Cmd) zu erkennen. Bitte in den Systemeinstellungen "
-            "unter Datenschutz & Sicherheit → Eingabeüberwachung freigeben und "
-            "Quassel danach neu starten.")
+        label_key = {
+            "ctrl+meta": "chord_ctrl_meta_mac",
+            "alt+meta": "chord_alt_meta_mac",
+            "ctrl+alt": "chord_ctrl_alt_mac",
+        }.get(chord_name, "chord_ctrl_meta_mac")
+        _notify_mac(tr("perm_input_monitoring", chord=tr(label_key)))
 
     # Senden (Bedienungshilfen)
     if hasattr(Quartz, "CGPreflightPostEventAccess"):
@@ -195,10 +197,7 @@ def check_permissions(request=True):
         missing.append("accessibility")
         _log("mac-hotkey: Berechtigung 'Bedienungshilfen' fehlt -> Einfügen "
              "(Cmd+V) würde von macOS still verworfen")
-        _notify_mac(
-            "Quassel braucht die Berechtigung „Bedienungshilfen“, um diktierten "
-            "Text einzufügen. Bitte in den Systemeinstellungen unter Datenschutz "
-            "& Sicherheit → Bedienungshilfen freigeben und Quassel danach neu starten.")
+        _notify_mac(tr("perm_accessibility"))
 
     if "input-monitoring" in missing:
         _open_privacy_pane("Privacy_ListenEvent")
