@@ -53,6 +53,21 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   GNOME and KDE keep the normal settings. Window titles are never read.
   kept. The path now runs before a single final insertion when explicitly
   enabled in the configuration file; control center settings are still pending.
+- Optional neural voice detection (Silero VAD) for the wake word and hands-free auto-stop.
+  Quassel does not ship the model and never downloads it: put `silero_vad.onnx` into the
+  models folder (or set `silero_model` under `[vad]` in `config.ini`) and install
+  `onnxruntime` yourself. Without either, the built-in loudness threshold keeps working
+  as before. `backend = rms` under `[vad]` switches the neural detector off.
+- Optional hands-free auto-stop: with `autostop = true` under `[vad]` in `config.ini`,
+  a double-tap dictation ends by itself after a pause (`autostop_silence`, default 1.5
+  seconds), but only after you have actually spoken, so an accidental start never ends
+  an empty recording. Off by default. Works on Windows now; Linux and macOS follow.
+- Optional wake-word detector in front of the speech engine. Instead of transcribing
+  every sentence said in the room, Quassel can listen with a small keyword model
+  (openWakeWord format) and only start the speech engine once it hears the wake word.
+  Quassel does not ship such a model: train or download one, then set `spotter_model`
+  (and optionally `spotter_threshold`, `verify`) under `[wakeword]` in `config.ini`;
+  `onnxruntime` must be installed. Without a model, the wake word works as before.
 
 ### Changed
 - AI-enhanced dictation now finishes processing before inserting text once.
@@ -255,6 +270,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   they are addressed as "Quassel, Enter" or "Quassel, Undo".
 - When German or English is selected for speech, spoken punctuation now uses
   only that language's rules.
+- The wake word's speech detection counts a connected stretch of speech instead of adding
+  up every loud moment. Clicks and bumps spread over a few seconds used to add up to "the
+  user is speaking"; now they do not, and a click during the pause after a sentence no
+  longer keeps the recording open. The loudness threshold follows the room's background
+  noise and works the same on Linux, macOS and Windows.
+- The wake word is recognised more reliably when the speech engine writes the made-up word
+  as it sounds. "Hey Castle", "He Quassel", "Heykassel" or "Ok, hey Quassel" now
+  count, while similar-looking but different words ("Hey Russel") and very short
+  phrases are held to a stricter match.
+- A wake-word dictation is no longer typed into a window while you have started a keyboard
+  dictation in the meantime. The check now happens right before typing, not only before
+  listening, and the two ways of typing take turns.
 
 ### Security
 - The dictation history file (`history.jsonl`) is now readable by you only.

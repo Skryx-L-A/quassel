@@ -283,6 +283,7 @@ class DictationCore:
     _sync_action = None
     _runner = None              # ActionRunner, wo die Plattform einen nutzt
     _handsfree = False          # Freihand-Modus (Doppeltipp) im laufenden Diktat
+    _autostop = None            # vad.AutoStop im Freihand-Modus (Schalter [vad] autostop)
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -407,6 +408,7 @@ class DictationCore:
         self.ducker.apply(self.cfg.mute_mode)
         self.streamer = None
         self._handsfree = False
+        self._autostop = None
         self.partial = self._new_partial()
         self.partial.start()
         self._state("recording")
@@ -416,6 +418,7 @@ class DictationCore:
         """Beim Wechsel in den Freihand-Modus: Streaming starten, falls
         eingeschaltet. (Im Halten-Modus technisch unmöglich -> nie hier.)"""
         self._handsfree = True
+        self._arm_autostop()
         if (self.streamer is not None or not self.cfg.streaming
                 or self._cleanup_active() or self.cfg.ai_enabled):
             return
@@ -431,6 +434,45 @@ class DictationCore:
     def _type_chunk_no_enter(self, chunk):
         """Umbrüche als Leerzeichen tippen, Länge bleibt (Backspace-Abgleich)."""
         self._type_chunk(chunk.translate(_NO_ENTER))
+
+    def _arm_autostop(self):
+        """Auto-Stopp nach Stille im Freihand-Modus scharf stellen -- nur wenn
+        der Schalter an ist ([vad] autostop, Vorgabe aus). Ein Fehler hier darf
+        den Wechsel in den Freihand-Modus nie stoeren."""
+        try:
+            self._autostop = vad.make_autostop(self.cfg, self._autostop_read, log=self._log)
+        except Exception as exc:    # noqa: BLE001
+            self._autostop = None
+            self._log("dict: auto-stop not armed: %r" % exc)
+
+    def _autostop_read(self, offset):
+        """Neue Rohdaten der laufenden Aufnahme ab Byte offset (nur der Rest,
+        nicht die ganze Datei: Freihand-Aufnahmen werden lang)."""
+        path = getattr(self.rec, "running_path", None) or self.rec.raw_path
+        try:
+            with open(path, "rb") as f:
+                f.seek(offset)
+                return f.read()
+        except OSError:
+            return b""
+
+    def autostop_due(self):
+        """True, wenn das Freihand-Diktat nach erkannter Sprache lange genug still
+        ist. Die Plattform fragt das regelmaessig auf dem Thread, der auch den
+        Chord-Druck zum Beenden verarbeitet, und beendet dann wie bei einem
+        zweiten Druck. Ohne Schalter oder ausserhalb des Freihand-Modus immer False."""
+        stop = self._autostop
+        if stop is None or not self._handsfree or not self.rec.active:
+            return False
+        if not stop.due():
+            if stop.error is not None and not getattr(stop, "logged", False):
+                stop.logged = True
+                self._log("dict: auto-stop off for this dictation: %r" % stop.error)
+            return False
+        if not getattr(stop, "logged", False):
+            stop.logged = True
+            self._log("dict: auto-stop after %.1fs of silence" % stop.detector.silence_sec)
+        return True
 
     def cancel_recording(self, reason_key):
         # Wie finish(): läuft synchron auf dem Ereignis-Thread und zählt
@@ -1155,6 +1197,9 @@ class ChordPump(threading.Thread):
             if item is not None and self.is_enabled():
                 vk, pressed = item
                 self.machine.key(vk, pressed, now)
+            due = getattr(self.core, "autostop_due", None)
+            if due is not None and due():
+                self._autostop_finish()
             self.machine.poll(now)
             pending, self._pending = self._pending, []
         for name, cb in pending:
@@ -1162,6 +1207,14 @@ class ChordPump(threading.Thread):
             if callable(rest):
                 self.runner.submit(name, rest)
         self.last_event_tick = time.monotonic()
+
+    def _autostop_finish(self):
+        """Wie der zweite Druck im Freihand-Modus: die Maschine geht in Ruhe und
+        meldet das Beenden beim naechsten Poll-Tick. Der Aufrufer haelt das Lock."""
+        m = self.machine
+        if m.state in ("toggle", "toggle_armed"):
+            m.state = "idle"
+            m.pending_finish = True
 
     def _run_sync(self, name, cb):
         self.current_sync = name
