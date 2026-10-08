@@ -55,6 +55,12 @@ PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
 # Mindestabstands -- genug Puffer für eine kurze Verlangsamung, aber die
 # Vorschau meldet sich spätestens nach 10 s wieder.
 PARTIAL_MAX_WAIT = 10.0
+# Halten-Modus: Vorschau erst ab dieser Aufnahmedauer (Audit C44). whisper-
+# server arbeitet Anfragen nacheinander ab; läuft beim Loslassen gerade ein
+# Teiltranskript, wartet das Finale dahinter — auf der CPU Sekunden. Kurze
+# Halten-Diktate (die meisten) enden sonst oft genau während der ersten
+# Vorschau bei 2 s. Freihand-Diktate sind lang, dort bleibt die Vorschau.
+PREVIEW_HOLD_MIN = 4.0
 
 # Vorlauf verwerfen + Ende puffern. WICHTIG: läuft VAD (serverseitig), entfernt
 # es Stille/BT-Ramp am Anfang selbst — dann NUR unseren eigenen Start-Ton
@@ -156,6 +162,9 @@ class PartialLoop(threading.Thread):
         self.owner = owner
         self.wav_path = wav_path
         self.stop_event = threading.Event()
+        # Seit wann läuft ein Teiltranskript am Server (None = keins)? Das
+        # Finale wartet dahinter; finish() schreibt die Dauer ins Log.
+        self.inflight_since = None
 
     def run(self):
         wav_path = self.wav_path or scratch_wav("partial")
@@ -186,6 +195,9 @@ class PartialLoop(threading.Thread):
                 # (spart auf schwacher CPU viel Last, die sonst das Finale bremst).
                 if self.owner.streamer is None and not self.cfg.pill_preview:
                     continue
+                if not getattr(self.owner, "_handsfree", False) and \
+                        time.monotonic() - self.rec.started < PREVIEW_HOLD_MIN:
+                    continue
                 data = self.rec.raw_bytes()
                 if len(data) < RATE * SAMPLE_BYTES // 2:   # < 0,5 s
                     continue
@@ -201,7 +213,11 @@ class PartialLoop(threading.Thread):
                 # ihm in die Warteschlange des Servers stellen.
                 if self.stop_event.is_set() or not self.rec.active:
                     return
-                result = whisperclient.transcribe_result(wav_path, self.cfg, timeout=20)
+                self.inflight_since = time.monotonic()
+                try:
+                    result = whisperclient.transcribe_result(wav_path, self.cfg, timeout=20)
+                finally:
+                    self.inflight_since = None
                 raw = result.text
                 # Ehrlich bleiben: die HTTP-Anfrage selbst lässt sich
                 # clientseitig nicht abbrechen, sie läuft am Server so oder so
@@ -248,6 +264,7 @@ class DictationCore:
     _panic_flag = None
     _sync_action = None
     _runner = None              # ActionRunner, wo die Plattform einen nutzt
+    _handsfree = False          # Freihand-Modus (Doppeltipp) im laufenden Diktat
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -367,6 +384,7 @@ class DictationCore:
         self._vad = self._server_vad()
         self.ducker.apply(self.cfg.mute_mode)
         self.streamer = None
+        self._handsfree = False
         self.partial = self._new_partial()
         self.partial.start()
         self._state("recording")
@@ -375,6 +393,7 @@ class DictationCore:
     def enable_streaming(self):
         """Beim Wechsel in den Freihand-Modus: Streaming starten, falls
         eingeschaltet. (Im Halten-Modus technisch unmöglich -> nie hier.)"""
+        self._handsfree = True
         if self.streamer is not None or not self.cfg.streaming:
             return
         self._clip_backup = self._streaming_begin()
@@ -484,6 +503,13 @@ class DictationCore:
 
     def _finish_capture(self):
         if self.partial:
+            # C44: läuft gerade ein Teiltranskript, wartet das Finale dahinter.
+            # Die Anfrage selbst lässt sich nicht zurückholen; festhalten, wie
+            # oft und wie lange das vorkommt.
+            since = getattr(self.partial, "inflight_since", None)
+            if since is not None:
+                self._log("dict: Vorschau lief beim Loslassen seit %.2fs"
+                          % (time.monotonic() - since))
             self.partial.stop()
             self.partial = None
         # Streamer und die zugehörige Zwischenablagen-Sicherung EINMAL übernehmen:

@@ -15,6 +15,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Short hold-to-talk dictations get their text sooner. The live preview used
+  to send its first request after two seconds, and the speech engine works on
+  one request at a time: if you let go while that preview was being worked on,
+  the final transcription waited behind it, on a CPU for seconds. When you hold
+  the hotkey, the preview now starts only after four seconds; hands-free
+  dictation keeps it from the start.
 - Programmer dictation no longer rewrites ordinary prose. With the mode on, "Punkt gleich
   wichtig" became ".= wichtig" and "at" became "@" in every sentence. Code is now only
   formatted when you start the dictation with "Code:". If you relied on the mode being

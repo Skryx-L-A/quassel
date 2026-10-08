@@ -41,6 +41,7 @@ class FakeStopEvent:
 class FakeRecorder:
     def __init__(self):
         self.active = True
+        self.started = 0.0
 
     def raw_bytes(self):
         return b"\x00" * (RATE * SAMPLE_BYTES * 2)   # 2s Audio, > 0,5s Minimum
@@ -50,10 +51,12 @@ class FakeOwner:
     """Ablaufsteuerung-Attrappe: nur die Plattform-Anbindung, die die
     Vorschau benutzt (WAV schreiben, Zustand melden)."""
 
-    def __init__(self):
+    def __init__(self, handsfree=True):
         self.streamer = None
         self.states = []
         self.wav_hook = None
+        # Freihand: die Halten-Sperre (C44) greift nicht, alte Tests bleiben gültig.
+        self._handsfree = handsfree
 
     def _wav_from_raw(self, data, path):
         if self.wav_hook is not None:
@@ -76,6 +79,9 @@ def make_loop(monkeypatch, stop_after=1):
 
 
 def make_clock(monkeypatch, values):
+    """values: Schleifenstart und Ende eines Durchlaufs; dazwischen liest die
+    Schleife die Uhr noch einmal für die Laufzeit-Markierung (C44)."""
+    values = [values[0], values[0]] + list(values[1:])
     it = iter(values)
     monkeypatch.setattr(daemon_mod.time, "monotonic", lambda: next(it))
 
@@ -182,3 +188,56 @@ def test_normal_run_still_transcribes_and_updates_state(monkeypatch):
 
     assert transcribe_calls == [daemon_mod.scratch_wav("partial")]
     assert pl.owner.states == [("recording", "hallo welt")]
+
+
+# ------------------------------------------------- C44: Halten-Modus
+def _hold_loop(monkeypatch, now):
+    pl, rec = make_loop(monkeypatch, stop_after=1)
+    pl.owner._handsfree = False
+    rec.started = 100.0
+    calls = []
+    monkeypatch.setattr(daemon_mod.whisperclient, "transcribe",
+                         lambda path, cfg, timeout=20: calls.append(path) or "hallo")
+    monkeypatch.setattr(daemon_mod.time, "monotonic", lambda: now)
+    return pl, calls
+
+
+def test_short_hold_dictation_gets_no_preview_request(monkeypatch):
+    """Kurze Halten-Diktate enden oft während der ersten Vorschau; deren
+    Anfrage hielte das Finale am Server auf."""
+    pl, calls = _hold_loop(monkeypatch, 100.0 + daemon_mod.PREVIEW_HOLD_MIN - 0.5)
+    pl.run()
+    assert calls == []
+
+
+def test_long_hold_dictation_gets_its_preview(monkeypatch):
+    pl, calls = _hold_loop(monkeypatch, 100.0 + daemon_mod.PREVIEW_HOLD_MIN + 0.5)
+    pl.run()
+    assert len(calls) == 1
+
+
+def test_inflight_marker_is_set_only_during_the_request(monkeypatch):
+    pl, rec = make_loop(monkeypatch, stop_after=1)
+    seen = []
+    monkeypatch.setattr(daemon_mod.whisperclient, "transcribe",
+                         lambda path, cfg, timeout=20: seen.append(pl.inflight_since) or "x")
+    pl.run()
+    assert seen and seen[0] is not None
+    assert pl.inflight_since is None
+
+
+def test_finish_logs_a_running_preview(monkeypatch):
+    from types import SimpleNamespace as NS
+    logs = []
+    core = daemon_mod.DictationCore.__new__(daemon_mod.DictationCore)
+    core._log = logs.append
+    core.partial = NS(inflight_since=daemon_mod.time.monotonic() - 1.0,
+                      stop=lambda: None)
+    core.rec = NS(stop=lambda: None, raw_bytes=lambda path=None: b"")
+    core.cfg = NS(beep=False)
+    core.ducker = NS(restore=lambda: None)
+    core._state = lambda *a: None
+    core._notify = lambda t: None
+    monkeypatch.setattr(daemon_mod, "TAIL_PAD_MS", 0)
+    assert core._finish_capture() is None
+    assert any("Vorschau lief beim Loslassen" in m for m in logs), logs
