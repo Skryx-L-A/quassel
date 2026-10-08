@@ -40,6 +40,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Moving the pill size or transparency slider now saves once when you let go
+  (or after a short pause when you use the arrow keys), and typing an AI model
+  name saves after you stop typing. Each step used to rewrite the settings file
+  and make the dictation service reload it, dozens of times per drag. A remote
+  AI address you have confirmed is no longer asked about again on every change.
 - The text bubble above the pill (live preview, results, hints) now has its
   dark background behind the text again and stays readable when the pill
   itself is set almost transparent. The background was drawn as a small piece

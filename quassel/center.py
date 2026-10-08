@@ -98,6 +98,10 @@ QLabel#desc {{ color: palette(placeholder-text); }}
 
 IS_WINDOWS = os.name == "nt"
 IS_MAC = sys.platform == "darwin"
+# Schieberegler (Tastatur) und das KI-Modellfeld speichern erst nach dieser
+# Pause statt bei jedem Schritt bzw. Tastendruck (H121); Ziehen mit der Maus
+# speichert beim Loslassen.
+SAVE_DELAY_MS = 400
 
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -269,6 +273,13 @@ class Center(QMainWindow):
         self.bridge.ai_models.connect(self.on_ai_models)
         self.bridge.ai_test_done.connect(self.on_ai_test_done)
         self.nowheel = NoWheel(self)
+        # Ein bestätigter fremder KI-Endpunkt wird nicht bei jedem weiteren
+        # Speichern erneut abgefragt; der gespeicherte gilt als bestätigt.
+        self._ai_endpoint_ok = self.cfg.ai_endpoint
+        self.save_timer = QTimer(self)
+        self.save_timer.setSingleShot(True)
+        self.save_timer.setInterval(SAVE_DELAY_MS)
+        self.save_timer.timeout.connect(self.save_settings)
         self._loading = True
         self.build()
         self._loading = False
@@ -307,6 +318,24 @@ class Center(QMainWindow):
         row.addWidget(QLabel(label))
         row.addWidget(widget, 1)
         layout.addLayout(row)
+
+    def save_soon(self, *_a):
+        """Speichern nach kurzer Pause — gedrückt gehaltene Pfeiltasten oder
+        Tippen schreiben config.ini dann einmal statt dutzendfach."""
+        if not self._loading:
+            self.save_timer.start()
+
+    def _save_on_release(self, slider):
+        """Ziehen: erst beim Loslassen speichern; Tastatur: nach der Pause."""
+        slider.valueChanged.connect(
+            lambda *_a: None if slider.isSliderDown() else self.save_soon())
+        slider.sliderReleased.connect(self.save_settings)
+
+    def closeEvent(self, ev):
+        if self.save_timer.isActive():      # nichts Ungespeichertes verlieren
+            self.save_timer.stop()
+            self.save_settings()
+        super().closeEvent(ev)
 
     def select_data(self, combo, value, default=0):
         """Combo-Eintrag mit passenden userData auswählen (Reihenfolge-unabhängig)."""
@@ -429,12 +458,12 @@ class Center(QMainWindow):
         self.pill_size = self.guard(QSlider(Qt.Horizontal))
         self.pill_size.setRange(60, 200)
         self.pill_size.setValue(int(self.cfg.pill_scale * 100))
-        self.pill_size.valueChanged.connect(self.save_settings)
+        self._save_on_release(self.pill_size)
         self.labeled_row(tr("pill_size"), self.pill_size, g)
         self.pill_opacity = self.guard(QSlider(Qt.Horizontal))
         self.pill_opacity.setRange(15, 100)
         self.pill_opacity.setValue(int(self.cfg.pill_opacity * 100))
-        self.pill_opacity.valueChanged.connect(self.save_settings)
+        self._save_on_release(self.pill_opacity)
         self.labeled_row(tr("pill_opacity"), self.pill_opacity, g)
         self.pill_movable = QCheckBox(tr("pill_movable"))
         self.pill_movable.setChecked(self.cfg.pill_movable)
@@ -693,7 +722,7 @@ class Center(QMainWindow):
         self.ai_model.setEditable(True)
         if self.cfg.ai_model:
             self.ai_model.addItem(self.cfg.ai_model, self.cfg.ai_model)
-        self.ai_model.currentTextChanged.connect(self.save_settings)
+        self.ai_model.currentTextChanged.connect(self.save_soon)
         mrow.addWidget(self.ai_model, 1)
         refresh = QPushButton(tr("ai_refresh"))
         refresh.clicked.connect(self.on_ai_refresh)
@@ -801,6 +830,8 @@ class Center(QMainWindow):
 
     def _confirmed_ai_endpoint(self):
         endpoint = self.ai_endpoint.text().strip() or config.OLLAMA_DEFAULT
+        if endpoint == self._ai_endpoint_ok:
+            return endpoint
         warning = ai.endpoint_warning(endpoint)
         if warning == "invalid":
             QMessageBox.warning(self, tr("ai_endpoint_invalid_title"),
@@ -816,6 +847,7 @@ class Center(QMainWindow):
             if answer != QMessageBox.Yes:
                 self.ai_endpoint.setText(self.cfg.ai_endpoint)
                 return None
+        self._ai_endpoint_ok = endpoint
         return endpoint
 
     # ----------------------------------------------------- Seite: Verlauf
@@ -935,10 +967,11 @@ class Center(QMainWindow):
 
     # ----------------------------------------------------------- Speichern
     def save_settings(self, *_a):
+        if self._loading:
+            return
+        self.save_timer.stop()
         endpoint = self._confirmed_ai_endpoint()
         if endpoint is None:
-            return
-        if self._loading:
             return
         werte = {
             ("pill", "enabled"): str(self.pill_show.isChecked()).lower(),
