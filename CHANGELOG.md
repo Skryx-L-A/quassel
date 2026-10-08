@@ -46,6 +46,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Windows keeps dictation text out of clipboard history and cloud sync. It
+  preserves common image, file and rich text clipboard formats, and types
+  directly when a clipboard format cannot be safely restored.
+- Windows restores an earlier clipboard item only if it still holds Quassel's
+  own dictation text, so a new copy made while dictating is kept.
 - Windows now stops only a verified Quassel speech server process, so other
   speech server processes are left alone.
 - macOS and Windows keep bounded speech server diagnostic logs in the profile
