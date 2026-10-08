@@ -159,7 +159,7 @@ def mic_is_bluetooth(mic="default"):
     try:
         if mic and mic != "default":
             return "bluez" in mic.lower()
-        r = subprocess.run(["pactl", "get-default-source"], capture_output=True,
+        r = _run(["pactl", "get-default-source"], capture_output=True,
                            text=True, timeout=2, check=False)
         return "bluez" in r.stdout.lower()
     except (OSError, subprocess.SubprocessError):
@@ -167,7 +167,7 @@ def mic_is_bluetooth(mic="default"):
 
 
 def notify(text, ms=4000):
-    subprocess.run(
+    _run(
         ["notify-send", "-a", "Quassel", "-t", str(ms),
          "-h", "string:x-canonical-private-synchronous:quassel", "Quassel", text],
         check=False)
@@ -179,7 +179,7 @@ def notify(text, ms=4000):
 def _pactl(*args):
     # LC_ALL=C: erzwingt englische Ausgabe ("Mute: yes/no") — sonst liest die
     # Mute-Erkennung auf z.B. deutschen Systemen ("Mute: ja/nein") falsch.
-    return subprocess.run(["pactl", *args], capture_output=True, text=True,
+    return _run(["pactl", *args], capture_output=True, text=True,
                           check=False, env={**os.environ, "LC_ALL": "C"})
 
 
@@ -190,23 +190,23 @@ def _default_sink_muted():
 def _mpris_playing():
     """Liste der gerade spielenden Player als (backend, name)-Paare."""
     if shutil.which("playerctl"):
-        names = subprocess.run(["playerctl", "-l"], capture_output=True,
+        names = _run(["playerctl", "-l"], capture_output=True,
                                text=True, check=False).stdout.split()
         out = []
         for n in names:
-            s = subprocess.run(["playerctl", "-p", n, "status"], capture_output=True,
+            s = _run(["playerctl", "-p", n, "status"], capture_output=True,
                                text=True, check=False).stdout.strip()
             if s == "Playing":
                 out.append(("playerctl", n))
         return out
     if shutil.which("busctl"):
-        listing = subprocess.run(["busctl", "--user", "list", "--no-legend"],
+        listing = _run(["busctl", "--user", "list", "--no-legend"],
                                  capture_output=True, text=True, check=False).stdout
         svcs = [ln.split()[0] for ln in listing.splitlines()
                 if ln.startswith("org.mpris.MediaPlayer2.")]
         out = []
         for svc in svcs:
-            r = subprocess.run(["busctl", "--user", "get-property", svc,
+            r = _run(["busctl", "--user", "get-property", svc,
                                 "/org/mpris/MediaPlayer2",
                                 "org.mpris.MediaPlayer2.Player", "PlaybackStatus"],
                                capture_output=True, text=True, check=False)
@@ -219,10 +219,10 @@ def _mpris_playing():
 def _mpris_call(item, method):
     backend, name = item
     if backend == "playerctl":
-        subprocess.run(["playerctl", "-p", name,
+        _run(["playerctl", "-p", name,
                         "pause" if method == "Pause" else "play"], check=False)
     else:
-        subprocess.run(["busctl", "--user", "call", name, "/org/mpris/MediaPlayer2",
+        _run(["busctl", "--user", "call", name, "/org/mpris/MediaPlayer2",
                         "org.mpris.MediaPlayer2.Player", method], check=False)
 
 
