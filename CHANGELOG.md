@@ -28,6 +28,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Windows now runs the same dictation flow as Linux and macOS instead of its own
+  copy, which had drifted apart. Three Windows problems go away with it: a failed
+  dictation (speech engine not reachable or transcription error) is saved as a
+  WAV file and the message names it, as already promised for all platforms; the
+  wake word no longer records into the same file as a keyboard dictation, so a
+  dictation with the wake word switched on cannot come out mixed or empty; and a
+  new dictation started right after releasing the hotkey no longer stops itself
+  and transcribes the wrong audio. Windows also gets the start-tone trim of the
+  other platforms (160 ms instead of 120 ms) and a tray entry "Stop dictation
+  now" that ends a hanging dictation and drops its text.
 - macOS can again copy history and file-transcription results without relying
   on the Linux-only `xclip` command.
 - Known Whisper subtitle and “for watching” silence artifacts are discarded;

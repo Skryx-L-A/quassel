@@ -162,8 +162,9 @@ class Daemon(dictation.DictationCore):
             self._listener.force_reset()
 
     def _action_running(self):
-        return (self._listener is not None
-                and self._listener.current_action is not None)
+        if self._listener is not None and self._listener.current_action is not None:
+            return True
+        return super()._action_running()
 
     def _wake_transcribe(self, pcm):
         # Über die Modulnamen dieses Moduls, damit Tests sie ersetzen können.

@@ -24,6 +24,7 @@ Thread-Garantien (gelten für jede Plattform):
 """
 import glob
 import os
+import queue
 import threading
 import time
 
@@ -33,6 +34,7 @@ from .audio import RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
 from .streaming import StreamTyper
+from .win.machine import ChordMachine
 
 # Am Diktat-Ende wartet niemand zwei Minuten auf einen Server, der ohnehin
 # schon lief. Beim Kaltstart lädt er dagegen erst das Modell — dort wird lange
@@ -61,6 +63,9 @@ PARTIAL_MAX_WAIT = 10.0
 LEAD_TRIM_MS = 160            # nur der Start-Ton (mit VAD)
 LEAD_TRIM_NOVAD_BT_MS = 400   # ohne VAD: BT-Ramp am Anfang
 TAIL_PAD_MS, TAIL_PAD_BT_MS = 250, 450
+
+ACTION_STALL = 60.0    # s: so lange darf der lange Rest eines Diktats höchstens laufen
+PUMP_POLL = 0.02       # s: Takt des Ereignis-Threads (Doppeltipp-Fenster, Einfügen)
 
 # Eigene Roh-/WAV-Dateien für den Wake-Listener (getrennt vom Tastatur-Pfad)
 WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
@@ -201,6 +206,7 @@ class DictationCore:
     # _finish_capture) und Name des laufenden synchronen Teils.
     _panic_flag = None
     _sync_action = None
+    _runner = None              # ActionRunner, wo die Plattform einen nutzt
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -279,7 +285,8 @@ class DictationCore:
 
     def _action_running(self):
         """Läuft gerade der lange Rest eines Diktats auf dem Aktions-Thread?"""
-        return False
+        runner = self._runner
+        return runner is not None and runner.current_action is not None
 
     def _wake_busy(self):
         return self.rec.active
@@ -379,6 +386,11 @@ class DictationCore:
         # Die Maschine steht nach einem Not-Aus womöglich noch auf "toggle" —
         # der nächste Chord-Druck liefe sonst in ein finish() ohne Aufnahme.
         self._reset_hotkey()
+        # Hängt der Rest (Server, Einfügen), bliebe jedes weitere Diktat
+        # dahinter stehen: zurücklassen, ein frischer Aktions-Thread übernimmt.
+        runner = self._runner
+        if runner is not None:
+            runner.abandon()
         self._after_panic()
 
     def _busy(self):
@@ -725,3 +737,229 @@ class DictationCore:
         self.last_paste_len = len(value)
         self._state("done", value)
         self._after_insert(value)
+
+
+class ActionRunner:
+    """Aktions-Thread: führt die langen Reste der Diktate (Transkription,
+    Nachbearbeitung, Einfügen) der Reihe nach aus. Hängt einer, bleibt der
+    Ereignis-Thread frei; current_action und last_action_tick zeigen, woran
+    der Thread gerade sitzt.
+
+    abandon() ist der Kern des Not-Aus: ein hängender Rest lässt sich in
+    Python nicht abbrechen, aber zurücklassen. Ein frischer Thread übernimmt
+    die Warteschlange, der alte läuft ins Leere und endet danach still; sein
+    Ergebnis verwirft das Not-Aus-Ereignis des Diktats."""
+
+    def __init__(self, name="dictation-actions", log=None):
+        self.name = name
+        self._log = log or (lambda msg: None)
+        self._lock = threading.Lock()
+        self._stopped = threading.Event()
+        self._queue = queue.Queue()
+        self._gen = 0
+        self.current_action = None
+        self.last_action_tick = time.monotonic()
+        self._spawn()
+
+    def _spawn(self):
+        self._gen += 1
+        threading.Thread(target=self._run, args=(self._gen, self._queue),
+                         daemon=True, name=self.name).start()
+
+    @property
+    def generation(self):
+        return self._gen
+
+    def submit(self, name, fn):
+        self._queue.put((name, fn))
+
+    def _run(self, gen, q):
+        while not self._stopped.is_set():
+            try:
+                item = q.get(timeout=0.5)
+            except queue.Empty:
+                if gen != self._gen:
+                    return
+                self.last_action_tick = time.monotonic()
+                continue
+            with self._lock:
+                if gen != self._gen:        # zurückgelassen: Auftrag weiterreichen
+                    self._queue.put(item)
+                    return
+                name, fn = item
+                self.current_action = name
+                self.last_action_tick = time.monotonic()
+            # Eine geworfene Ausnahme darf den Thread nicht töten — sonst
+            # stünde nach einem Fehler jedes weitere Diktat still.
+            try:
+                fn()
+            except Exception as exc:   # noqa: BLE001
+                self._log("actions: %r fehlgeschlagen: %r" % (name, exc))
+            finally:
+                with self._lock:
+                    if gen == self._gen:
+                        self.current_action = None
+                        self.last_action_tick = time.monotonic()
+            if gen != self._gen:
+                return
+
+    def abandon(self):
+        """Laufenden Rest zurücklassen und einen frischen Thread starten.
+        True = es lief einer."""
+        with self._lock:
+            if self.current_action is None:
+                return False
+            self._log("actions: %r wird zurückgelassen (Not-Aus)" % self.current_action)
+            old, self._queue = self._queue, queue.Queue()
+            while True:
+                try:
+                    self._queue.put(old.get_nowait())
+                except queue.Empty:
+                    break
+            self.current_action = None
+            self.last_action_tick = time.monotonic()
+            self._spawn()
+        return True
+
+    def run_blocking(self, name, fn, on_stall=None, stall_after=ACTION_STALL, poll=0.1):
+        """fn auf dem Aktions-Thread ausführen und darauf warten — für eine
+        Hotkey-Schleife, die (wie unter Linux) streng nacheinander arbeitet.
+        Das Warten läuft in kurzen Schritten: ein Signal-Handler (Not-Aus)
+        kommt dazwischen, und nach abandon() kehrt der Aufruf sofort zurück.
+        on_stall wird einmal gerufen, wenn fn länger als stall_after läuft.
+        Rückgabe: True = fertig, False = zurückgelassen."""
+        done = threading.Event()
+
+        def wrapped():
+            try:
+                fn()
+            finally:
+                done.set()
+        gen = self._gen
+        self.submit(name, wrapped)
+        start = time.monotonic()
+        warned = False
+        while not done.wait(poll):
+            if self._gen != gen:
+                return False
+            if not warned and time.monotonic() - start > stall_after:
+                warned = True
+                if on_stall is not None:
+                    on_stall(time.monotonic() - start)
+        return True
+
+    def stop(self):
+        self._stopped.set()
+
+
+class ChordPump(threading.Thread):
+    """Ereignis-Thread für Plattformen, deren Hotkey-Quelle nur eine Queue mit
+    (Taste, gedrückt) liefert (Windows Raw Input). Er treibt die ChordMachine
+    und führt den SYNCHRONEN Teil der Aktionen selbst aus — on_start, und von
+    finish/cancel alles, was die Aufnahme betrifft. Gibt finish() einen Rest
+    zurück, geht er an den ActionRunner. Damit liegt das Beenden einer
+    Aufnahme immer vor dem Start der nächsten, wie im macOS-Listener.
+
+    Andere Threads (Qt-Oberfläche) greifen nie direkt auf Maschine oder
+    Recorder zu, sondern reichen Aufträge über post() herein."""
+
+    def __init__(self, events, core, runner, group_a, group_b,
+                 hold_min=0.5, double_window=0.45, is_enabled=None, log=None):
+        super().__init__(daemon=True, name="dictation-events")
+        self.events = events
+        self.core = core
+        self.runner = runner
+        self.is_enabled = is_enabled or (lambda: True)
+        self._log = log or (lambda msg: None)
+        self._calls = queue.Queue()
+        self._lock = threading.Lock()
+        self._pending = []
+        self._stop = threading.Event()
+        self.last_event_tick = time.monotonic()
+        self.current_sync = None
+        self.machine = self._make_machine(group_a, group_b, hold_min, double_window)
+
+    def _make_machine(self, group_a, group_b, hold_min, double_window):
+        core = self.core
+        # on_start bleibt synchron: sein Rückgabewert entscheidet, ob die
+        # Maschine armiert (fehlgeschlagener Start darf nicht in 'hold' führen).
+        machine = ChordMachine(
+            group_a, group_b, core.start_recording,
+            lambda: self._pending.append(("finish", core.finish)),
+            lambda r: self._pending.append(("cancel", lambda: core.cancel_recording(r))),
+            hold_min=hold_min, double_window=double_window)
+        machine.on_handsfree = lambda: self._pending.append(
+            ("handsfree", core.enable_streaming))
+        return machine
+
+    def run(self):
+        while not self._stop.is_set():
+            self.step()
+
+    def step(self, timeout=PUMP_POLL, now=None):
+        """Eine Runde: Aufträge, höchstens ein Tastenereignis, Poll-Tick."""
+        self.last_event_tick = time.monotonic()
+        while True:
+            try:
+                call = self._calls.get_nowait()
+            except queue.Empty:
+                break
+            self._run_sync("call", call)
+        try:
+            item = self.events.get(timeout=timeout) if timeout else self.events.get_nowait()
+        except queue.Empty:
+            item = None
+        with self._lock:
+            if item is not None and self.is_enabled():
+                vk, pressed = item
+                self.machine.key(vk, pressed, now)
+            self.machine.poll(now)
+            pending, self._pending = self._pending, []
+        for name, cb in pending:
+            rest = self._run_sync(name, cb)
+            if callable(rest):
+                self.runner.submit(name, rest)
+        self.last_event_tick = time.monotonic()
+
+    def _run_sync(self, name, cb):
+        self.current_sync = name
+        try:
+            return cb()
+        except Exception as exc:   # noqa: BLE001 — dieser Thread darf nie sterben
+            self._log("events: %r fehlgeschlagen: %r" % (name, exc))
+            return None
+        finally:
+            self.current_sync = None
+
+    def post(self, fn):
+        """fn auf dem Ereignis-Thread ausführen (Reihenfolge wie Tasten)."""
+        self._calls.put(fn)
+
+    def reconfigure(self, group_a, group_b, hold_min, double_window):
+        """Hotkey live wechseln — nur im Ruhezustand, sonst verlöre die
+        Maschine ihren Zustand. Läuft auf dem Ereignis-Thread."""
+        def apply():
+            m = self.machine
+            m.hold_min, m.double_window = hold_min, double_window
+            if (m.a, m.b) != (set(group_a), set(group_b)) and m.state == "idle" \
+                    and not m.pending_finish and not self.core.rec.active:
+                m.a, m.b = set(group_a), set(group_b)
+                m.pressed.clear()
+        self.post(apply)
+
+    def force_reset(self):
+        """Maschine hart in den Ruhezustand zwingen (nach dem Not-Aus). Aus
+        jedem Thread; wartet höchstens kurz auf den Lock."""
+        if not self._lock.acquire(timeout=1.0):
+            self._log("events: Lock blockiert -> Maschine nicht zurückgesetzt")
+            return
+        try:
+            self.machine.state = "idle"
+            self.machine.pressed.clear()
+            self.machine.pending_finish = False
+            self._pending = []
+        finally:
+            self._lock.release()
+
+    def stop(self):
+        self._stop.set()
