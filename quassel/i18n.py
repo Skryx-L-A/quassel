@@ -1,9 +1,17 @@
 """Tiny bilingual string table (English base, German translation).
 
-UI language: config [ui] language = auto|en|de; auto follows the system locale.
+UI language: config [ui] language = auto|en|de; auto follows the system:
+LC_ALL / LC_MESSAGES as explicit overrides, then the language chosen in the
+operating system (macOS AppleLanguages, Windows UI language), then LANG and
+the C locale.
 """
+import functools
 import locale
 import os
+import subprocess
+import sys
+
+SUPPORTED = ("en", "de")
 
 STRINGS = {
     "app_name": ("Quassel", "Quassel"),
@@ -248,19 +256,83 @@ _lang = None
 
 def set_language(lang):
     global _lang
-    _lang = lang if lang in ("en", "de") else None
+    _lang = lang if lang in SUPPORTED else None
+
+
+def _tag(loc):
+    """'de_DE.UTF-8', 'de-CH', 'German_Germany' -> 'de'; unbekannt -> ''."""
+    loc = (loc or "").strip().lower()
+    if loc.startswith("german"):            # Windows: locale.getlocale()
+        return "de"
+    if loc.startswith("english"):
+        return "en"
+    code = loc.replace("-", "_").split("_")[0].split(".")[0]
+    return code if code in SUPPORTED else ""
+
+
+def _parse_apple_languages(out):
+    """Ausgabe von `defaults read -g AppleLanguages` -> ['de-DE', 'en-US']."""
+    langs = []
+    for line in out.splitlines():
+        item = line.strip().strip("(),").strip().strip('"')
+        if item:
+            langs.append(item)
+    return langs
+
+
+def _langid_to_tag(langid):
+    """Windows-LANGID -> 'de'/'en'/'' (Primärsprache in den unteren 10 Bit)."""
+    return {0x07: "de", 0x09: "en"}.get(langid & 0x3FF, "")
+
+
+def _query_os_ui_languages():
+    """Sprachen der Systemoberfläche in Vorzugsreihenfolge.
+
+    macOS: ein Start aus dem Finder setzt kein LANG, die Wahl in den
+    Systemeinstellungen steht nur in AppleLanguages (NSLocale). Windows:
+    GetUserDefaultUILanguage. Linux: nichts — dort gilt LANG."""
+    if sys.platform == "darwin":
+        try:
+            from Foundation import NSLocale
+            return [str(x) for x in NSLocale.preferredLanguages()]
+        except Exception:  # noqa: BLE001 — ohne pyobjc über defaults
+            pass
+        out = subprocess.run(["defaults", "read", "-g", "AppleLanguages"],
+                             capture_output=True, text=True, timeout=2,
+                             check=False).stdout
+        return _parse_apple_languages(out)
+    if os.name == "nt":
+        import ctypes
+        tag = _langid_to_tag(ctypes.windll.kernel32.GetUserDefaultUILanguage())
+        return [tag] if tag else []
+    return []
+
+
+@functools.lru_cache(maxsize=1)
+def _os_ui_languages():
+    """Einmal je Prozess abfragen: tr() läuft bei jedem Neuzeichnen."""
+    try:
+        return tuple(_query_os_ui_languages())
+    except Exception:  # noqa: BLE001 — Erkennung darf die App nie stoppen
+        return ()
 
 
 def current():
     if _lang:
         return _lang
-    loc = os.environ.get("LC_ALL") or os.environ.get("LANG") or ""
+    for var in ("LC_ALL", "LC_MESSAGES"):
+        if os.environ.get(var):
+            return _tag(os.environ[var]) or "en"
+    for lang in _os_ui_languages():
+        if _tag(lang):
+            return _tag(lang)
+    loc = os.environ.get("LANG") or ""
     if not loc:
         try:
             loc = locale.getlocale()[0] or ""
         except ValueError:
             loc = ""
-    return "de" if loc.lower().startswith("de") else "en"
+    return _tag(loc) or "en"
 
 
 def tr(key, **kw):

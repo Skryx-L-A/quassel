@@ -28,6 +28,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- On macOS, Quassel now follows the language you picked in System Settings when
+  the app language is set to "Automatic". Started from the Finder or at login,
+  it used to fall back to English even on a German system, because only the
+  terminal sets the usual language variable. Windows now asks the system for
+  its display language as well.
 - macOS can again copy history and file-transcription results without relying
   on the Linux-only `xclip` command.
 - Known Whisper subtitle and “for watching” silence artifacts are discarded;
