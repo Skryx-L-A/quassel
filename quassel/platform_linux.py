@@ -60,9 +60,25 @@ else:
     os.environ.pop("YDOTOOL_SOCKET", None)
 
 
-def clip_copy(text):
+_sensitive_supported = None
+
+
+def _sensitive_copy_supported():
+    """wl-copy 2.3+ advertises the KDE password-manager MIME hint."""
+    global _sensitive_supported
+    if not IS_WAYLAND:
+        return False
+    if _sensitive_supported is None:
+        result = _run(["wl-copy", "--help"], capture_output=True, text=True, check=False)
+        _sensitive_supported = (result.returncode == 0 and
+                                "--sensitive" in (result.stdout + result.stderr))
+    return _sensitive_supported
+
+
+def clip_copy(text, private=False):
     if IS_WAYLAND:
-        return _run(["wl-copy"], input=text, text=True, check=False).returncode == 0
+        args = ["wl-copy", "--sensitive"] if private and _sensitive_copy_supported() else ["wl-copy"]
+        return _run(args, input=text, text=True, check=False).returncode == 0
     else:
         return _run(["xclip", "-selection", "clipboard"], input=text,
                     text=True, check=False).returncode == 0
@@ -140,6 +156,9 @@ def _begin():
 
 def _type_direct(text):
     # stdin keeps dictation out of process arguments and command logs.
+    # ydotool's type command has an ASCII key map; non-ASCII would be dropped.
+    if not text.isascii():
+        return False
     return _run(["ydotool", "type", "--file", "-"], input=text,
                 text=True, check=False).returncode == 0
 
@@ -165,7 +184,7 @@ def paste(text):
             return True
         notify("Clipboard format cannot be preserved; dictation was not inserted")
         return False
-    if not clip_copy(text):
+    if not clip_copy(text, private=True):
         return False
     with _clip_lock:
         _last_written = text
@@ -190,7 +209,7 @@ def type_chunk(text):
             notify("Clipboard format cannot be preserved; dictation was not inserted")
             return False
         return True
-    if not clip_copy(text):
+    if not clip_copy(text, private=True):
         return False
     with _clip_lock:
         _last_written = text

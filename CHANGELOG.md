@@ -48,6 +48,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- On Wayland systems with a recent wl-copy, Linux marks dictated clipboard
+  text as sensitive so compatible clipboard managers can omit it from history.
 - Linux leaves images, files and rich clipboard contents alone when inserting
   text and keeps anything you copy during the restore delay.
 - macOS preserves every pasteboard item and format across dictation insertion.
