@@ -28,8 +28,9 @@ import queue
 import threading
 import time
 
-from . import (aimodes, beep, config, dictprompt, i18n, profiles, progmode, stats,
-               textproc, textreplace, vad, wakeword, whisperclient)
+from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18n,
+               profiles, progmode, stats, textproc, textreplace, vad, wakeword,
+               whisperclient)
 from .audio import RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
@@ -410,7 +411,8 @@ class DictationCore:
         """Beim Wechsel in den Freihand-Modus: Streaming starten, falls
         eingeschaltet. (Im Halten-Modus technisch unmöglich -> nie hier.)"""
         self._handsfree = True
-        if self.streamer is not None or not self.cfg.streaming:
+        if (self.streamer is not None or not self.cfg.streaming
+                or self._cleanup_active() or self.cfg.ai_enabled):
             return
         # Per-App-Profil vor dem ersten getippten Zeichen: Streaming tippt
         # Tasten, ein Zeilenumbruch wäre im Terminal sofort ein Enter.
@@ -663,31 +665,43 @@ class DictationCore:
             else:
                 self._state("error", tr("nothing"))
             return
-        mech = self._finish_text(self._refine_mechanical(value), cfg)
+        mechanical_failed = False
+        try:
+            mech = self._finish_text(self._refine_mechanical(value), cfg)
+        except Exception:
+            if not self._cleanup_active():
+                raise
+            mech = value
+            mechanical_failed = True
         inserted = True             # Streaming tippt selbst, ohne Rückmeldung
-        if streamer is not None:
-            # Streaming: KI auf den Endtext, dann Zielfenster exakt darauf bringen.
-            final = (self._finish_text(self._ai_refine(mech), cfg)
-                     if cfg.ai_enabled else mech)
+        if self._cleanup_active() and streamer is None:
+            # B19: Bereinigung und Prüfung ganz fertig, dann EINMAL einfügen.
+            final = (value if mechanical_failed
+                     else self._finish_text(self._cleanup_refine(value, mech), cfg))
+            if panic.is_set():
+                self._state("idle")
+                return
+            inserted = self._insert(final)
+            self.last_paste_len = len(final) if inserted else 0
+            value = final
+        elif streamer is not None:
+            # Streaming hat das Zielfenster schon berührt: keine spätere
+            # Modellantwort, die nach einem Fokuswechsel ersetzen könnte.
+            final = mech
             typed = streamer.finish(final)
             self.last_paste_len = len(typed)
             self._streaming_restore(clip_backup)
             value = final
         elif cfg.ai_enabled:
-            # Lokale KI braucht Sekunden. ERST den Rohtext einfügen (solange der
-            # Fokus sicher im Zielfeld ist), DANN durch die KI-Fassung ersetzen —
-            # sonst landet bei langsamen Modellen nichts mehr im Fenster.
-            inserted = self._insert(mech)
-            self.last_paste_len = len(mech) if inserted else 0
+            # B19: keine Backspaces nach dem Modellaufruf in ein inzwischen
+            # anderes Zielfenster. Erst fertig berechnen, dann einmal einfügen.
             self._state("transcribing")
             final = self._finish_text(self._ai_refine(mech), cfg)
-            if final != mech and inserted:
-                self._send_backspaces(len(mech))
-                inserted = self._insert(final)
-                self.last_paste_len = len(final) if inserted else 0
-                self._log("ai: replaced %d -> %d chars" % (len(mech), len(final)))
-            elif final != mech:
-                inserted = self._insert(final)  # nichts zu ersetzen: Endfassung ablegen
+            if panic.is_set():
+                self._state("idle")
+                return
+            inserted = self._insert(final)
+            self.last_paste_len = len(final) if inserted else 0
             value = final
         else:
             inserted = self._insert(mech)
@@ -802,10 +816,38 @@ class DictationCore:
     def _refine(self, text):
         """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
         cfg = self._cfg_now()
+        raw = text
+        if self._cleanup_active():
+            try:
+                text = self._refine_mechanical(text)
+            except Exception:
+                return raw
+            return self._finish_text(self._cleanup_refine(raw, text), cfg)
         text = self._refine_mechanical(text)
         if cfg.ai_enabled:
             text = self._ai_refine(text)
         return self._finish_text(text, cfg)
+
+    def _cleanup_active(self):
+        cfg = self._cfg_now()
+        return (getattr(cfg, "cleanup_enabled", False)
+                and getattr(cfg, "cleanup_level", "aus") != "aus")
+
+    def _cleanup_refine(self, raw, mechanical):
+        """Keep addressed AI modes; otherwise validate cleanup before insert."""
+        try:
+            cfg = self._cfg_now()
+            if cfg.ai_enabled and cfg.ai_voice_modes:
+                mode, _ = aimodes.detect_voice_mode(mechanical)
+                if mode is None:
+                    mode, _ = self._detect_custom_voice(mechanical)
+                if mode is not None:
+                    transformed = self._ai_refine(mechanical)
+                    return raw if transformed == mechanical else transformed
+            result = cleanup_module.cleanup(mechanical, cfg.cleanup_level, cfg)
+            return raw if result.fallback_reason else result.text
+        except Exception:
+            return raw
 
     def _ai_refine(self, text):
         """Lokale KI-Nachbearbeitung (Ollama): Sprach-Modus ('als E-Mail', …) hat

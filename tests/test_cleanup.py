@@ -16,6 +16,8 @@ from quassel.cleanup import deterministic
     ("Ich sehe das, halt, anders.", "Ich sehe das, anders."),
     ("Das dauert am Montag, nein, am Dienstag.", "Das dauert am Dienstag."),
     ("Wie spät ist es?", "Wie spät ist es?"),
+    ("Wir treffen uns um drei Uhr.", "Wir treffen uns um drei Uhr."),
+    ("Um, we meet at noon.", "we meet at noon."),
 ])
 def test_deterministic(raw, expected):
     assert deterministic(raw) == expected

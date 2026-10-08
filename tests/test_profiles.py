@@ -329,7 +329,7 @@ ai = off
                             ai_voice_modes=False, ai_post_process=False,
                             ai_post_mode="cleanup")
     assert modes == ["email"]
-    assert core.pasted == ["hallo welt", "HALLO WELT"]
+    assert core.pasted == ["HALLO WELT"]     # B19: einmal einfügen
     modes.clear()
     core, _ = run_dictation(monkeypatch, tmp_path, KITTY, ini=ini, ai_enabled=True,
                             ai_voice_modes=False, ai_post_process=True,

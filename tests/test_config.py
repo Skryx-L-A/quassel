@@ -77,6 +77,35 @@ def test_beep_output_reads_saved_device(tmp_path, monkeypatch):
     assert config.Cfg().beep_output == "Bluetooth-Kopfhörer"
 
 
+def test_cleanup_defaults_off_and_rejects_unknown_level(tmp_path, monkeypatch):
+    _isolate_cfg(tmp_path, monkeypatch)
+    cfg = config.Cfg()
+    assert cfg.cleanup_enabled is False and cfg.cleanup_level == "aus"
+    config.save({("cleanup", "enabled"): "true", ("cleanup", "level"): "mittel"})
+    cfg.reload(force=True)
+    assert cfg.cleanup_enabled is True and cfg.cleanup_level == "mittel"
+    config.save({("cleanup", "level"): "unknown"})
+    cfg.reload(force=True)
+    assert cfg.cleanup_level == "aus"
+
+
+def test_cleanup_corrections_are_separate_from_asr_dictionary(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    _isolate_cfg(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "CLEANUP_CORRECTIONS", str(tmp_path / "cleanup-corrections.txt"))
+    (tmp_path / "dictionary.txt").write_text("PyTorch\n", encoding="utf-8")
+    (tmp_path / "cleanup-corrections.txt").write_text(
+        "# explicit corrections\npie torch=PyTorch\ninvalid\n=empty\n", encoding="utf-8")
+    cfg = config.Cfg()
+    assert cfg.cleanup_terms == ["PyTorch"]
+    assert cfg.cleanup_replacements == {"pie torch": "PyTorch"}
+    assert config.dictionary_words() == ["PyTorch"]
+    config.save({("cleanup", "enabled"): "true", ("cleanup", "level"): "leicht"})
+    cfg.reload(force=True)
+    from quassel.cleanup import cleanup
+    assert cleanup("pie torch startet", cfg.cleanup_level, cfg).text == "PyTorch startet"
+
+
 def test_dictionary_save_invalidates_the_cache(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
     with open(config.DICTIONARY, "w", encoding="utf-8") as f:

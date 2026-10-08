@@ -42,6 +42,7 @@ SERVERENV = os.path.join(CONFDIR, "server.env")
 DICTIONARY = os.path.join(CONFDIR, "dictionary.txt")
 LEARN_COUNTS = os.path.join(CONFDIR, "dictionary-counts.json")
 REPLACEMENTS = os.path.join(CONFDIR, "replacements.txt")
+CLEANUP_CORRECTIONS = os.path.join(CONFDIR, "cleanup-corrections.txt")
 AI_MODES = os.path.join(CONFDIR, "ai_modes.txt")
 HISTORY = os.path.join(DATADIR, "history.jsonl")
 HISTORY_MAX = 50
@@ -252,7 +253,22 @@ class Cfg:
         # großzügiger Default: größere Modelle brauchen beim ersten Aufruf
         # (Kaltstart/Laden in den Speicher) gut 20-30 s.
         self.ai_timeout = _getfloat(p, "ai", "timeout", 60.0, 1.0, 3600.0)
+        # Separate, opt-in dictation cleanup; legacy AI modes stay unchanged.
+        self.cleanup_enabled = _getbool(p, "cleanup", "enabled", False)
+        self.cleanup_level = g("cleanup", "level", fallback="aus").strip().lower()
+        if self.cleanup_level not in ("aus", "leicht", "mittel", "stark"):
+            self.cleanup_level = "aus"
         return True
+
+    @property
+    def cleanup_terms(self):
+        """Current ASR dictionary words are protected during cleanup."""
+        return dictionary_words()
+
+    @property
+    def cleanup_replacements(self):
+        """Current explicit correction list, read only when cleanup is used."""
+        return cleanup_corrections()
 
 
 def save(values):
@@ -339,6 +355,23 @@ def dictionary_words():
 def dictionary_save(text):
     fsutil.atomic_write(DICTIONARY, text.strip() + "\n" if text.strip() else "")
     _dictionary_cache["key"] = None
+
+
+def cleanup_corrections():
+    """Read literal spoken=written pairs; never expand snippet placeholders."""
+    try:
+        with open(CLEANUP_CORRECTIONS, encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return {}
+    corrections = {}
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        spoken, written = (part.strip() for part in line.split("=", 1))
+        if spoken and written and len(spoken) <= 100 and len(written) <= 100:
+            corrections[spoken] = written
+    return corrections
 
 
 _dictionary_lock = threading.Lock()

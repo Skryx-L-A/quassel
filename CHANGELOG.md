@@ -36,8 +36,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that file nothing changes. Ready-made profiles cover terminals, IDEs and mail
   programs. On Wayland, the active app is only known under Hyprland and Sway;
   GNOME and KDE keep the normal settings. Window titles are never read.
+  kept. The path now runs before a single final insertion when explicitly
+  enabled in the configuration file; control center settings are still pending.
 
 ### Changed
+- AI-enhanced dictation now finishes processing before inserting text once.
+  It no longer replaces an earlier insertion with backspaces after a model
+  response, which could erase text in a different window if focus changed.
 - The pill now shows your real microphone level while you dictate instead of a
   fixed animation. If nothing arrives from the microphone for 1.5 seconds, the
   bars turn into a flat amber line and the pill says so, so a muted or wrong
