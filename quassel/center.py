@@ -1110,9 +1110,10 @@ class Center(QMainWindow):
         self.ai_status.setText(tr("ai_testing"))
 
         def run():
-            avail = ai.available(ep)
-            models = ai.list_models(ep) if avail else []
-            self.bridge.ai_models.emit({"available": avail, "models": models})
+            # Ollama (/api/tags) oder OpenAI-kompatibel (/v1/models), ein Weg.
+            kind, models = ai.probe(ep)
+            self.bridge.ai_models.emit({"available": kind is not None,
+                                        "models": models})
         threading.Thread(target=run, daemon=True).start()
 
     def on_ai_models(self, result):
@@ -1144,8 +1145,14 @@ class Center(QMainWindow):
         system = aimodes.system_for("cleanup")
 
         def run():
-            out = ai.generate(sample, model=model, system=system,
-                              endpoint=ep, timeout=timeout)
+            # Der Weg, den der Endpunkt spricht: OpenAI-kompatible Server kennen
+            # /api/generate nicht und bekommen den Bereinigungsaufruf (/v1).
+            if ai.probe(ep, timeout=2.0)[0] == "openai":
+                out, _reason = ai.chat_cleanup(sample, model=model, endpoint=ep,
+                                               timeout=timeout)
+            else:
+                out = ai.generate(sample, model=model, system=system,
+                                  endpoint=ep, timeout=timeout)
             self.bridge.ai_test_done.emit(out or "")
         threading.Thread(target=run, daemon=True).start()
 

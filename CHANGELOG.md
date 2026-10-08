@@ -15,6 +15,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- AI page: "Refresh" and "Test" also work with OpenAI-compatible servers such
+  as llama-server, LM Studio or vLLM. Quassel asks Ollama for its models first
+  and otherwise reads the server's model list (/v1/models); an address ending
+  in /v1 is treated as OpenAI-compatible straight away. "Test" then checks the
+  same cleanup call that dictation uses. Local addresses never go through a
+  system proxy.
 - Per-app profiles: the "While dictating" page has a button that creates the
   profiles file with the default profiles (terminal, mail, editor and so on) if
   it does not exist yet and opens it. An existing file is never overwritten.

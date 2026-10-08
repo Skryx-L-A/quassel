@@ -290,3 +290,74 @@ if __name__ == "__main__":
                test_generate_empty_model_no_network]:
         fn()
     print("ok")
+
+
+# ------------------------------------------- OpenAI-kompatible Server (/v1)
+class _FakeOpenAI:
+    """Loopback-Server, der nur die OpenAI-Schnittstelle spricht (llama.cpp,
+    LM Studio): /api/tags gibt 404, /v1/models die Modellliste."""
+
+    def __init__(self):
+        self.requests = []
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                outer.requests.append(self.path)
+                if self.path != "/v1/models":
+                    self.send_error(404)
+                    return
+                data = json.dumps({"object": "list", "data": [
+                    {"id": "qwen3-4b", "object": "model"}, {"id": "gemma"}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *a):
+                pass
+
+        self.srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.endpoint = "http://127.0.0.1:%d" % self.srv.server_port
+
+    def close(self):
+        self.srv.shutdown()
+
+
+@pytest.fixture
+def fake_openai():
+    f = _FakeOpenAI()
+    yield f
+    f.close()
+
+
+def test_parse_openai_models():
+    assert ai.parse_openai_models({"data": [{"id": "a"}, {"id": "b"}]}) == ["a", "b"]
+    assert ai.parse_openai_models({"data": [{"object": "model"}]}) == []
+    assert ai.parse_openai_models({}) == []
+    assert ai.parse_openai_models("garbage") == []
+
+
+def test_openai_compatible_server_lists_its_models(fake_openai, dead_system_proxy):
+    """Ein Server ohne /api/tags (llama.cpp, LM Studio) galt als „nicht
+    erreichbar"; seine Modelle stehen unter /v1/models. Loopback ohne Proxy."""
+    assert ai.probe(fake_openai.endpoint, timeout=3) == ("openai", ["qwen3-4b", "gemma"])
+    assert ai.available(fake_openai.endpoint, timeout=3) is True
+    assert ai.list_models(fake_openai.endpoint, timeout=3) == ["qwen3-4b", "gemma"]
+
+
+def test_v1_endpoint_asks_only_v1_models(fake_openai):
+    ep = fake_openai.endpoint + "/v1/"
+    assert ai.probe(ep, timeout=3) == ("openai", ["qwen3-4b", "gemma"])
+    assert fake_openai.requests == ["/v1/models"]
+
+
+def test_ollama_is_recognised_by_its_tags(fake_ollama):
+    assert ai.probe(fake_ollama.endpoint, timeout=3) == ("ollama", ["m1"])
+    assert [r[1] for r in fake_ollama.requests] == ["/api/tags"]
+
+
+def test_probe_dead_port():
+    assert ai.probe("http://127.0.0.1:9", timeout=0.2) == (None, [])
