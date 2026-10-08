@@ -16,6 +16,7 @@ nie eine schon getroffene Wahl (gleiches Prinzip wie install.sh/win-provision)
 auf "-bs 1" gehoben (siehe ensure_env()).
 """
 import os
+import secrets
 import signal
 import socket
 import subprocess
@@ -27,6 +28,7 @@ MODEL_DIR = config.MODELDIR
 HOST, PORT = "127.0.0.1", str(profile.port())
 
 _proc = None
+_request_path_support = {}
 
 
 def _repo_root():
@@ -101,6 +103,9 @@ def ensure_env():
     if not env.get("WHISPER_THREADS"):
         env["WHISPER_THREADS"] = str(min(8, os.cpu_count() or 4))
         changed = True
+    if not env.get("REQUEST_PATH") and _supports_request_path(env.get("SERVER_BIN", "")):
+        env["REQUEST_PATH"] = "/q/" + secrets.token_urlsafe(24)
+        changed = True
     if not env.get("WHISPER_DECODE"):
         # Gierige Suche: eigene Messung über 36 Dateien/938 Referenzwörter
         # zeigte beam_size=5 in keiner Datei besser, in einer verrauschten
@@ -135,7 +140,24 @@ def build_args(env):
     if vad and os.path.exists(vad):
         args += ["--vad", "--vad-model", vad]
     args += ["--host", HOST, "--port", PORT, "-l", "auto", "-nt"]
+    request_path = env.get("REQUEST_PATH", "")
+    if request_path and _supports_request_path(env.get("SERVER_BIN", "")):
+        args += ["--request-path", request_path]
     return args
+
+
+def _supports_request_path(binary):
+    """Bounded, cached --help capability probe; it does not start a server."""
+    if not binary:
+        return False
+    if binary not in _request_path_support:
+        try:
+            r = subprocess.run([binary, "--help"], capture_output=True, text=True,
+                               timeout=2, check=False)
+            _request_path_support[binary] = "--request-path" in (r.stdout + r.stderr)
+        except (OSError, subprocess.SubprocessError):
+            _request_path_support[binary] = False
+    return _request_path_support[binary]
 
 
 def port_in_use(timeout=0.5):

@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 import zipfile
+import secrets
 
 from .. import config, hwdetect, profile
 from ..net import download
@@ -36,6 +37,20 @@ ENGINE_ZIPS = {
 }
 
 _proc = None
+_request_path_support = {}
+
+
+def _supports_request_path(binary):
+    if not binary:
+        return False
+    if binary not in _request_path_support:
+        try:
+            r = subprocess.run([binary, "--help"], capture_output=True, text=True,
+                               timeout=2, check=False)
+            _request_path_support[binary] = "--request-path" in (r.stdout + r.stderr)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            _request_path_support[binary] = False
+    return _request_path_support[binary]
 
 
 def server_exe():
@@ -277,6 +292,12 @@ def start():
     model = current_model()
     if not exe or not model:
         return
+    server_env = config.read_serverenv()
+    request_path = server_env.get("REQUEST_PATH", "")
+    if not request_path and _supports_request_path(exe):
+        request_path = "/q/" + secrets.token_urlsafe(24)
+        server_env["REQUEST_PATH"] = request_path
+        config.write_serverenv(server_env)
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     # PATH bereinigen: PyInstaller hängt dist\_internal an PATH; der Server
     # würde sonst unsere VC-Runtime-DLLs laden und den dist-Ordner sperren
@@ -296,6 +317,8 @@ def start():
     decode = ["-bs", "1"] if has_nvidia() else ["-nf"]
     args = [exe, "-m", model, "-t", threads, *decode,
             "--host", "127.0.0.1", "--port", str(profile.port()), "-l", "auto", "-nt"]
+    if request_path and _supports_request_path(exe):
+        args += ["--request-path", request_path]
     vad = vad_model_path()
     if vad:                                   # Stille überspringen + keine Halluzinationen
         args += ["--vad", "--vad-model", vad]

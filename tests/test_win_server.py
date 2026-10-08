@@ -59,25 +59,22 @@ def test_start_uses_no_fallback_flag_without_nvidia(tmp_path):
         server._proc = None
 
 
-def test_start_never_reads_a_persisted_decode_value(tmp_path):
-    """Belegt die Begründung im Docstring: server.env wird für den Decode-Wert
-    gar nicht erst gelesen -- config.read_serverenv() darf in start() nicht
-    aufgerufen werden. Deshalb betrifft die Migration in server_mac.ensure_env()
-    (Bestandsnutzer mit altem "-bs 5" in server.env) diesen Pfad nicht."""
+def test_start_reads_only_the_request_path_from_serverenv(tmp_path):
     exe = tmp_path / "whisper-server.exe"
     exe.write_text("")
     proc = MagicMock()
     server._proc = None
 
-    def boom(*a, **kw):
-        raise AssertionError("start() hat server.env gelesen")
+    env = {"REQUEST_PATH": "/q/already-private"}
     try:
         with patch.object(server, "server_exe", return_value=str(exe)), \
              patch.object(server, "current_model", return_value="m.bin"), \
              patch.object(server, "has_nvidia", return_value=True), \
              patch.object(server, "vad_model_path", return_value=None), \
-             patch.object(server.config, "read_serverenv", side_effect=boom), \
-             patch.object(subprocess, "Popen", return_value=proc):
+             patch.object(server.config, "read_serverenv", return_value=env), \
+             patch.object(server, "_supports_request_path", return_value=True), \
+             patch.object(subprocess, "Popen", return_value=proc) as popen:
             server.start()
+        assert popen.call_args.args[0][-2:] == ["--request-path", "/q/already-private"]
     finally:
         server._proc = None

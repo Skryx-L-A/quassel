@@ -250,7 +250,8 @@ def write_serverenv(env):
     Start sucht sich Modell und Binary neu zusammen: die getroffene Modellwahl
     wäre still weg. Sichtbar wird immer entweder die alte oder die vollständige
     neue Datei."""
-    fsutil.atomic_write(SERVERENV, "".join(f"{k}={v}\n" for k, v in env.items()))
+    fsutil.atomic_write(SERVERENV, "".join(f"{k}={v}\n" for k, v in env.items()),
+                        mode=0o600)
 
 
 # ----------------------------------------------------------------- Wörterbuch
