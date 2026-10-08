@@ -126,10 +126,11 @@ class TranscribeCppPythonBackend:
     def warmup(self) -> bool:
         if not self.health():
             return False
-        try:
-            self._ensure_loaded()
-        except Exception:   # noqa: BLE001
-            return False
+        with self._lock:
+            try:
+                self._ensure_loaded()
+            except Exception:   # noqa: BLE001
+                return False
         return True
 
     def _ensure_loaded(self):
