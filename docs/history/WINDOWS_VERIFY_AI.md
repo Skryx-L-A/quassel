@@ -1,5 +1,11 @@
 # Windows verify — AI tier (v2.4.0)
 
+> **Historical document.** This is the v2.4.0 delta checklist for the Windows
+> build, kept for reference. The working branch it names was an intermediate branch, and the AI wiring
+> described below now lives in the shared dictation core
+> (`quassel/dictation.py`). The first checklist it builds on is
+> [WINDOWS_VERIFY.md](WINDOWS_VERIFY.md), also historical.
+
 This branch (`worktree-voxtype-ai-tier`) is **v2.3.0 + the local-AI tier (Phase 3)**.
 It was built and verified on **Linux against a real local Ollama** (`llama3.2:1b`):
 the client, the modes, voice triggers, and the daemon `_ai_refine` path all produced

@@ -1,5 +1,13 @@
 # Windows build & verify — Quassel v2.3.0
 
+> **Historical document.** This checklist was written for the v2.3.0 Windows
+> build and is kept for reference. It is not a current verification plan: the
+> Windows app has since moved to the shared dictation core
+> (`quassel/dictation.py`), and several statements below ("could NOT be run
+> here", the named branch) no longer describe the repository. For the
+> current state see [../ARCHITECTURE.md](../ARCHITECTURE.md) and
+> [../../windows/build.md](../../windows/build.md).
+
 This release was built and tested on **Linux** only. Everything Windows-specific
 below was written by mirroring the Linux paths but could NOT be run here. Build
 on the Windows box and verify the checklist before publishing.
