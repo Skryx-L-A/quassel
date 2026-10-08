@@ -156,8 +156,9 @@ def _begin():
 
 def _type_direct(text):
     # stdin keeps dictation out of process arguments and command logs.
-    # ydotool's type command has an ASCII key map; non-ASCII would be dropped.
-    if not text.isascii():
+    # ydotool uses a fixed US ASCII key map. Other layouts or UTF-8 can
+    # silently produce different text even when the command succeeds.
+    if not text.isascii() or os.environ.get("XKB_DEFAULT_LAYOUT") != "us":
         return False
     return _run(["ydotool", "type", "--file", "-"], input=text,
                 text=True, check=False).returncode == 0

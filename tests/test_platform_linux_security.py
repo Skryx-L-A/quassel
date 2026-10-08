@@ -95,6 +95,7 @@ def test_prepare_reads_clipboard_during_recording(monkeypatch, tmp_path):
 
 def test_direct_typing_keeps_text_out_of_argv(monkeypatch, tmp_path):
     pl = _linux(monkeypatch, tmp_path)
+    monkeypatch.setenv("XKB_DEFAULT_LAYOUT", "us")
     seen = []
     monkeypatch.setattr(pl, "_run", lambda args, **kw: seen.append((args, kw)) or type("R", (), {"returncode": 0})())
     assert pl._type_direct("private words")
