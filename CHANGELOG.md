@@ -28,6 +28,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- On macOS the hotkey is now named with Mac keys: "Control + Command (⌃⌘)",
+  "Option + Command (⌥⌘)" and "Control + Option (⌃⌥)". The Control Center used
+  to call it "Ctrl + Meta (Windows key)".
 - The macOS warnings about a missing ffmpeg and about a dictation service that
   keeps restarting are now shown in English as well, and the restart warning
   points to the log file that is actually used.

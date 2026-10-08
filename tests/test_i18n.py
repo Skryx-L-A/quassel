@@ -136,3 +136,38 @@ def test_placeholders_match_between_languages():
         names_en = {n for _, n, _, _ in fmt.parse(en) if n}
         names_de = {n for _, n, _, _ in fmt.parse(de) if n}
         assert names_en == names_de, key
+
+
+# --------------------------------------------- H115 Tastennamen auf macOS
+@pytest.mark.parametrize("key,en,de", [
+    ("chord_ctrl_meta", "Control + Command (⌃⌘)", "Control + Befehl (⌃⌘)"),
+    ("chord_alt_meta", "Option + Command (⌥⌘)", "Wahl + Befehl (⌥⌘)"),
+    ("chord_ctrl_alt", "Control + Option (⌃⌥)", "Control + Wahl (⌃⌥)"),
+])
+def test_mac_uses_mac_key_names(monkeypatch, key, en, de):
+    monkeypatch.setattr(i18n, "IS_MAC", True)
+    i18n.set_language("en")
+    assert i18n.tr(key) == en
+    i18n.set_language("de")
+    assert i18n.tr(key) == de
+
+
+def test_mac_never_mentions_windows_key(monkeypatch):
+    monkeypatch.setattr(i18n, "IS_MAC", True)
+    for lang in ("en", "de"):
+        i18n.set_language(lang)
+        for key in ("chord_ctrl_meta", "chord_alt_meta", "chord_ctrl_alt"):
+            text = i18n.tr(key)
+            assert "Windows" not in text and "Meta" not in text, text
+
+
+def test_other_platforms_keep_their_names(monkeypatch):
+    monkeypatch.setattr(i18n, "IS_MAC", False)
+    i18n.set_language("en")
+    assert i18n.tr("chord_ctrl_meta") == "Ctrl + Meta (Windows key)"
+
+
+def test_every_chord_label_has_a_mac_variant():
+    from quassel import config
+    for key in config.CHORD_LABEL_KEYS.values():
+        assert key + "_mac" in i18n.STRINGS, key

@@ -202,3 +202,20 @@ def test_save_settings_writes_selected_beep_output(mac, qapp, isolated_cfg, fake
         assert saved.get("behavior", "beep_output") == "MacBook Pro-Lautsprecher"
     finally:
         c.close()
+
+
+# ------------------------------------------- H115 Tastennamen auf dem Mac
+def test_chord_choices_and_hint_use_mac_key_names(mac, qapp, isolated_cfg, monkeypatch):
+    from quassel import i18n
+    monkeypatch.setattr(i18n, "IS_MAC", True)
+    config.save({("ui", "language"): "en"})
+    c = center.Center()
+    try:
+        items = [c.chord.itemText(i) for i in range(c.chord.count())]
+        assert items == ["Control + Command (⌃⌘)", "Option + Command (⌥⌘)",
+                         "Control + Option (⌃⌥)"]
+        assert "Hold Control + Command = speak" in c.hint.text()
+        assert "Meta" not in c.hint.text() and "Windows" not in c.hint.text()
+    finally:
+        c.close()
+        i18n.set_language(None)

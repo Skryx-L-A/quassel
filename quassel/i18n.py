@@ -12,6 +12,8 @@ import subprocess
 import sys
 
 SUPPORTED = ("en", "de")
+# Auf macOS gewinnt ein Eintrag "<key>_mac" über "<key>" (Tastennamen).
+IS_MAC = sys.platform == "darwin"
 
 STRINGS = {
     "app_name": ("Quassel", "Quassel"),
@@ -34,6 +36,11 @@ STRINGS = {
     "chord_ctrl_meta": ("Ctrl + Meta (Windows key)", "Strg + Meta (Windows-Taste)"),
     "chord_alt_meta": ("Alt + Meta", "Alt + Meta"),
     "chord_ctrl_alt": ("Ctrl + Alt", "Strg + Alt"),
+    # macOS: dieselben Chords mit den Namen der Mac-Tastatur (tr() wählt die
+    # _mac-Variante dort automatisch). Meta ist auf dem Mac die Befehlstaste.
+    "chord_ctrl_meta_mac": ("Control + Command (⌃⌘)", "Control + Befehl (⌃⌘)"),
+    "chord_alt_meta_mac": ("Option + Command (⌥⌘)", "Wahl + Befehl (⌥⌘)"),
+    "chord_ctrl_alt_mac": ("Control + Option (⌃⌥)", "Control + Wahl (⌃⌥)"),
     "sec_dictating": ("While dictating", "Beim Diktieren"),
     "mute_label": ("Audio", "Audio"),
     "mute_off": ("Do nothing", "Nichts ändern"),
@@ -350,6 +357,8 @@ def current():
 
 
 def tr(key, **kw):
+    if IS_MAC and key + "_mac" in STRINGS:
+        key += "_mac"
     en, de = STRINGS.get(key, (key, key))
     s = de if current() == "de" else en
     return s.format(**kw) if kw else s
