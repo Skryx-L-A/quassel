@@ -30,3 +30,35 @@ Command results go to stdout; diagnostics go to stderr.
 writer. It never downloads by default; pass `--download` only to fetch a
 missing model. `dict` uses the atomic dictionary writer. `history list` only
 reads history when normal Quassel history is enabled.
+
+## MCP
+
+The local MCP server communicates only over stdio and has no third-party
+runtime dependency. It offers `transcribe_file`, `dictionary_list`,
+`dictionary_add`, and `status`. It deliberately has no microphone or recording
+tool. `transcribe_file` only reads the path supplied by the MCP client.
+
+MCP history is off by default. To explicitly share it with the local MCP
+client, add this to Quassel's `config.ini`:
+
+```ini
+[mcp]
+mcp_history = true
+```
+
+Only then does `history_list` appear in `tools/list`.
+
+For Claude Code from a checkout:
+
+```sh
+claude mcp add --transport stdio quassel -- /absolute/path/to/VoxType/.venv/bin/python -m quassel.mcp_server
+```
+
+For Cursor, add this equivalent command to its MCP configuration:
+
+```json
+{"mcpServers":{"quassel":{"command":"/absolute/path/to/VoxType/.venv/bin/python","args":["-m","quassel.mcp_server"]}}}
+```
+
+The server implements JSON-RPC 2.0 with MCP protocol version `2025-06-18`:
+`initialize`, `tools/list`, and `tools/call`.

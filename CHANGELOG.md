@@ -19,6 +19,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and installed speech-model selection, transcribe an existing file, and safely
   request the Linux service toggle or emergency stop. It never starts a
   microphone recording or downloads a model unless `--download` is explicit.
+- Quassel can now be used as a local stdio MCP server for file transcription,
+  dictionary management, and status. Dictation history is not exposed unless
+  it is explicitly enabled in the MCP configuration.
 
 ### Changed
 - Short hold-to-talk dictations get their text sooner. The live preview used
