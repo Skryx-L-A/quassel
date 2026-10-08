@@ -24,7 +24,8 @@ Aufbau, je Profil ein Abschnitt, das erste passende gewinnt:
   ai                 on | off (lokale KI-Nachbearbeitung)
   ai_mode            Name eines KI-Modus (cleanup, email, …) für jedes Diktat;
                      off = kein Auto-Modus, Sprach-Modi bleiben
-  programmer_mode    on | off
+  programmer_mode    on | off; on wirkt hier ohne die Anrede „Code:“, die
+                     der global eingeschaltete Modus verlangt
   punctuation        on | off (gesprochene Satzzeichen „Komma", „Punkt")
   allow_enter        on | off; off = Terminal-Schutz: kein „drück Enter",
                      kein Zeilenumbruch am Ende des eingefügten Texts
@@ -264,6 +265,14 @@ def for_active_app(cfg, active_app=None, path=None, log=None):
     if prof is not None and log is not None:
         log("profile: %s (%s)" % (prof.name, app.label()))
     return overlay(cfg, prof)
+
+
+def programmer_mode_explicit(cfg):
+    """True, wenn das Profil dieses Diktats programmer_mode = on ausdrücklich
+    setzt. Dann wirkt der Programmiermodus ohne die Anrede „Code:“; aus der
+    globalen Einstellung allein bleibt die Anrede nötig."""
+    prof = getattr(cfg, "profile", None)
+    return isinstance(prof, Profile) and prof.settings.get("programmer_mode") is True
 
 
 def allow_enter(cfg):

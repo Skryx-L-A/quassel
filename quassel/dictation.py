@@ -776,7 +776,12 @@ class DictationCore:
         """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
         cfg = self._cfg_now()
         if cfg.programmer_mode:
-            text = progmode.apply_if_addressed(text)
+            addressed = progmode.apply_if_addressed(text)
+            # Global braucht Code die Anrede „Code:“ (Audit 105). Ein Profil mit
+            # ausdrücklich programmer_mode = on (Terminal, IDE) formt jedes Diktat.
+            if addressed == text and profiles.programmer_mode_explicit(cfg):
+                addressed = progmode.apply(text)
+            text = addressed
         if cfg.text_replace:
             rules = config.replacement_rules()
             if rules:

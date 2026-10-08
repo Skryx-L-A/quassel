@@ -351,3 +351,33 @@ def test_wake_insert_uses_the_profile_too(monkeypatch, tmp_path):
     core._wake_insert("make test")
     assert core.pasted == ["make test"]
     assert core._cfg_now() is core.cfg
+
+
+def test_explicit_profile_programmer_mode_needs_no_code_prefix(monkeypatch, tmp_path):
+    """OPEN 6: Profil mit programmer_mode = on formt ohne „Code:“."""
+    core, _ = run_dictation(monkeypatch, tmp_path, KITTY, ini=TERM_INI,
+                            transcript="x gleich eins")
+    assert core.pasted == [dictation.progmode.apply("x gleich eins")]
+    assert core.pasted != ["x gleich eins"]
+
+
+def test_global_programmer_mode_still_needs_the_prefix(monkeypatch, tmp_path):
+    core, _ = run_dictation(monkeypatch, tmp_path, BROWSER, ini=TERM_INI,
+                            transcript="x gleich eins", programmer_mode=True)
+    assert core.pasted == ["x gleich eins"]
+    core, _ = run_dictation(monkeypatch, tmp_path, BROWSER, ini=TERM_INI,
+                            transcript="Code: x gleich eins", programmer_mode=True)
+    assert core.pasted == [dictation.progmode.apply("x gleich eins")]
+
+
+def test_profile_programmer_mode_with_prefix_is_applied_once(monkeypatch, tmp_path):
+    core, _ = run_dictation(monkeypatch, tmp_path, KITTY, ini=TERM_INI,
+                            transcript="Code: x gleich eins")
+    assert core.pasted == [dictation.progmode.apply("x gleich eins")]
+
+
+def test_inherited_programmer_mode_is_not_explicit(tmp_path):
+    [p] = profiles.parse("[profile:L]\nmatch = x\nlanguage = de\n")
+    layer = profiles.overlay(base_cfg(programmer_mode=True), p)
+    assert profiles.programmer_mode_explicit(layer) is False
+    assert profiles.programmer_mode_explicit(base_cfg(programmer_mode=True)) is False
