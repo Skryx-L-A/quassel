@@ -113,6 +113,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   they are addressed as "Quassel, Enter" or "Quassel, Undo".
 - When German or English is selected for speech, spoken punctuation now uses
   only that language's rules.
+- The wake word's speech detection counts a connected stretch of speech instead of adding
+  up every loud moment. Clicks and bumps spread over a few seconds used to add up to "the
+  user is speaking"; now they do not, and a click during the pause after a sentence no
+  longer keeps the recording open. The loudness threshold follows the room's background
+  noise and works the same on Linux, macOS and Windows.
 
 ### Security
 - The dictation history file (`history.jsonl`) is now readable by you only.
