@@ -179,11 +179,12 @@ class MacApp:
 
     def toggle(self):
         """An/Aus für das Kontrollzentrum, Tray-Menü und die Pille: Daemon
-        stoppen bzw. neu starten (der Server läuft weiter — billig im
-        Leerlauf, dafür sofortiges Wiedereinschalten)."""
+        und eigenen Server stoppen bzw. neu starten."""
         if self.enabled:
             self._stop_daemon()
+            server_mac.stop()
         else:
+            server_mac.start()
             self._start_daemon()
         self._sync_ui()
 
