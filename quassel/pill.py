@@ -9,12 +9,13 @@
   gleichmäßige Reihe (Transkription) · kurz das Ergebnis
 - Größe/Transparenz/Sichtbarkeit aus config.ini ([pill]), live übernommen
 
-Wayland-Overlay über gtk4-layer-shell (KWin/GNOME/wlroots), Fallback:
-normales rahmenloses Fenster.
+Wayland-Overlay über gtk4-layer-shell (KWin/wlroots). GNOME ohne layer-shell:
+rahmenloses Fenster über XWayland, sofern vorhanden, sonst mit Warnhinweis.
 """
 import math
 import os
 import subprocess
+import sys
 import time
 
 import gi
@@ -28,6 +29,19 @@ try:
     HAVE_LAYER = True
 except (ValueError, ImportError):
     pass
+
+
+def _gnome_fallback():
+    """Use XWayland for the ordinary pill window when GNOME lacks layer shell."""
+    if HAVE_LAYER or not os.environ.get("WAYLAND_DISPLAY"):
+        return None
+    if os.environ.get("XDG_CURRENT_DESKTOP", "").split(":")[0].lower() != "gnome":
+        return None
+    if os.environ.get("DISPLAY") and os.environ.get("GDK_BACKEND") in (None, "x11"):
+        os.environ["GDK_BACKEND"] = "x11"
+        return "GNOME has no layer shell; showing the pill through XWayland."
+    return ("GNOME has no layer shell and XWayland is unavailable; "
+            "the pill may be hidden behind other windows.")
 
 from . import config  # noqa: E402
 from .i18n import tr  # noqa: E402
@@ -399,6 +413,9 @@ class Pill(Gtk.Application):
 
 
 def main():
+    warning = _gnome_fallback()
+    if warning:
+        print("quassel-pill: " + warning, file=sys.stderr)
     Pill().run()
 
 
