@@ -31,7 +31,7 @@ _ENTITY = re.compile(
     r"`[^`]+`|\b[A-Za-z_][A-Za-z_0-9]*_[A-Za-z_0-9]+\b|"
     r"(?<!\w)\d+(?:[.,:/-]\d+)*(?!\w)", re.I
 )
-_ANSWER = re.compile(r"(?i)^\s*(?:sure[,!.:]|certainly[,!.:]|here(?:'s| is)|hier ist|als (?:ki|ai)|as an ai|the answer is|die antwort ist)\b")
+_ANSWER = re.compile(r"(?i)^\s*(?:(?:sure|certainly)(?:[,!.:]|\b)|here(?:'s| is)\b|hier ist\b|als (?:ki|ai)\b|as an ai\b|the answer is\b|die antwort ist\b)")
 _SENTENCES = re.compile(r"[.!?](?:\s|$)")
 _MEANING_WORDS = {"nicht", "nie", "kein", "keine", "ja", "nein", "not", "never",
                   "no", "yes", "heute", "morgen", "gestern", "today", "tomorrow",
@@ -89,6 +89,8 @@ def _check(before: str, after: str, level: str, terms: list[str]) -> str | None:
     ratio = len(after) / max(len(before), 1)
     if ratio < lo or ratio > hi:
         return "length"
+    if _ANSWER.match(after) and not _ANSWER.match(before):
+        return "answer_marker"
     a = [w.casefold() for w in _WORD.findall(before)]
     b = [w.casefold() for w in _WORD.findall(after)]
     if SequenceMatcher(None, a, b, autojunk=False).ratio() < (0.80 if level == "mittel" else 0.70):
@@ -103,8 +105,6 @@ def _check(before: str, after: str, level: str, terms: list[str]) -> str | None:
         pattern = re.compile(r"(?<!\w)" + re.escape(term) + r"(?!\w)", re.I)
         if len(pattern.findall(before)) != len(pattern.findall(after)):
             return "dictionary_changed"
-    if _ANSWER.match(after) and not _ANSWER.match(before):
-        return "answer_marker"
     if before.rstrip().endswith("?") and not after.rstrip().endswith("?"):
         return "question_changed"
     added_sentences = len(_SENTENCES.findall(after)) - len(_SENTENCES.findall(before))

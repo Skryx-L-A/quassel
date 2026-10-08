@@ -14,6 +14,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Prepared an optional, default-off dictation clean-up path with conservative
+  German and English filler removal, number formatting, and a protected local
+  AI step. When a clean-up result fails validation, the original dictation is
+  kept. The settings and insertion flow still need to be connected before this
+  option appears in the app.
+
 ### Changed
 - Short hold-to-talk dictations get their text sooner. The live preview used
   to send its first request after two seconds, and the speech engine works on

@@ -38,6 +38,7 @@ _ORD_EN = {"first": 1, "second": 2, "third": 3, "fourth": 4,
            "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8,
            "ninth": 9, "tenth": 10}
 _WORD = re.compile(r"(?<![\w@./-])[A-Za-zÄÖÜäöüß]+(?:-[A-Za-z]+)?(?![\w@./-])")
+_PROTECTED = re.compile(r"```.*?```|`[^`]*`|https?://[^\s<>]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", re.I | re.S)
 
 
 def _number(word: str) -> int | None:
@@ -65,8 +66,7 @@ _DATE_DE = re.compile(rf"(?<!\w)(?P<day>{_NUMBER_WORD})\s+(?P<month>{'|'.join(_M
 _DATE_EN = re.compile(rf"(?<!\w)(?P<month>{'|'.join(_MONTH_EN)})\s+(?P<day>{'|'.join(_ORD_EN)})(?!\w)", re.I)
 
 
-def normalize(text: str) -> str:
-    """Convert only explicit numeric forms; URLs, addresses and code stay intact."""
+def _normalize_plain(text: str) -> str:
     if not isinstance(text, str) or not text:
         return text if isinstance(text, str) else ""
 
@@ -114,3 +114,17 @@ def normalize(text: str) -> str:
         return str(number) if number is not None else word
 
     return _WORD.sub(simple, out)
+
+
+def normalize(text: str) -> str:
+    """Convert explicit numeric forms while preserving URLs, addresses and code."""
+    if not isinstance(text, str) or not text:
+        return text if isinstance(text, str) else ""
+    parts = []
+    last = 0
+    for match in _PROTECTED.finditer(text):
+        parts.append(_normalize_plain(text[last:match.start()]))
+        parts.append(match.group())
+        last = match.end()
+    parts.append(_normalize_plain(text[last:]))
+    return "".join(parts)

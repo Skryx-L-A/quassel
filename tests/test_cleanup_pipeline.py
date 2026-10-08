@@ -71,6 +71,13 @@ def test_question_stays_a_question(monkeypatch):
     assert cleanup("Wie spät ist es?", "mittel", cfg()).text == "Wie spät ist es?"
 
 
+def test_answer_marker_is_rejected(monkeypatch):
+    monkeypatch.setattr(ai, "chat_cleanup", lambda *a, **k: ("Sure, we will meet tomorrow at noon.", None))
+    result = cleanup("We will meet tomorrow at noon.", "mittel", cfg())
+    assert result.text == "We will meet tomorrow at noon."
+    assert result.fallback_reason == "answer_marker"
+
+
 @pytest.mark.parametrize("reason", ["timeout", "schema_error", "request_error"])
 def test_llm_error_returns_raw(monkeypatch, reason):
     monkeypatch.setattr(ai, "chat_cleanup", lambda *a, **k: (None, reason))

@@ -19,6 +19,8 @@ from quassel.itn import normalize
     ("eins nach dem anderen", "eins nach dem anderen"),
     ("one of us", "one of us"),
     ("mail@example.com und https://example.com/five", "mail@example.com und https://example.com/five"),
+    ("`five` and five dollars", "`five` and $5"),
+    ("```python\nfive = 5\n``` und fünf Euro", "```python\nfive = 5\n``` und 5 €"),
 ])
 def test_itn(raw, expected):
     assert normalize(raw) == expected
