@@ -14,3 +14,14 @@ def test_windows_power_messages_route_sleep_and_wake():
 
 def test_stop_without_started_hook_is_safe():
     power.PowerEvents(lambda: None, lambda: None).stop()
+
+
+def test_optional_hook_failure_does_not_abort_dictation(monkeypatch):
+    class Core:
+        def panic_stop(self):
+            pass
+
+    monkeypatch.setattr(power, "_monitor", None)
+    monkeypatch.setattr(power.PowerEvents, "start",
+                        lambda self: (_ for _ in ()).throw(OSError("unavailable")))
+    assert power.install(Core()) is None

@@ -109,7 +109,13 @@ def install(core):
             audio._mac_device("default")
         selfheal.recover()
     monitor = PowerEvents(core.panic_stop, wake)
-    if monitor.start():
+    try:
+        started = monitor.start()
+    except Exception:
+        # A missing or broken optional OS bridge must not lose the dictation.
+        monitor.stop()
+        return None
+    if started:
         _monitor = monitor
         atexit.register(monitor.stop)
     return _monitor
