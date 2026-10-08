@@ -381,3 +381,32 @@ def test_inherited_programmer_mode_is_not_explicit(tmp_path):
     layer = profiles.overlay(base_cfg(programmer_mode=True), p)
     assert profiles.programmer_mode_explicit(layer) is False
     assert profiles.programmer_mode_explicit(base_cfg(programmer_mode=True)) is False
+
+
+def streaming_core(monkeypatch, tmp_path, app, ini=TERM_INI):
+    write(tmp_path, ini)
+    monkeypatch.setattr(appctx, "active_app", lambda: app)
+    core = setup(monkeypatch, tmp_path)
+    core.cfg.streaming, core.cfg.streaming_mode = True, "word"
+    core.streamer = None
+    core._streaming_begin = lambda: None
+    core.typed_keys = []
+    core._type_chunk = core.typed_keys.append
+    core._send_backspaces = lambda n: None
+    core.enable_streaming()
+    return core
+
+
+def test_streaming_types_no_line_break_where_enter_is_blocked(monkeypatch, tmp_path):
+    """OPEN 2: Streaming tippt Tasten; ein Umbruch wäre im Terminal ein Enter."""
+    core = streaming_core(monkeypatch, tmp_path, KITTY)
+    typed = core.streamer.finish("cd /tmp\nrm -rf x")
+    keys = "".join(core.typed_keys)
+    assert "\n" not in keys and "\r" not in keys
+    assert len(keys) == len(typed)                  # Backspace-Abgleich stimmt
+
+
+def test_streaming_keeps_line_breaks_elsewhere(monkeypatch, tmp_path):
+    core = streaming_core(monkeypatch, tmp_path, BROWSER)
+    core.streamer.finish("Hallo\nWelt")
+    assert "\n" in "".join(core.typed_keys)

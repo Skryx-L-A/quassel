@@ -80,6 +80,8 @@ PUMP_POLL = 0.02       # s: Takt des Ereignis-Threads (Doppeltipp-Fenster, Einf�
 # Eigene Rohdatei f체r den Wake-Listener (getrennt vom Tastatur-Pfad); seine
 # WAV ist eine Zwischendatei dieses Prozesses (scratch_wav("wake")).
 WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
+# Terminal-Schutz im Streaming: Umbruch -> Leerzeichen, Zeichen f체r Zeichen.
+_NO_ENTER = str.maketrans({"\n": " ", "\r": " "})
 
 
 def postprocess_transcript(raw_text, cfg, language=None, pcm=None):
@@ -410,9 +412,18 @@ class DictationCore:
         self._handsfree = True
         if self.streamer is not None or not self.cfg.streaming:
             return
+        # Per-App-Profil vor dem ersten getippten Zeichen: Streaming tippt
+        # Tasten, ein Zeilenumbruch w채re im Terminal sofort ein Enter.
+        type_chunk = self._type_chunk
+        if not profiles.allow_enter(self._profile_cfg()):
+            type_chunk = self._type_chunk_no_enter
         self._clip_backup = self._streaming_begin()
         self.streamer = StreamTyper(self.cfg.streaming_mode,
-                                    self._type_chunk, self._send_backspaces)
+                                    type_chunk, self._send_backspaces)
+
+    def _type_chunk_no_enter(self, chunk):
+        """Umbr체che als Leerzeichen tippen, L채nge bleibt (Backspace-Abgleich)."""
+        self._type_chunk(chunk.translate(_NO_ENTER))
 
     def cancel_recording(self, reason_key):
         # Wie finish(): l채uft synchron auf dem Ereignis-Thread und z채hlt
