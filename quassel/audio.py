@@ -507,6 +507,7 @@ class _PrerollCapture:
         self.reader = None
         self.resampler = None
         self.abandoned = False
+        self.closed = False
         self.bt_before = {}
 
     def open(self):
@@ -521,7 +522,7 @@ class _PrerollCapture:
                 self.stream = sd.RawInputStream(
                     samplerate=rate, channels=1, dtype="int16", device=device,
                     callback=lambda data, _frames, _time, _status:
-                        self.queue.put(bytes(data)))
+                        self.queue.put(bytes(data)) if not self.closed else None)
                 self.stream.start()
             except Exception:
                 if self.stream is not None:
@@ -626,6 +627,7 @@ class _PrerollCapture:
 
     def close(self):
         self.end()
+        self.closed = True
         stream, self.stream = self.stream, None
         if stream is not None:
             closer = threading.Thread(target=_close_stream_quiet, args=(stream,),
@@ -642,6 +644,8 @@ class _PrerollCapture:
                 proc.kill()
                 proc.wait(timeout=2)
             proc.stdout.close()
+        if self.reader is not None:
+            self.reader.join(timeout=1)
         self.queue.put(None)
         if self.thread is not None:
             self.thread.join(timeout=5)
