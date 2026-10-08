@@ -192,6 +192,9 @@ STRINGS = {
     "vad_silero_hint": ("Automatic uses Silero when a model file is set and onnxruntime is installed, otherwise loudness. Silero tells speech from noise more reliably.",
                         "Automatisch nutzt Silero, wenn eine Modelldatei eingetragen und onnxruntime installiert ist, sonst die Lautstärke. Silero unterscheidet Sprache und Geräusch zuverlässiger."),
     # --- Schlüsselwort-Erkenner für das Wake-Word (wakeword.py) ---
+    # Rückmeldung nach erkannter Wake-Phrase (nur die Phrase gesagt): die
+    # Pille zeigt, dass jetzt das Diktat aufgenommen wird.
+    "wake_listening": ("Listening…", "Hört zu…"),
     "wake_spotter_model": ("Keyword model (.onnx)", "Schlüsselwort-Modell (.onnx)"),
     "wake_spotter_hint": ("Optional. A keyword spotter (openWakeWord format) listens for the phrase before speech recognition runs, which saves power and false starts. Quassel ships no model; train your own phrase and pick the file here.",
                           "Optional. Ein Schlüsselwort-Erkenner (openWakeWord-Format) hört vor der Spracherkennung auf die Phrase, das spart Strom und Fehlstarts. Quassel liefert kein Modell mit; die eigene Phrase selbst trainieren und die Datei hier wählen."),
