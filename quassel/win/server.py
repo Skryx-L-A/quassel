@@ -18,6 +18,9 @@ import sys
 import time
 import zipfile
 import secrets
+import json
+import io
+import threading
 
 from .. import config, hwdetect, profile
 from ..net import download
@@ -38,6 +41,56 @@ ENGINE_ZIPS = {
 
 _proc = None
 _request_path_support = {}
+PID_FILE = os.path.join(config.DATADIR, "whisper-server.pid.json")
+LOG_FILE = os.path.join(config.DATADIR, "whisper-server.log")
+
+
+def _log_stream(extra=0):
+    os.makedirs(config.DATADIR, exist_ok=True)
+    if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) + extra >= 1024 * 1024:
+        for n in (2, 1):
+            source = LOG_FILE if n == 1 else LOG_FILE + ".1"
+            if os.path.exists(source):
+                os.replace(source, LOG_FILE + f".{n}")
+    return open(LOG_FILE, "ab")
+
+
+def _drain_log(pipe):
+    try:
+        while True:
+            chunk = pipe.read(8192)
+            if not chunk:
+                break
+            with _log_stream(len(chunk)) as log:
+                log.write(chunk)
+    finally:
+        pipe.close()
+
+
+def _write_pid(pid, exe, port):
+    os.makedirs(config.DATADIR, exist_ok=True)
+    temp = PID_FILE + ".tmp"
+    with open(temp, "w", encoding="utf-8") as out:
+        json.dump({"pid": pid, "exe": os.path.normcase(os.path.abspath(exe)),
+                   "port": int(port)}, out)
+    os.replace(temp, PID_FILE)
+
+
+def _owned_orphan(record):
+    """Require live executable path and listening port before killing a saved PID."""
+    pid, exe, port = record["pid"], record["exe"], record["port"]
+    if not isinstance(pid, int) or pid <= 0 or not isinstance(port, int):
+        return False
+    script = ("$p=Get-CimInstance Win32_Process -Filter 'ProcessId=%d'; "
+              "$c=Get-NetTCPConnection -State Listen -LocalPort %d -ErrorAction SilentlyContinue "
+              "| Where-Object OwningProcess -eq %d; "
+              "if ($p -and $c) {$p.ExecutablePath}") % (pid, port, pid)
+    try:
+        result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                                capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and os.path.normcase(os.path.abspath(result.stdout.strip())) == exe
 
 
 def _supports_request_path(binary):
@@ -322,10 +375,16 @@ def start():
     vad = vad_model_path()
     if vad:                                   # Stille überspringen + keine Halluzinationen
         args += ["--vad", "--vad-model", vad]
+    # whisper-server prints transcripts only with -pp/--print-progress; neither
+    # flag is passed here. Keep startup diagnostics, never request transcript logs.
     _proc = subprocess.Popen(
         args, cwd=os.path.dirname(exe), env=env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         creationflags=creationflags)
+    if isinstance(_proc.stdout, io.IOBase):
+        threading.Thread(target=_drain_log, args=(_proc.stdout,), daemon=True).start()
+    if isinstance(_proc.pid, int):
+        _write_pid(_proc.pid, exe, profile.port())
 
 
 def stop():
@@ -336,11 +395,19 @@ def stop():
             _proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             _proc.kill()
-    else:
-        # Verwaiste Server aus früheren App-Läufen beenden — sonst hält
-        # einer den Port 8765 und ein Modellwechsel greift nie.
-        subprocess.run(
-            ["taskkill", "/F", "/IM", "whisper-server.exe"], check=False,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    elif os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE, encoding="utf-8") as source:
+                record = json.load(source)
+            if _owned_orphan(record):
+                subprocess.run(["taskkill", "/F", "/PID", str(record["pid"])],
+                               check=False, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    try:
+        os.remove(PID_FILE)
+    except OSError:
+        pass
     _proc = None

@@ -15,6 +15,14 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from quassel.win import server
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolated_server_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(server.config, "DATADIR", str(tmp_path))
+    monkeypatch.setattr(server, "PID_FILE", str(tmp_path / "server.pid.json"))
+    monkeypatch.setattr(server, "LOG_FILE", str(tmp_path / "server.log"))
 
 
 def test_start_uses_greedy_decode_with_nvidia(tmp_path):
@@ -78,3 +86,31 @@ def test_start_reads_only_the_request_path_from_serverenv(tmp_path):
         assert popen.call_args.args[0][-2:] == ["--request-path", "/q/already-private"]
     finally:
         server._proc = None
+
+
+def test_stop_never_uses_image_wide_kill(tmp_path):
+    server._proc = None
+    server._write_pid(1234, str(tmp_path / "whisper-server.exe"), 19001)
+    with patch.object(server, "_owned_orphan", return_value=True), \
+         patch.object(subprocess, "run") as run:
+        server.stop()
+    assert run.call_args.args[0] == ["taskkill", "/F", "/PID", "1234"]
+    assert not os.path.exists(server.PID_FILE)
+
+
+def test_unverified_pid_is_not_killed(tmp_path):
+    server._proc = None
+    server._write_pid(1234, str(tmp_path / "whisper-server.exe"), 19001)
+    with patch.object(server, "_owned_orphan", return_value=False), \
+         patch.object(subprocess, "run") as run:
+        server.stop()
+    run.assert_not_called()
+
+
+def test_log_rotates_to_two_generations(tmp_path):
+    with open(server.LOG_FILE, "wb") as out:
+        out.write(b"x" * (1024 * 1024))
+    with server._log_stream() as out:
+        out.write(b"new")
+    assert open(server.LOG_FILE, "rb").read() == b"new"
+    assert os.path.getsize(server.LOG_FILE + ".1") == 1024 * 1024

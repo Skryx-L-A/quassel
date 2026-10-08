@@ -21,6 +21,8 @@ import signal
 import socket
 import subprocess
 import sys
+import io
+import threading
 
 from . import config, hwdetect, profile
 
@@ -29,6 +31,29 @@ HOST, PORT = "127.0.0.1", str(profile.port())
 
 _proc = None
 _request_path_support = {}
+LOG_FILE = os.path.join(config.DATADIR, "whisper-server.log")
+
+
+def _log_stream(extra=0):
+    os.makedirs(config.DATADIR, exist_ok=True)
+    if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) + extra >= 1024 * 1024:
+        for n in (2, 1):
+            source = LOG_FILE if n == 1 else LOG_FILE + ".1"
+            if os.path.exists(source):
+                os.replace(source, LOG_FILE + f".{n}")
+    return open(LOG_FILE, "ab")
+
+
+def _drain_log(pipe):
+    try:
+        while True:
+            chunk = pipe.read(8192)
+            if not chunk:
+                break
+            with _log_stream(len(chunk)) as log:
+                log.write(chunk)
+    finally:
+        pipe.close()
 
 
 def _repo_root():
@@ -187,10 +212,13 @@ def start():
               file=sys.stderr, flush=True)
         return False
     env = config.read_serverenv()
+    # -pp/--print-progress (transcript printing) is absent from build_args.
     _proc = subprocess.Popen(
         build_args(env), cwd=os.path.dirname(env["SERVER_BIN"]) or None,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         start_new_session=True)
+    if isinstance(_proc.stdout, io.IOBase):
+        threading.Thread(target=_drain_log, args=(_proc.stdout,), daemon=True).start()
     return True
 
 

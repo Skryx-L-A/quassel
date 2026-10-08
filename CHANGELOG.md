@@ -46,6 +46,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Windows now stops only a verified Quassel speech server process, so other
+  speech server processes are left alone.
+- macOS and Windows keep bounded speech server diagnostic logs in the profile
+  data folder to make startup failures easier to diagnose.
 - The microphone test in the Control Center now says what went wrong instead
   of "Whisper server unreachable" for everything: missing microphone access on
   macOS (with the place to allow it), a microphone that is busy or unplugged, a
