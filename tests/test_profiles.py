@@ -410,3 +410,36 @@ def test_streaming_keeps_line_breaks_elsewhere(monkeypatch, tmp_path):
     core = streaming_core(monkeypatch, tmp_path, BROWSER)
     core.streamer.finish("Hallo\nWelt")
     assert "\n" in "".join(core.typed_keys)
+
+
+def test_prewarm_only_with_a_profiles_file(monkeypatch, tmp_path):
+    """OPEN 7: AppKit nur vorwärmen, wenn es Profile gibt."""
+    calls = []
+    monkeypatch.setattr(appctx, "prewarm", lambda: calls.append(1) or "thread")
+    assert profiles.prewarm() is None and calls == []
+    write(tmp_path, profiles.DEFAULTS)
+    assert profiles.prewarm() == "thread" and calls == [1]
+
+
+def test_appctx_prewarm_loads_appkit_in_the_background(monkeypatch):
+    loaded = []
+    monkeypatch.setattr(appctx, "_workspace", lambda: loaded.append(1))
+    monkeypatch.setattr(appctx.sys, "platform", "darwin")
+    t = appctx.prewarm()
+    t.join(2)
+    assert t.daemon and loaded == [1]
+    monkeypatch.setattr(appctx.sys, "platform", "linux")
+    assert appctx.prewarm() is None
+
+
+def test_daemon_prewarms_at_start(monkeypatch):
+    from quassel import daemon
+    calls = []
+    monkeypatch.setattr(daemon.profiles, "prewarm", lambda: calls.append(1))
+    monkeypatch.setattr(daemon.config, "Cfg", lambda: SimpleNamespace(
+        ui_language="auto", beep_output="system"))
+    monkeypatch.setattr(daemon.beep, "set_output", lambda n: None)
+    monkeypatch.setattr(daemon, "Recorder", lambda: None)
+    monkeypatch.setattr(daemon, "AudioDucker", lambda: None)
+    daemon.Daemon()
+    assert calls == [1]

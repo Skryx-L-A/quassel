@@ -175,6 +175,16 @@ def exists(path=None):
     return os.path.isfile(path or PROFILES)
 
 
+def prewarm(path=None):
+    """Beim Start: gibt es Profile, die Erkennung der aktiven Anwendung im
+    Hintergrund vorbereiten (macOS lädt AppKit). Ohne Datei nichts.
+    -> Thread oder None."""
+    if not exists(path):
+        return None
+    from . import appctx
+    return appctx.prewarm()
+
+
 def find(app, profiles):
     """Erstes Profil, das zur Anwendung passt, sonst None."""
     if app is None or not app.known:

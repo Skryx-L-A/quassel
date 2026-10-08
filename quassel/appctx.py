@@ -22,6 +22,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 
 # Frist je Hilfsprogramm. Üblich sind wenige Millisekunden; die Frist fängt
@@ -100,17 +101,30 @@ def _proc_name(pid):
 
 # ------------------------------------------------------------------ macOS
 _appkit = None
+_appkit_lock = threading.Lock()
 
 
 def _workspace():
     global _appkit
-    if _appkit is None:
-        try:
-            from AppKit import NSWorkspace
-            _appkit = NSWorkspace
-        except Exception:
-            _appkit = False
+    with _appkit_lock:
+        if _appkit is None:
+            try:
+                from AppKit import NSWorkspace
+                _appkit = NSWorkspace
+            except Exception:
+                _appkit = False
     return _appkit or None
+
+
+def prewarm():
+    """macOS: AppKit im Hintergrund laden. Der Import kostet einmalig etwa
+    90 ms; ohne Vorwärmen fielen sie in das erste Diktat. Anderswo nichts.
+    -> der gestartete Thread oder None."""
+    if sys.platform != "darwin":
+        return None
+    t = threading.Thread(target=_workspace, name="appctx-prewarm", daemon=True)
+    t.start()
+    return t
 
 
 def _mac():
