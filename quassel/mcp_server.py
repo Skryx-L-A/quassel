@@ -66,11 +66,13 @@ def _call(name, arguments):
         if not isinstance(path, str) or not os.path.isfile(path):
             return _content({"error": "path must name an existing local file"}, True)
         from .transcribe_file import transcribe_file
-        text = transcribe_file(path, config.Cfg())
-        if text is None:
+        transcript = transcribe_file(path, config.Cfg(), output_format="verbose_json")
+        if transcript is None:
             return _content({"error": "transcription failed"}, True)
-        return _content({"text": text, "segments": [],
-                         "warning": "timestamps are unavailable from the current backend"})
+        result = {"text": transcript.text, "segments": list(transcript.segments)}
+        if not transcript.segments:
+            result["warning"] = "timestamps are unavailable from the current backend"
+        return _content(result)
     if name == "history_list":
         if not _history_allowed():
             return _content({"error": "history sharing is disabled"}, True)

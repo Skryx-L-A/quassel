@@ -45,7 +45,9 @@ def test_transcribe_file_never_starts_a_microphone(monkeypatch, tmp_path):
     source = tmp_path / "sample.wav"
     source.write_bytes(b"test")
     calls = []
-    monkeypatch.setattr("quassel.transcribe_file.transcribe_file", lambda path, cfg: calls.append(path) or "hello")
+    from quassel.transcribe_file import FileTranscript
+    monkeypatch.setattr("quassel.transcribe_file.transcribe_file",
+                        lambda path, cfg, **kw: calls.append(path) or FileTranscript("hello", ()))
     result = request("tools/call", {"name": "transcribe_file", "arguments": {"path": str(source)}})
     assert result["result"]["isError"] is False
     assert calls == [str(source)]

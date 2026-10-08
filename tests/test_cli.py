@@ -50,7 +50,9 @@ def test_model_download_is_opt_in_and_writes_the_existing_server_config(tmp_path
 def test_transcribe_json_warns_when_the_current_backend_has_no_timestamps(monkeypatch, tmp_path, capsys):
     source = tmp_path / "sample.wav"
     source.write_bytes(b"not read by mocked backend")
-    monkeypatch.setattr("quassel.transcribe_file.transcribe_file", lambda *a, **kw: "hello")
+    from quassel.transcribe_file import FileTranscript
+    monkeypatch.setattr("quassel.transcribe_file.transcribe_file",
+                        lambda *a, **kw: FileTranscript("hello", ()))
     assert cli.main(["transcribe", str(source), "--json"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["text"] == "hello"

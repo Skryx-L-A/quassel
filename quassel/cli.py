@@ -139,16 +139,20 @@ def _transcribe(path, output):
     if not os.path.isfile(path):
         print("file not found", file=sys.stderr)
         return EXIT_FAILED
-    from .transcribe_file import transcribe_file
-    text = transcribe_file(path, config.Cfg())
-    if text is None:
+    from .transcribe_file import render_srt, render_vtt, transcribe_file
+    transcript = transcribe_file(path, config.Cfg(), output_format="verbose_json")
+    if transcript is None:
         print("transcription failed (unsupported file, ffmpeg, or local server unavailable)", file=sys.stderr)
         return EXIT_FAILED
     if output == "json":
-        _emit({"text": text, "segments": [],
-               "warning": "timestamps are unavailable from the current speech backend"}, as_json=True)
+        result = {"text": transcript.text, "segments": list(transcript.segments)}
+        if not transcript.segments:
+            result["warning"] = "timestamps are unavailable from the current speech backend"
+        _emit(result, as_json=True)
+    elif output in ("srt", "vtt") and transcript.segments:
+        print(render_srt(transcript.segments) if output == "srt" else render_vtt(transcript.segments), end="")
     else:
-        print(text)
+        print(transcript.text)
         if output in ("srt", "vtt"):
             print("timestamps are unavailable from the current speech backend; emitted plain text", file=sys.stderr)
     return 0

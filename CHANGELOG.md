@@ -22,6 +22,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Quassel can now be used as a local stdio MCP server for file transcription,
   dictionary management, and status. Dictation history is not exposed unless
   it is explicitly enabled in the MCP configuration.
+- File transcription now returns source-relative timestamped segments when the
+  local speech server provides them. The command line can write SRT or WebVTT,
+  including for long files split into processing chunks, and file-processing
+  callers can show progress or cancel safely.
 - macOS: when Secure Input is on (a password field, or Secure Keyboard Entry
   in Terminal), the system hides every key from Quassel and the hotkey does
   nothing. The pill now says so for a few seconds when it starts, and the menu
