@@ -30,6 +30,8 @@ STRINGS = {
     "pill_movable": ("Pill can be moved", "Pille frei verschiebbar"),
     "pill_click_center": ("Click on the pill opens the control center",
                            "Klick auf die Pille öffnet das Kontrollzentrum"),
+    "pill_movable_linux": ("On Linux only the portable pill can be moved, and only under X11. The standard pill always sits at the bottom center of the active screen.",
+                           "Unter Linux lässt sich nur die Pille der portablen Fassung verschieben, und nur unter X11. Die Standard-Pille sitzt immer unten mittig auf dem aktiven Bildschirm."),
     "pill_reset_pos": ("Reset position", "Position zurücksetzen"),
     "pill_preview": ("Show live preview text in the pill", "Live-Vorschautext in der Pille zeigen"),
     "sec_hotkey": ("Hotkey", "Hotkey"),

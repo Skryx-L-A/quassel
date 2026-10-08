@@ -40,6 +40,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Linux: turning off "Click on the pill opens the control center" now also
+  works for the standard pill. The settings page also explains that on Linux
+  only the portable pill can be moved, and only under X11.
 - The microphone list in the Control Center has a Refresh button, so a
   microphone you plug in shows up without reopening the window. A saved
   microphone that is unplugged at the moment stays selected instead of being

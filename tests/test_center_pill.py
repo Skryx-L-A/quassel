@@ -258,3 +258,19 @@ def test_unplugged_saved_mic_stays_selected(qapp, isolated_cfg, monkeypatch, sav
         assert c.mic.currentData() == "usb"
     finally:
         c.close()
+
+
+# ------------------------------------------- E81 Linux-Pille: Verschieben
+@pytest.mark.parametrize("win,mac,shown", [(False, False, True), (False, True, False),
+                                           (True, False, False)])
+def test_movable_note_only_on_linux(qapp, isolated_cfg, monkeypatch, win, mac, shown):
+    monkeypatch.setattr(center, "IS_WINDOWS", win)
+    monkeypatch.setattr(center, "IS_MAC", mac)
+    # keine echten systemctl-/Registry-Abfragen der vorgetäuschten Plattform
+    monkeypatch.setattr(center, "autostart_enabled", lambda: False)
+    monkeypatch.setattr(center, "daemon_active", lambda: True)
+    c = center.Center(controller=type("Ctl", (), {"enabled": True})())
+    try:
+        assert (c.pill_movable_note is not None) is shown
+    finally:
+        c.close()

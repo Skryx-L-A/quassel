@@ -527,6 +527,10 @@ class Center(QMainWindow):
         self.pill_reset_pos.clicked.connect(self.reset_pill_position)
         row.addWidget(self.pill_reset_pos)
         g.addLayout(row)
+        self.pill_movable_note = None
+        if not (IS_WINDOWS or IS_MAC):
+            # Die GTK-Pille (Layer-Shell-Overlay) kann nicht frei stehen (E81)
+            self.pill_movable_note = self.desc(tr("pill_movable_linux"), g)
         self.pill_click_center = QCheckBox(tr("pill_click_center"))
         self.pill_click_center.setChecked(self.cfg.pill_click_opens_center)
         self.pill_click_center.toggled.connect(self.save_settings)

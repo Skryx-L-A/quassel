@@ -377,7 +377,10 @@ class Pill(Gtk.Application):
 
     # --------------------------------------------------------------- Klicks
     def on_left_click(self, *_a):
-        # Sichere Hauptaktion: Kontrollzentrum öffnen (stoppt Quassel NIE).
+        # Sichere Hauptaktion: Kontrollzentrum öffnen (stoppt Quassel NIE) —
+        # außer der Nutzer hat das im Kontrollzentrum abgeschaltet.
+        if not self.cfg.pill_click_opens_center:
+            return
         subprocess.Popen(["quassel-type"])
 
     def on_right_click(self, *_a):
