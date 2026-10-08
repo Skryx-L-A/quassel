@@ -7,7 +7,8 @@ wherever your cursor is.** A clean, minimal pill at the bottom of your screen
 shows an animated listening indicator and a live transcript while you speak — inspired by the
 best commercial dictation apps, but **100 % offline and source-available**: speech
 recognition runs locally via [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
-No cloud, no account, no subscription, no telemetry.
+No cloud, no account, no subscription, no telemetry. What is stored where, and
+the few network connections that exist, are listed in [docs/PRIVACY.md](docs/PRIVACY.md).
 
 **Linux**, **Windows** and **macOS** (Apple Silicon) — Windows build instructions are in
 [windows/build.md](windows/build.md); macOS ships as a DMG, Homebrew cask or
@@ -21,7 +22,8 @@ one-line installer (unsigned — building from source is still available too, se
 - **Push-to-talk:** hold `Ctrl+Meta`, talk, release → text is pasted at the cursor
 - **Hands-free mode:** double-tap `Ctrl+Meta`, speak freely, press once → text is pasted
 - **Live preview:** see the transcript in the pill *while* you're still speaking
-- **Minimal pill overlay** with an animated listening indicator — click it to open
+- **Minimal pill overlay** that shows your live microphone level while you speak
+  (and says so when nothing arrives from the microphone) — click it to open
   the control center; resizable, translucent, movable, or turn it off entirely
 - **Control center** for everything — no config files needed: hotkey, language,
   Whisper model (with in-app download), microphone, personal dictionary,
@@ -29,11 +31,52 @@ one-line installer (unsigned — building from source is still available too, se
 - **Spoken punctuation & commands:** "comma", "new line", "scratch that" —
   German and English
 - **Personal dictionary:** teach it names and jargon it would otherwise misspell
-- **Local history** (optional): your last 50 dictations, one click to copy
+- **Local history** (optional): up to 50 recent dictations, one click to copy;
+  entries are deleted after 7 days by default
 - **Works everywhere:** any GUI app *and* terminals; Wayland and X11
 - **Keyboard-layout safe:** pastes via clipboard — QWERTZ/AZERTY umlauts survive
 - **GPU accelerated:** NVIDIA (CUDA) and AMD/Intel (Vulkan) auto-detected
 - **Bilingual UI:** English and German, follows your system language
+- **Transcribe files:** pick an audio or video file in the control center, or use
+  the command line to get plain text, JSON, or SRT/WebVTT subtitles
+
+### Optional features — opt-in, default off
+
+Nothing below changes how Quassel behaves until you switch it on. Settings that
+have no page in the control center yet live in `config.ini`; every key is
+explained in [docs/CONFIG.md](docs/CONFIG.md).
+
+- **Per-app profiles:** different language, programmer mode, AI mode or an Enter
+  block per application, for example no Enter in terminals so a dictated command
+  is never run by accident. Create `profiles.ini` with the ready-made examples
+  for terminals, IDEs and mail (`profiles init` of the command-line client).
+  Without that file Quassel does not even look at which app is in front. On
+  Wayland the active app is only known under Hyprland and Sway.
+- **Dictation clean-up:** `[cleanup] enabled = true` with a `level` of `leicht`
+  (filler words, repeats, numbers, your correction list; no model), `mittel` or
+  `stark` (plus a local language model through an OpenAI-compatible endpoint).
+  The result is checked, and on any doubt the text as transcribed is inserted.
+- **Local AI modes:** reshape a dictation as an email, a list, formal and more
+  through a local Ollama model ("as an email ..."), plus modes of your own.
+- **Hands-free auto-stop:** `[vad] autostop = true` ends a double-tap dictation
+  by itself after a pause, but only once you have spoken.
+- **Pre-roll buffer** (Linux and macOS): `[speech] preroll_ms = 300` includes the
+  moment before you pressed the keys. The microphone then stays open for about
+  three seconds after each dictation, so on macOS the system's microphone
+  indicator stays visible during that time.
+- **Wake word (beta):** say a phrase (default "Hey Quassel") instead of pressing
+  keys. A small keyword model can sit in front of the speech engine so it does not
+  transcribe every sentence said in the room; Quassel ships no such model.
+- **Neural voice detection:** an optional Silero model replaces the loudness
+  threshold for the wake word and auto-stop. Quassel neither ships nor downloads
+  it; you add `onnxruntime` and the model file yourself.
+- **Command line and MCP server:** `status`, model and dictionary management,
+  file transcription, and a local stdio MCP server for tools such as Claude Code.
+  They never record from the microphone. See [docs/cli.md](docs/cli.md).
+- **Live typing (streaming)** in hands-free mode, **programmer dictation**,
+  **text replacements**, **auto-learned dictionary words**, **update check**.
+- **A second copy next to the installed one:** `QUASSEL_PROFILE=next` gives a
+  copy its own settings, data and speech-server port; models are shared.
 
 ## Why can't I just bind a normal shortcut?
 
@@ -221,11 +264,21 @@ normal shortcuts keep working); say "scratch that" / „lösch das" to delete th
 last dictation. On macOS, turning Quassel off stops dictation while the speech
 server remains loaded for a quick restart.
 
+## Documentation
+
+- [INSTALL.md](INSTALL.md) — installation per platform
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — what each message means and what to do
+- [docs/CONFIG.md](docs/CONFIG.md) — every setting, with default and range
+- [docs/PRIVACY.md](docs/PRIVACY.md) — what is stored where, and what can use the network
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the parts fit together
+- [docs/cli.md](docs/cli.md) — command line and MCP server
+- [ROADMAP.md](ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md)
+
 ## Uninstall
 
 ```bash
 ./uninstall.sh          # remove the app
-./uninstall.sh --purge  # also remove whisper.cpp, models, venv, settings
+./uninstall.sh --purge  # also remove whisper.cpp, models, venv, history, settings
 ```
 
 ## License
