@@ -316,6 +316,10 @@ class DictationCore:
     _runner = None              # ActionRunner, wo die Plattform einen nutzt
     _handsfree = False          # Freihand-Modus (Doppeltipp) im laufenden Diktat
     _level_pump = None          # misst den Mikrofonpegel für die Pille (H112)
+    # Unbereinigter Text des letzten Diktats, nur wenn die Bereinigung ihn
+    # verändert hat — nur im Speicher, nie auf Platte oder im Log; für
+    # „Rohtext zurück" aus dem Kontrollzentrum.
+    _last_raw = None
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -753,6 +757,7 @@ class DictationCore:
                 self._state("error", tr("nothing"))
             return
         mechanical_failed = False
+        self._last_raw = None
         try:
             mech = self._finish_text(self._refine_mechanical(value), cfg)
         except Exception:
@@ -770,6 +775,8 @@ class DictationCore:
                 return
             inserted = self._insert(final)
             self.last_paste_len = len(final) if inserted else 0
+            if final != value:
+                self._last_raw = value
             value = final
         elif streamer is not None:
             # Streaming hat das Zielfenster schon berührt: keine spätere
@@ -800,6 +807,29 @@ class DictationCore:
             self._report_clipboard_only()
         secs = len(data) / (RATE * SAMPLE_BYTES)
         self._after_insert(value, secs)
+
+    # ------------------------------------------------------- Rohtext zurück
+    def _clip_copy(self, text):
+        """Plattform: Text in die Zwischenablage. False = gescheitert."""
+        return False
+
+    def raw_back(self):
+        """„Rohtext zurück": den unbereinigten Text des letzten Diktats in die
+        Zwischenablage legen. Bewusst KEINE Tasten ins Fenster — gedrückt wird
+        im Kontrollzentrum, das Zielfenster ist dann ein anderes (B19). Die
+        Meldung nennt nur, wo der Text liegt, nicht den Text selbst."""
+        raw = self._last_raw
+        if not raw:
+            self._state("done", tr("raw_back_none"))
+            return False
+        try:
+            ok = self._clip_copy(raw) is not False
+        except Exception as exc:  # noqa: BLE001 — Zwischenablage kaputt
+            self._log("raw_back: Zwischenablage: %s" % type(exc).__name__)
+            ok = False
+        self._state("done" if ok else "error",
+                    tr("raw_back_done") if ok else tr("raw_back_failed"))
+        return ok
 
     # ------------------------------------------------------------ Einfügen
     def _insert(self, text):
@@ -1051,7 +1081,11 @@ class DictationCore:
         kind, value = postprocess_transcript(raw_text, cfg)
         if kind != "text" or not value.strip():
             return
+        self._last_raw = None
+        raw = value
         value = self._refine(value)
+        if self._cleanup_active() and value != raw:
+            self._last_raw = raw
         if self._insert(value):
             self.last_paste_len = len(value)
             self._forget_text(self._state("done", value))

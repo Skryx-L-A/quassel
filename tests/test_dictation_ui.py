@@ -233,3 +233,63 @@ def test_failed_microphone_start_reports_in_pill_and_notification():
     assert core.start_recording() is False
     assert core.states == [("error", i18n.tr("err_mic_open"))]
     assert core.notes == [i18n.tr("err_mic_open")]
+
+
+# ------------------------------------------- Rohtext zurück (Textbereinigung)
+class ClipCore(Core):
+    def __init__(self, ok=True):
+        super().__init__()
+        self.clips = []
+        self._ok = ok
+
+    def _clip_copy(self, text):
+        self.clips.append(text)
+        return self._ok
+
+
+def test_raw_back_copies_the_raw_text_and_never_names_it():
+    core = ClipCore()
+    core._last_raw = "äh also das ist der Rohtext"
+    assert core.raw_back() is True
+    assert core.clips == ["äh also das ist der Rohtext"]
+    state, text = core.states[-1]
+    assert state == "done" and "Rohtext" not in text and "clipboard" in text
+
+
+def test_raw_back_without_raw_text():
+    core = ClipCore()
+    assert core.raw_back() is False
+    assert core.clips == [] and core.states[-1] == ("done", i18n.tr("raw_back_none"))
+
+
+def test_raw_back_clipboard_failure_is_reported():
+    core = ClipCore(ok=False)
+    core._last_raw = "x"
+    assert core.raw_back() is False
+    assert core.states[-1] == ("error", i18n.tr("raw_back_failed"))
+
+
+def test_daemon_raw_back_signal_and_clipboard(monkeypatch):
+    got = []
+    monkeypatch.setattr(daemon_mod, "clip_copy", got.append)
+    d = daemon_mod.Daemon.__new__(daemon_mod.Daemon)
+    d._clip_copy("roh")
+    assert got == ["roh"]
+
+
+@pytest.mark.parametrize("active,cleaned,kept", [(True, "Hallo.", "äh hallo"),
+                                                 (True, "äh hallo", None),
+                                                 (False, "Hallo.", None)])
+def test_raw_text_is_kept_in_memory_only_when_cleanup_changed_it(monkeypatch, active,
+                                                                 cleaned, kept):
+    core = ClipCore()
+    core._last_raw = "vom Diktat davor"
+    monkeypatch.setattr(dictation, "postprocess_transcript",
+                        lambda raw, cfg, *a: ("text", "äh hallo"))
+    core._refine = lambda text: cleaned
+    core._cleanup_active = lambda: active
+    core._insert = lambda text: True
+    core._forget_text = lambda token: None
+    core._after_insert = lambda value, seconds=0.0: None
+    core._wake_insert_with(core.cfg, "äh hallo")
+    assert core._last_raw == kept

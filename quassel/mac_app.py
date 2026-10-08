@@ -235,6 +235,17 @@ class MacApp:
         except (OSError, AttributeError):
             pass
 
+    def raw_back(self):
+        """„Rohtext zurück" aus dem Kontrollzentrum: SIGHUP an den Daemon —
+        nur er hat den unbereinigten Text des letzten Diktats im Speicher."""
+        if self.daemon is None or self.daemon.poll() is not None:
+            return False
+        try:
+            os.kill(self.daemon.pid, signal.SIGHUP)
+        except (OSError, AttributeError):
+            return False
+        return True
+
     def _sync_ui(self):
         mode = "ready" if self.enabled else "off"
         if self.tray is not None:

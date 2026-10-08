@@ -33,7 +33,7 @@ from ..state import LevelMeter, level_read
 from . import server
 from .audio_win import Recorder
 from .hook import CHORDS_VK, KeyboardHook
-from .paste import (paste, send_backspaces, send_enter, streaming_begin,
+from .paste import (clip_copy, paste, send_backspaces, send_enter, streaming_begin,
                     streaming_restore, type_chunk)
 
 DEBUG_LOG_MAX = 1_000_000   # ab ~1 MB eine Generation wegrotieren
@@ -360,6 +360,9 @@ class WinDictation(dictation.DictationCore):
     def _server_vad(self):
         return server.vad_model_path() is not None
 
+    def _clip_copy(self, text):
+        return clip_copy(text)
+
     def _level_target(self):
         # Pille läuft im selben Prozess: Pegel direkt an WinApp (thread-sicher,
         # nur ein Tupel wird ersetzt), kein Umweg über eine Datei.
@@ -433,6 +436,12 @@ class WinApp(QObject):
     @property
     def rec(self):
         return self.core.rec
+
+    def raw_back(self):
+        """„Rohtext zurück" aus dem Kontrollzentrum (läuft im selben Prozess):
+        auf dem Aktions-Thread, hinter einem noch laufenden Diktat."""
+        self.runner.submit("raw-back", self.core.raw_back)
+        return True
 
     def set_level(self, level):
         """Von der Pegelpumpe (eigener Thread) aufgerufen."""

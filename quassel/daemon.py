@@ -19,6 +19,7 @@ import select
 import signal
 import struct
 import sys
+import threading
 import time
 
 from . import __version__
@@ -67,6 +68,14 @@ def log(msg):
     # Zeitstempel: im Log der App (~/Library/Logs/Quassel/daemon.log) ließe
     # sich sonst weder ein Neustart noch die Dauer eines Hängers ablesen.
     print("%s %s" % (time.strftime("%H:%M:%S"), msg), file=sys.stderr, flush=True)
+
+
+def clip_copy(text):
+    """Zwischenablage des Plattform-Backends (quassel.platform reicht nur die
+    Diktat-Funktionen durch). Modulfunktion, damit Tests sie ersetzen können."""
+    import importlib
+    from . import platform as platform_mod
+    return importlib.import_module(platform_mod._backend_module_name()).clip_copy(text)
 
 
 class Daemon(dictation.DictationCore):
@@ -141,6 +150,9 @@ class Daemon(dictation.DictationCore):
 
     def _mic_is_bluetooth(self):
         return mic_is_bluetooth(self.cfg.mic)
+
+    def _clip_copy(self, text):
+        return clip_copy(text)
 
     def _level_target(self):
         # Pegel über state.json an die Pille (eigener Prozess); level_set
@@ -309,6 +321,20 @@ class Daemon(dictation.DictationCore):
             signal.signal(signal.SIGUSR2, lambda *_: self.panic_stop())
         except (OSError, ValueError):   # nicht im Haupt-Thread -> kein Handler
             log("daemon: SIGUSR2-Handler nicht installierbar (Not-Aus nur übers Menü)")
+        self._install_raw_back_signal()
+
+    def _install_raw_back_signal(self):
+        """„Rohtext zurück" per SIGHUP: das Kontrollzentrum (eigener Prozess
+        unter Linux, Kindprozess-Eltern unter macOS) schickt das Signal; der
+        Rohtext liegt nur hier im Speicher. Die Zwischenablage wird in einem
+        eigenen Thread gesetzt, nicht im Signal-Handler."""
+        if not hasattr(signal, "SIGHUP"):
+            return
+        try:
+            signal.signal(signal.SIGHUP, lambda *_: threading.Thread(
+                target=self.raw_back, name="raw-back", daemon=True).start())
+        except (OSError, ValueError):
+            log("daemon: SIGHUP-Handler nicht installierbar (Rohtext zurück aus)")
 
     def _mac_watchdog(self, listener, now=None):
         """Sicherheitslimit im Freihand-Modus (Pendant zu MAX_RECORD im
