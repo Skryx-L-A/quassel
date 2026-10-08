@@ -42,6 +42,20 @@ def test_unknown_clipboard_format_types_without_changing_clipboard(paste_module,
     assert typed == ["dictation"]
 
 
+def test_snapshot_keeps_text_and_image_bytes(paste_module, monkeypatch):
+    p = paste_module
+    text_data = ctypes.create_string_buffer(b"A\0\0\0")
+    image_data = ctypes.create_string_buffer(b"image")
+    p.user32.OpenClipboard.return_value = 1
+    p.user32.EnumClipboardFormats.side_effect = [p.CF_UNICODETEXT, p.CF_DIB, 0]
+    p.user32.GetClipboardData.side_effect = [1, 2]
+    p.kernel32.GlobalSize.side_effect = [4, 5]
+    p.kernel32.GlobalLock.side_effect = [ctypes.addressof(text_data), ctypes.addressof(image_data)]
+    monkeypatch.setattr(p, "_format_ids", lambda: {name: i + 100 for i, name in
+                                                enumerate((*p.PRIVATE_FORMATS, "HTML Format", "Rich Text Format"))})
+    assert p._snapshot() == [(p.CF_UNICODETEXT, b"A\0\0\0"), (p.CF_DIB, b"image")]
+
+
 def test_restore_skips_new_user_copy(paste_module, monkeypatch):
     p = paste_module
     p._original = [(p.CF_UNICODETEXT, b"old\0\0")]
