@@ -2,7 +2,7 @@
 import threading
 import time
 
-from quassel import audio
+from quassel import audio, coreaudio
 
 
 def test_ring_keeps_only_requested_audio_and_prepends_it(tmp_path):
@@ -45,6 +45,9 @@ def test_recorder_reuses_warm_capture_then_expires(tmp_path, monkeypatch):
         def close(self):
             calls.append(("close",))
 
+        def device_changed(self):
+            return False
+
     monkeypatch.setattr(audio, "_PrerollCapture", Capture)
     monkeypatch.setattr(audio, "RUNDIR", str(tmp_path))
     rec = audio.Recorder(str(tmp_path / "rec.raw"), preroll_ms=300,
@@ -60,3 +63,14 @@ def test_recorder_reuses_warm_capture_then_expires(tmp_path, monkeypatch):
     while ("close",) not in calls and time.monotonic() < deadline:
         time.sleep(0.01)
     assert ("close",) in calls
+
+
+def test_warm_mac_capture_reopens_after_default_input_change(monkeypatch):
+    selected = [10]
+    monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(coreaudio, "default_input_device", lambda: selected[0])
+    capture = audio._PrerollCapture("default", 300)
+    capture.device_id = 10
+    assert not capture.device_changed()
+    selected[0] = 20
+    assert capture.device_changed()

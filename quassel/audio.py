@@ -509,12 +509,16 @@ class _PrerollCapture:
         self.abandoned = False
         self.closed = False
         self.bt_before = {}
+        self.device_id = None
 
     def open(self):
         if sys.platform == "darwin" and mac_backend() != "ffmpeg":
             sd = _sd()
             if sd is None:
                 return False
+            if not self.mic or self.mic == "default":
+                from . import coreaudio
+                self.device_id = coreaudio.default_input_device()
             device = _mac_device(self.mic)
             rate = _mac_device_rate(device) if mac_backend() == "sdnative" else RATE
             try:
@@ -548,6 +552,12 @@ class _PrerollCapture:
                                        name="audio-preroll-writer")
         self.thread.start()
         return True
+
+    def device_changed(self):
+        if sys.platform != "darwin" or self.mic not in (None, "default"):
+            return False
+        from . import coreaudio
+        return coreaudio.default_input_device() != self.device_id
 
     def _profile_snapshot(self):
         before = _bluez_profiles()
@@ -720,7 +730,7 @@ class Recorder:
                 timer, self._warm_timer = self._warm_timer, None
             if timer is not None:
                 timer.cancel()
-            if capture is not None and capture.mic != mic:
+            if capture is not None and (capture.mic != mic or capture.device_changed()):
                 capture.close()
                 capture = None
             if capture is None:
