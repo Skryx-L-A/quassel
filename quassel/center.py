@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from . import (__version__, ai, aimodes, beep, config, dictprompt, i18n, stats, transcribe_file,
                updatecheck, whisperclient)
+from .dictation import failure_text, mac_mic_permission
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
 from .i18n import tr
@@ -261,22 +262,6 @@ def restart_server():
         server_mac.start()
     else:
         sysctl("try-restart", "quassel-server")
-
-
-def mac_mic_permission():
-    """Mikrofonfreigabe dieses Prozesses unter macOS: "granted", "denied",
-    "undetermined" oder None (nicht ermittelbar). Reine Statusabfrage über
-    AVCaptureDevice, löst keinen Dialog aus und öffnet kein Mikrofon."""
-    try:
-        import ctypes
-        import objc
-        ctypes.cdll.LoadLibrary(
-            "/System/Library/Frameworks/AVFoundation.framework/AVFoundation")
-        device = objc.lookUpClass("AVCaptureDevice")
-        status = int(device.authorizationStatusForMediaType_("soun"))
-    except Exception:  # noqa: BLE001 — ohne pyobjc: unbekannt
-        return None
-    return {0: "undetermined", 1: "denied", 2: "denied", 3: "granted"}.get(status)
 
 
 class MicTestError(Exception):
@@ -1354,10 +1339,7 @@ class Center(QMainWindow):
 
     def _server_error(self):
         """Server antwortet nicht: fehlt das Modell, oder lädt/hängt er?"""
-        model_path = config.read_serverenv().get("MODEL_PATH", "")
-        if model_path and not os.path.exists(model_path):
-            return tr("err_model_missing", model=os.path.basename(model_path))
-        return tr("err_server_down")
+        return failure_text(None)
 
     def on_mictest(self):
         self.test_out.setText(tr("mic_testing"))

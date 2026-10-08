@@ -130,6 +130,38 @@ def clipboard_only_text():
     return "Text is on the clipboard – press Ctrl+V"
 
 
+def mac_mic_permission():
+    """Mikrofonfreigabe dieses Prozesses unter macOS: "granted", "denied",
+    "undetermined" oder None (nicht ermittelbar). Reine Statusabfrage über
+    AVCaptureDevice, löst keinen Dialog aus und öffnet kein Mikrofon."""
+    try:
+        import ctypes
+        import objc
+        ctypes.cdll.LoadLibrary(
+            "/System/Library/Frameworks/AVFoundation.framework/AVFoundation")
+        device = objc.lookUpClass("AVCaptureDevice")
+        status = int(device.authorizationStatusForMediaType_("soun"))
+    except Exception:  # noqa: BLE001 — ohne pyobjc: unbekannt
+        return None
+    return {0: "undetermined", 1: "denied", 2: "denied", 3: "granted"}.get(status)
+
+
+def failure_text(result=None):
+    """Konkrete Meldung, warum aus einem Diktat kein Text wurde (H113).
+
+    result None: der Server lief nicht an — fehlt das Modell, steht das da,
+    sonst „antwortet nicht (lädt evtl. noch)". Sonst das SpeechResult der
+    gescheiterten Transkription: Frist, keine Verbindung, Serverfehler."""
+    if result is None:
+        model = whisperclient.missing_model()
+        if model:
+            return tr("err_model_missing", model=model)
+        return tr("err_server_down")
+    key = {"timeout": "err_timeout", "conn": "err_server_down"}.get(
+        getattr(result, "error", None), "err_transcribe")
+    return tr(key)
+
+
 def scratch_wav(name):
     """Pfad einer Zwischen-WAV dieses Prozesses (Diktat, Vorschau). Die
     Prozessnummer im Namen sorgt dafür, dass beim Aufräumen nie die Datei
@@ -324,8 +356,14 @@ class DictationCore:
         return False
 
     def _report_mic_missing(self):
-        """rec.start() scheiterte: dem Nutzer sagen, was fehlt."""
-        self._notify(tr("no_mic"))
+        """rec.start() scheiterte: dem Nutzer sagen, was fehlt — in der Pille
+        und als Benachrichtigung (das Diktat kommt gar nicht erst zustande)."""
+        text = self._mic_error_text()
+        self._state("error", text)
+        self._notify(text)
+
+    def _mic_error_text(self):
+        return tr("err_mic_open")
 
     def _tail_pad_ms(self):
         return TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS
@@ -618,7 +656,7 @@ class DictationCore:
         deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
                     else SERVER_WAIT_COLD)
         if not whisperclient.ensure_server(deadline=deadline):
-            return self._fail_with_rescue(data, streamer, clip_backup)
+            return self._fail_with_rescue(data, streamer, clip_backup, None)
         wav = scratch_wav("rec")
         try:
             self._wav_from_raw(data, wav)
@@ -627,7 +665,7 @@ class DictationCore:
             discard(wav)
         raw_text = result.text
         if raw_text is None:
-            return self._fail_with_rescue(data, streamer, clip_backup)
+            return self._fail_with_rescue(data, streamer, clip_backup, result)
         if panic.is_set():
             # „Diktat sofort beenden" wurde gedrückt, während transkribiert
             # wurde: kein Text mehr ins Fenster.
@@ -717,7 +755,7 @@ class DictationCore:
         self._state("error", clipboard_only_text())
 
     # --------------------------------------------------- Rettung der Aufnahme
-    def _fail_with_rescue(self, data, streamer, clip_backup):
+    def _fail_with_rescue(self, data, streamer, clip_backup, result=None):
         """Server nicht erreichbar oder Transkription gescheitert: die Aufnahme
         ist gesprochen und darf nicht einfach verschwinden — als WAV sichern und
         den Pfad in der Fehlermeldung nennen. Rückgabe False, wenn auch die
@@ -725,7 +763,7 @@ class DictationCore:
         if streamer is not None:
             self._streaming_restore(clip_backup)
         path = self._rescue(data)
-        text = tr("no_server")
+        text = failure_text(result)
         if path:
             text += " · " + tr("rescued").format(path=path)
         self._state("error", text)

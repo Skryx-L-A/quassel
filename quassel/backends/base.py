@@ -22,9 +22,14 @@ class TranscriptionOptions:
 
 @dataclass(frozen=True)
 class SpeechResult:
+    """text None = gescheitert; error sagt dann, woran (für eine konkrete
+    Meldung statt „Server nicht erreichbar"): "timeout" (Server zu langsam),
+    "http" (Server antwortete mit Fehler), "conn" (keine Verbindung),
+    "io" (Aufnahme nicht lesbar) oder None (unbekannt)."""
     text: Optional[str]
     segments: Tuple[Any, ...] = ()
     language: Optional[str] = None
+    error: Optional[str] = None
 
 
 class SpeechBackend(Protocol):

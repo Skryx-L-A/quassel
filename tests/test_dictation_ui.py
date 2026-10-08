@@ -192,3 +192,44 @@ def test_panic_still_notifies(pumps):
     core.start_recording()
     core.panic_stop()
     assert core.notes == [i18n.tr("panic_stopped")]
+
+
+# ------------------------------------------- H113 konkrete Fehlermeldungen
+from quassel.backends import SpeechResult  # noqa: E402
+
+
+@pytest.mark.parametrize("error,key", [("timeout", "err_timeout"),
+                                       ("conn", "err_server_down"),
+                                       ("http", "err_transcribe"),
+                                       ("io", "err_transcribe"),
+                                       (None, "err_transcribe")])
+def test_failed_transcription_names_the_cause(error, key):
+    assert dictation.failure_text(SpeechResult(text=None, error=error)) == i18n.tr(key)
+
+
+def test_server_not_starting_names_a_missing_model(monkeypatch):
+    monkeypatch.setattr(dictation.whisperclient, "missing_model", lambda: "ggml-large.bin")
+    assert dictation.failure_text(None) == i18n.tr("err_model_missing", model="ggml-large.bin")
+    monkeypatch.setattr(dictation.whisperclient, "missing_model", lambda: None)
+    assert dictation.failure_text(None) == i18n.tr("err_server_down")
+
+
+class RescueCore(Core):
+    def _rescue(self, data):
+        return "/run/rescued-1.wav"
+
+
+def test_rescue_message_says_what_went_wrong(monkeypatch):
+    core = RescueCore()
+    core._fail_with_rescue(b"x", None, None, SpeechResult(text=None, error="timeout"))
+    text = core.states[-1][1]
+    assert text.startswith(i18n.tr("err_timeout"))
+    assert "rescued-1.wav" in text
+    assert i18n.tr("no_server") not in text
+
+
+def test_failed_microphone_start_reports_in_pill_and_notification():
+    core = Core(start_ok=False)
+    assert core.start_recording() is False
+    assert core.states == [("error", i18n.tr("err_mic_open"))]
+    assert core.notes == [i18n.tr("err_mic_open")]

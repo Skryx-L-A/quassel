@@ -31,7 +31,7 @@ from .dictation import (  # noqa: F401 — Namen bleiben hier ansprechbar
     SERVER_WAIT_FINISH, SLOW_STOP, TAIL_PAD_BT_MS, WAKE_RAW,
     PartialLoop, postprocess_transcript)
 from .mediacontrol import AudioDucker
-from .audio import Recorder, mac_backend, wav_from_raw
+from .audio import Recorder, mac_backend, record_command, wav_from_raw
 from .config import CHORDS
 from .i18n import tr
 from .platform import (mic_is_bluetooth, notify, paste, send_backspaces,
@@ -149,15 +149,18 @@ class Daemon(dictation.DictationCore):
     def _server_vad(self):
         return bool(config.read_serverenv().get("VAD_MODEL"))
 
-    def _report_mic_missing(self):
-        if sys.platform == "darwin":
+    def _mic_error_text(self):
+        """Warum ließ sich die Aufnahme nicht starten (H113)?"""
+        if sys.platform == "darwin" and mac_backend() != "ffmpeg":
             # sounddevice-Pfad: es fehlt kein Programm, sondern ein
-            # nutzbares Eingabegerät (oder die Mikrofon-Freigabe).
-            missing = ("ffmpeg" if mac_backend() == "ffmpeg"
-                       else "Mikrofonzugriff")
-        else:
-            missing = "pw-record/parecord"
-        notify("Fehler: %s fehlt" % missing)
+            # nutzbares Eingabegerät oder die Mikrofon-Freigabe.
+            if dictation.mac_mic_permission() == "denied":
+                return tr("err_mic_denied")
+            return tr("err_mic_open")
+        if record_command(self.cfg.mic) is None:
+            tool = "ffmpeg" if sys.platform == "darwin" else "pw-record/parecord"
+            return tr("err_recorder_missing", tool=tool)
+        return tr("err_mic_open")
 
     def _tail_pad_ms(self):
         return TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS

@@ -24,7 +24,17 @@ def test_whisper_server_backend_wraps_the_existing_wav_client(monkeypatch):
                                 prompt_extra="Quassel", language_hint="de")
     result = WhisperServerBackend().transcribe("dictation.wav", opts)
     assert result == SpeechResult(text="Hallo", language="de")
-    assert calls == [("dictation.wav", opts.cfg, 7, "Quassel")]
+    assert calls == [("dictation.wav", opts.cfg, 7, "Quassel", [])]
+
+
+def test_whisper_server_backend_reports_why_it_failed(monkeypatch):
+    def fail(path, cfg, timeout, prompt, errors):
+        errors.append("timeout")
+        return None
+    monkeypatch.setattr(whisperclient, "_transcribe_wav", fail)
+    result = WhisperServerBackend().transcribe(
+        "dictation.wav", TranscriptionOptions(SimpleNamespace(language="de")))
+    assert result.text is None and result.error == "timeout"
 
 
 def test_whisper_server_backend_does_not_guess_a_pcm_format():

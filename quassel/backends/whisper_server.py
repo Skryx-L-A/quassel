@@ -17,10 +17,13 @@ class WhisperServerBackend:
                 or isinstance(pcm_or_wav, bytes)):
             return SpeechResult(text=None)
         from .. import whisperclient
+        errors = []
         text = whisperclient._transcribe_wav(
-            os.fspath(pcm_or_wav), opts.cfg, opts.timeout, opts.prompt_extra)
+            os.fspath(pcm_or_wav), opts.cfg, opts.timeout, opts.prompt_extra,
+            errors)
         language = opts.language_hint
-        return SpeechResult(text=text, language=language)
+        error = (errors[-1] if errors else None) if text is None else None
+        return SpeechResult(text=text, language=language, error=error)
 
     def health(self) -> bool:
         from .. import whisperclient

@@ -367,8 +367,8 @@ class WinDictation(dictation.DictationCore):
 
     def _report_mic_missing(self):
         # Nicht still scheitern: sonst bleibt die Pille grau und der Nutzer
-        # weiß nicht, warum nichts passiert (z.B. Mikro aus/weg).
-        self._state("error", tr("no_mic"))
+        # weiß nicht, warum nichts passiert (Mikro belegt, aus oder weg).
+        self._state("error", self._mic_error_text())
 
     def _reset_hotkey(self):
         pump = getattr(self.owner, "pump", None)
@@ -463,9 +463,11 @@ class WinApp(QObject):
             if server.ensure_working(progress):
                 self.sig_state.emit("done", tr("ready"))
             else:
-                self.sig_state.emit("error", tr("no_server"))
+                self.sig_state.emit("error", dictation.failure_text(None))
         except Exception as e:  # noqa: BLE001
-            self.sig_state.emit("error", str(e)[:80])
+            # Rohe Ausnahmetexte gehören ins Log, nicht in die Pille (H113).
+            dlog("setup: %r" % e)
+            self.sig_state.emit("error", tr("download_failed", err=type(e).__name__))
 
 
     # ------------------------------------------------------------------ Menü

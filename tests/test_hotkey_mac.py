@@ -1609,25 +1609,44 @@ def test_osa_quote_hardened():
 
 
 def test_start_recording_failure_names_missing_piece(monkeypatch):
-    """Die Fehlermeldung nennt, was tatsächlich fehlt — auf dem Mac hängt das
-    am Aufnahmebackend: beim sounddevice-Pfad fehlt kein Programm, sondern ein
-    nutzbares Eingabegerät bzw. die Mikrofon-Freigabe."""
+    """Die Fehlermeldung nennt, was tatsächlich fehlt (H113) — auf dem Mac
+    hängt das am Aufnahmebackend: beim sounddevice-Pfad fehlt kein Programm,
+    sondern die Mikrofon-Freigabe oder ein nutzbares Eingabegerät. Die
+    Meldung steht in der Pille und kommt als Benachrichtigung."""
     from quassel import daemon as daemon_mod
+    from quassel import dictation, i18n
+    i18n.set_language("en")
     d = daemon_mod.Daemon.__new__(daemon_mod.Daemon)
-    d.cfg = SimpleNamespace(reload=lambda: False, ui_language="auto", mic="default",
+    d.cfg = SimpleNamespace(reload=lambda: False, ui_language="en", mic="default",
                             beep_output="system")
     d.rec = SimpleNamespace(start=lambda mic: False)
-    notes = []
+    notes, states = [], []
     monkeypatch.setattr(daemon_mod, "notify", lambda text, ms=0: notes.append(text))
+    monkeypatch.setattr(daemon_mod, "state_set",
+                        lambda s, text="": states.append((s, text)))
     monkeypatch.setattr(daemon_mod.sys, "platform", "darwin")
     monkeypatch.delenv("QUASSEL_MAC_AUDIO", raising=False)
-    assert d.start_recording() is False
-    assert notes == ["Fehler: Mikrofonzugriff fehlt"]
-    notes.clear()
-    monkeypatch.setenv("QUASSEL_MAC_AUDIO", "ffmpeg")
-    assert d.start_recording() is False
-    assert notes == ["Fehler: ffmpeg fehlt"]
-    notes.clear()
-    monkeypatch.setattr(daemon_mod.sys, "platform", "linux")
-    assert d.start_recording() is False
-    assert notes == ["Fehler: pw-record/parecord fehlt"]
+    try:
+        monkeypatch.setattr(dictation, "mac_mic_permission", lambda: "denied")
+        assert d.start_recording() is False
+        assert notes == [daemon_mod.tr("err_mic_denied")]
+        assert states == [("error", daemon_mod.tr("err_mic_denied"))]
+        notes.clear()
+        monkeypatch.setattr(dictation, "mac_mic_permission", lambda: "granted")
+        assert d.start_recording() is False
+        assert notes == [daemon_mod.tr("err_mic_open")]
+        notes.clear()
+        monkeypatch.setenv("QUASSEL_MAC_AUDIO", "ffmpeg")
+        monkeypatch.setattr(daemon_mod, "record_command", lambda mic: None)
+        assert d.start_recording() is False
+        assert notes == [daemon_mod.tr("err_recorder_missing", tool="ffmpeg")]
+        notes.clear()
+        monkeypatch.setattr(daemon_mod.sys, "platform", "linux")
+        assert d.start_recording() is False
+        assert notes == [daemon_mod.tr("err_recorder_missing", tool="pw-record/parecord")]
+        notes.clear()
+        monkeypatch.setattr(daemon_mod, "record_command", lambda mic: ["pw-record"])
+        assert d.start_recording() is False          # Programm da, Gerät nicht
+        assert notes == [daemon_mod.tr("err_mic_open")]
+    finally:
+        i18n.set_language(None)

@@ -56,6 +56,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- When a dictation fails, Quassel now says why instead of "Whisper server
+  unreachable" for everything: the speech model is missing (with its name),
+  the server is not answering (it may still be loading), it took too long, or
+  it could not transcribe the recording. The rescued recording is still named.
+  If the microphone cannot be opened, the message says whether macOS denied
+  access, the recording program is missing, or the microphone is busy or
+  unplugged, and the pill shows it too. Windows no longer shows raw error
+  texts from the setup. A slow server is no longer asked a second time over
+  curl, which made a timeout take twice as long.
 - The microphone test in the Control Center now says what went wrong instead
   of "Whisper server unreachable" for everything: missing microphone access on
   macOS (with the place to allow it), a microphone that is busy or unplugged, a

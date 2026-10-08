@@ -3,6 +3,8 @@ audio_ctx-Feld für kurze Diktate)."""
 import contextlib
 import sys, os
 import wave
+
+import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from quassel import whisperclient as wc
 
@@ -293,3 +295,96 @@ if __name__ == "__main__":
                test_dictionary_words_join_into_prompt, test_mixed_combines_primer_and_words]:
         fn(); print("ok:", fn.__name__)
     print("ALL WHISPERCLIENT TESTS PASSED")
+
+
+# ------------------------------------------- H113 Art des Fehlers melden
+import socket as _socket
+
+
+class _FakeResponse:
+    def __init__(self, status):
+        self.status = status
+
+    def read(self):
+        return b"hallo"
+
+
+def _fake_connection(behaviour):
+    class Conn:
+        def __init__(self, host, port, timeout):
+            pass
+
+        def request(self, *a, **k):
+            if behaviour == "refused":
+                raise ConnectionRefusedError("nope")
+
+        def getresponse(self):
+            if behaviour == "timeout":
+                raise _socket.timeout("timed out")
+            return _FakeResponse(500 if behaviour == "http" else 200)
+
+        def close(self):
+            pass
+    return Conn
+
+
+def _wav(tmp_path):
+    path = tmp_path / "a.wav"
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\0\0" * 1600)
+    return str(path)
+
+
+class _Cfg:
+    language = "de"
+
+
+@pytest.mark.parametrize("behaviour,kind,curl_runs", [
+    ("timeout", "timeout", False),
+    ("http", "http", False),
+    ("refused", "conn", True),
+])
+def test_transcription_failure_names_its_kind(monkeypatch, tmp_path,
+                                              behaviour, kind, curl_runs):
+    """Zeitüberschreitung und Serverfehler wiederholen nicht noch einmal über
+    curl (das wartete nur erneut die volle Frist); ein Verbindungsfehler
+    behält den Rückfall für alte Installationen."""
+    monkeypatch.setattr(wc.http.client, "HTTPConnection", _fake_connection(behaviour))
+    monkeypatch.setattr(wc.config, "dictionary_words", lambda: [])
+    curl = []
+    monkeypatch.setattr(wc.subprocess, "run", lambda args, **kw: curl.append(args)
+                        or type("R", (), {"returncode": 7, "stdout": ""})())
+    errors = []
+    assert wc._transcribe_wav(_wav(tmp_path), _Cfg(), 5, None, errors) is None
+    assert errors == [kind]
+    assert bool(curl) is curl_runs
+
+
+def test_successful_post_reports_no_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(wc.http.client, "HTTPConnection", _fake_connection("ok"))
+    monkeypatch.setattr(wc.config, "dictionary_words", lambda: [])
+    errors = []
+    assert wc._transcribe_wav(_wav(tmp_path), _Cfg(), 5, None, errors) == "hallo"
+    assert errors == []
+
+
+def test_unreadable_recording_is_an_io_error(tmp_path):
+    errors = []
+    assert wc._transcribe_wav(str(tmp_path / "fehlt.wav"), _Cfg(), 5, None, errors) is None
+    assert errors == ["io"]
+
+
+def test_missing_model_names_the_file(monkeypatch, tmp_path):
+    present = tmp_path / "ggml-small.bin"
+    present.write_bytes(b"x")
+    monkeypatch.setattr(wc.config, "read_serverenv",
+                        lambda: {"MODEL_PATH": str(tmp_path / "ggml-large.bin")})
+    assert wc.missing_model() == "ggml-large.bin"
+    monkeypatch.setattr(wc.config, "read_serverenv",
+                        lambda: {"MODEL_PATH": str(present)})
+    assert wc.missing_model() is None
+    monkeypatch.setattr(wc.config, "read_serverenv", lambda: {})
+    assert wc.missing_model() is None

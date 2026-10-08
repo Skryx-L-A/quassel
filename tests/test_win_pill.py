@@ -134,3 +134,34 @@ def test_app_keeps_level_with_a_timestamp(app):
     winapp.set_level(0.2)
     level, ts = winapp._level
     assert level == 0.2 and abs(ts - time.time()) < 1.0
+
+
+# ------------------------------------------- H113 keine rohen Ausnahmetexte
+def _setup_app(app, monkeypatch, provision, working=True):
+    winapp = app.WinApp.__new__(app.WinApp)
+    states = []
+    winapp.sig_state = SimpleNamespace(emit=lambda s, t: states.append((s, t)))
+    logs = []
+    monkeypatch.setattr(app, "dlog", logs.append)
+    monkeypatch.setattr(app.server, "provision", provision)
+    monkeypatch.setattr(app.server, "bundle_dir", lambda: None)
+    monkeypatch.setattr(app.server, "ensure_working", lambda progress: working)
+    return winapp, states, logs
+
+
+def test_setup_crash_shows_a_message_not_the_exception(app, monkeypatch):
+    def boom(progress, full=False):
+        raise OSError(13, "Zugriff verweigert: C:\\\\Users\\\\x\\\\secret")
+    winapp, states, logs = _setup_app(app, monkeypatch, boom)
+    winapp.first_run_setup()
+    assert states[-1] == ("error", i18n.tr("download_failed", err="PermissionError"))
+    assert "secret" not in states[-1][1]
+    assert any("secret" in m for m in logs)            # Einzelheiten im Log
+
+
+def test_setup_without_working_server_explains_why(app, monkeypatch):
+    monkeypatch.setattr(app.whisperclient, "missing_model", lambda: "ggml-small.bin")
+    winapp, states, _ = _setup_app(app, monkeypatch, lambda p, full=False: None,
+                                   working=False)
+    winapp.first_run_setup()
+    assert states[-1] == ("error", i18n.tr("err_model_missing", model="ggml-small.bin"))
