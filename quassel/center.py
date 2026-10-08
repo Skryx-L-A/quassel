@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, i18n, stats,
-               transcribe_file, updatecheck, vad, whisperclient)
+               transcribe_file, updatecheck, vad, wakeword, whisperclient)
 from .dictation import failure_text, mac_mic_permission
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
@@ -764,6 +764,26 @@ class Center(QMainWindow):
         self.wake_phrase.editingFinished.connect(self.save_settings)
         self.labeled_row(tr("wakeword_phrase"), self.wake_phrase, g)
         self.desc(tr("wakeword_change_hint"), g)
+        ws = wakeword.wake_settings()
+        self.wake_model = QLineEdit(ws.spotter_model)
+        self.wake_model.editingFinished.connect(self.save_settings)
+        self.wake_model_pick = QPushButton(tr("choose_file"))
+        self.wake_model_pick.setAccessibleName(tr("choose_file") + " " + tr("wake_spotter_model"))
+        self.wake_model_pick.clicked.connect(lambda: self._pick_model_file(self.wake_model))
+        self._file_row(tr("wake_spotter_model"), self.wake_model, self.wake_model_pick, g)
+        self.desc(tr("wake_spotter_hint"), g)
+        self.wake_threshold = self.guard(QDoubleSpinBox())
+        self.wake_threshold.setRange(0.05, 0.99)
+        self.wake_threshold.setSingleStep(0.05)
+        self.wake_threshold.setDecimals(2)
+        self.wake_threshold.setValue(ws.spotter_threshold)
+        self.wake_threshold.valueChanged.connect(self.save_soon)
+        self.labeled_row(tr("wake_threshold"), self.wake_threshold, g)
+        self.desc(tr("wake_threshold_hint"), g)
+        self.wake_verify = QCheckBox(tr("wake_verify"))
+        self.wake_verify.setChecked(ws.verify)
+        self.wake_verify.toggled.connect(self.save_settings)
+        g.addWidget(self.wake_verify)
 
         lay.addStretch(1)
         return scroll
@@ -1248,6 +1268,9 @@ class Center(QMainWindow):
             ("ai", "post_process"): str(self.ai_post.isChecked()).lower(),
             ("ai", "post_mode"): self.ai_mode.currentData() or "cleanup",
             ("ai", "voice_modes"): str(self.ai_voice.isChecked()).lower(),
+            ("wakeword", "spotter_model"): self.wake_model.text().strip(),
+            ("wakeword", "spotter_threshold"): round(self.wake_threshold.value(), 2),
+            ("wakeword", "verify"): str(self.wake_verify.isChecked()).lower(),
             ("vad", "autostop"): str(self.vad_autostop.isChecked()).lower(),
             ("vad", "autostop_silence"): round(self.vad_silence.value(), 1),
             ("vad", "backend"): self.vad_backend.currentData() or "auto",

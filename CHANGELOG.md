@@ -15,6 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Beta features page, wake word: you can pick a keyword model (openWakeWord
+  format, trained yourself) that listens for the phrase before speech
+  recognition runs, set its trigger threshold, and choose whether the phrase is
+  confirmed by speech recognition before a dictation starts.
 - Beta features page: auto-stop for hands-free dictation can now be switched
   on in the Control Center, with the pause length before it stops, the way
   pauses are detected (automatic with an optional Silero model, or loudness

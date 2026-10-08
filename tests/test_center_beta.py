@@ -71,3 +71,31 @@ def test_autostop_settings_round_trip_through_vad_settings(c, tmp_path, monkeypa
 
 def test_silence_range_matches_vad(c):
     assert (c.vad_silence.minimum(), c.vad_silence.maximum()) == vad.AUTOSTOP_SILENCE_RANGE
+
+
+# ------------------------------------------------ (b) Wake-Word-Erkenner
+def test_wake_spotter_defaults_follow_wake_settings(c):
+    from quassel import wakeword
+    ws = wakeword.wake_settings()
+    assert c.wake_model.text() == ws.spotter_model == ""
+    assert c.wake_threshold.value() == pytest.approx(ws.spotter_threshold)
+    assert c.wake_verify.isChecked() is ws.verify is True
+    assert beta(c).isAncestorOf(c.wake_model)
+
+
+def test_wake_spotter_settings_round_trip(c, tmp_path, monkeypatch):
+    from quassel import wakeword
+    model = tmp_path / "hey_quassel.onnx"
+    model.write_bytes(b"x")
+    monkeypatch.setattr(center.QFileDialog, "getOpenFileName",
+                        lambda *a, **k: (str(model), ""))
+    c.wake_model_pick.click()
+    c.wake_threshold.setValue(0.7)
+    c.save_timer.timeout.emit()
+    c.wake_verify.setChecked(False)
+    ws = wakeword.wake_settings()
+    assert (ws.spotter_model, ws.spotter_threshold, ws.verify) == (str(model), 0.7, False)
+
+
+def test_threshold_range_matches_wake_settings(c):
+    assert (c.wake_threshold.minimum(), c.wake_threshold.maximum()) == (0.05, 0.99)
