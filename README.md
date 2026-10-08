@@ -5,7 +5,7 @@
 **Hold `Ctrl+Meta` (Ctrl+Windows key), speak, release — your words are typed
 wherever your cursor is.** A clean, minimal pill at the bottom of your screen
 shows an animated listening indicator and a live transcript while you speak — inspired by the
-best commercial dictation apps, but **100 % offline and open source**: speech
+best commercial dictation apps, but **100 % offline and source-available**: speech
 recognition runs locally via [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
 No cloud, no account, no subscription, no telemetry.
 
@@ -223,5 +223,20 @@ server remains loaded for a quick restart.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
-(MIT) and OpenAI's Whisper models (downloaded at install time).
+Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+- **Free to use** for personal and other noncommercial purposes, for study and
+  research, by educational, public and nonprofit institutions, and by individuals
+  for their own work, including professional work as freelancer or employee.
+  Organizations may evaluate the software for 60 days. Details:
+  [ADDITIONAL-PERMISSIONS.md](ADDITIONAL-PERMISSIONS.md).
+- **Commercial license required** for use by an organization, such as rolling it
+  out to staff, operating it for others or building it into a product or service:
+  [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+- Versions up to the tag `last-agpl` remain available under AGPL-3.0-only.
+
+Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Quassel uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) and
+OpenAI's Whisper models (downloaded at install time). The bundled website fonts
+keep their own license, see [website/fonts/LICENSE.md](website/fonts/LICENSE.md).

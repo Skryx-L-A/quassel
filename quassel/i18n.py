@@ -110,8 +110,8 @@ STRINGS = {
     "nav_system": ("System", "System"),
     "sec_status": ("Status", "Status"),
     "about": ("About", "Über"),
-    "about_text": ("Quassel {version} — local, private voice typing.\nOpen source (MIT).",
-                   "Quassel {version} — lokale, private Spracheingabe.\nOpen Source (MIT)."),
+    "about_text": ("Quassel {version} — local, private voice typing.\nSource available (PolyForm Noncommercial 1.0.0).",
+                   "Quassel {version} — lokale, private Spracheingabe.\nQuelloffen (PolyForm Noncommercial 1.0.0)."),
     "repo": ("Project page", "Projektseite"),
     # --- Kommandos / Daemon ---
     "pressed_enter": ("Pressed Enter", "Eingabetaste gedrückt"),
