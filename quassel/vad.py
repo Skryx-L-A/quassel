@@ -12,10 +12,13 @@ Aufbau:
   * Der SilenceDetector zaehlt ZUSAMMENHAENGENDE Sprache (kurze Luecken werden
     ueberbrueckt, einzelne Klicks addieren sich nicht auf), merkt sich, ob
     Sprache begonnen hat, und misst danach die nachlaufende Stille.
+  * AutoStop fuettert einen SilenceDetector aus der laufenden Aufnahme und sagt,
+    wann im Freihand-Modus nach Stille beendet werden soll.
 """
 import configparser
 import math
 import struct
+import time
 
 SAMPLE_BYTES = 2  # s16le -> 2 Byte pro Sample
 
@@ -294,3 +297,58 @@ def make_classifier(cfg=None, log=None, silero_factory=None):
         if silero is not None:
             return silero
     return RmsClassifier()
+
+
+# ------------------------------------------------------------------ Auto-Stopp
+class AutoStop:
+    """Beendet im Freihand-Modus eine Aufnahme nach Stille -- aber nur, wenn
+    vorher Sprache erkannt wurde (sonst bliebe eine versehentlich gestartete
+    Aufnahme nie stehen, und leere Aufnahmen wuerden "zu kurz" melden).
+
+    ``read_from(offset)`` liefert die Bytes der laufenden Aufnahme ab Byte
+    ``offset`` (leer, wenn nichts Neues da ist). due() wird vom Ereignis- oder
+    Beobachter-Thread oft gerufen und liest hoechstens alle ``poll_sec``.
+    """
+
+    def __init__(self, detector, read_from, poll_sec=0.2, clock=time.monotonic):
+        self.detector = detector
+        self._read_from = read_from
+        self.poll_sec = poll_sec
+        self._clock = clock
+        self._offset = 0
+        self._last = None
+        self.error = None      # erster Fehler beim Lesen/Auswerten; danach ist AutoStop aus
+
+    def due(self):
+        """True, sobald nach erkannter Sprache die eingestellte Stille erreicht ist.
+        Wirft nie: ein Fehler (Lesen, Silero) schaltet den Auto-Stopp fuer dieses
+        Diktat ab und stoert die Aufnahme nicht."""
+        if self.error is not None:
+            return False
+        if self.detector.stopped:
+            return True
+        now = self._clock()
+        if self._last is not None and now - self._last < self.poll_sec:
+            return False
+        self._last = now
+        try:
+            data = self._read_from(self._offset)
+            if data:
+                usable = len(data) - (len(data) % SAMPLE_BYTES)
+                self._offset += usable
+                self.detector.feed(data[:usable])
+        except Exception as exc:    # noqa: BLE001 -- nie das Diktat stoeren
+            self.error = exc
+            return False
+        return self.detector.stopped
+
+
+def make_autostop(cfg, read_from, log=None, clock=time.monotonic, silero_factory=None):
+    """AutoStop nach Einstellung oder None, wenn der Schalter aus ist (Vorgabe)."""
+    s = settings(cfg)
+    if not s.autostop:
+        return None
+    classifier = make_classifier(cfg, log=log, silero_factory=silero_factory)
+    detector = SilenceDetector(classifier=classifier, hang_sec=s.autostop_silence,
+                               min_speech_sec=0.3)
+    return AutoStop(detector, read_from, clock=clock)

@@ -20,6 +20,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   models folder (or set `silero_model` under `[vad]` in `config.ini`) and install
   `onnxruntime` yourself. Without either, the built-in loudness threshold keeps working
   as before. `backend = rms` under `[vad]` switches the neural detector off.
+- Optional hands-free auto-stop: with `autostop = true` under `[vad]` in `config.ini`,
+  a double-tap dictation ends by itself after a pause (`autostop_silence`, default 1.5
+  seconds), but only after you have actually spoken, so an accidental start never ends
+  an empty recording. Off by default. Works on Windows now; Linux and macOS follow.
 
 ### Changed
 - Short hold-to-talk dictations get their text sooner. The live preview used
