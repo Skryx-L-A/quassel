@@ -1,16 +1,16 @@
 """GTK-freie Qt-Pille für das portable Linux-Bundle.
 
-Spiegelt die GTK-Pille (quassel/pill.py): grauer Punkt (aus), lila Punkt
-(bereit), rot atmender Punkt (Aufnahme), … (Transkription), kurz das Ergebnis.
-Liest state.json, pollt den Daemon-Status, Linksklick schaltet an/aus,
-Rechtsklick öffnet das Kontrollzentrum.
+Spiegelt die GTK-Pille (quassel/pill.py): fünf Balken, grau (aus), Pine
+(bereit), bei Aufnahme der echte Mikrofonpegel aus state.json, eine flache
+Linie mit Hinweis, wenn das Mikrofon nichts liefert; danach kurz das Ergebnis.
+Pollt den Daemon-Status; Linksklick öffnet das Kontrollzentrum (abschaltbar),
+Rechtsklick schaltet an/aus.
 
 Positionierung unten-mittig per move() — auf X11 exakt, auf Wayland je nach
 Compositor (Qt-Clients dürfen sich auf Wayland nicht global positionieren;
 dafür nutzt die native Installation gtk4-layer-shell). Kern-Diktat ist davon
 unberührt — die Pille ist nur der Indikator.
 """
-import math
 import os
 import subprocess
 import sys
@@ -21,7 +21,8 @@ from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QApplication, QWidget
 
 from . import config
-from .state import state_read, RUNDIR
+from .i18n import tr
+from .state import LevelMeter, RUNDIR, level_read, state_read
 
 RESULT_SHOW_S = 3.0
 # Taktstufen des Timers: schnell nur, solange etwas animiert (Aufnahme,
@@ -107,6 +108,7 @@ class Pill(QWidget):
             self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.cfg = config.Cfg()
         self.text = ""
+        self.meter = LevelMeter()
         self.last_ts = None
         self.result_until = 0.0
         self.last_poll = 0.0
@@ -255,6 +257,8 @@ class Pill(QWidget):
             self.timer.setInterval(wanted)
 
     def set_mode(self, mode, text=""):
+        if mode == "recording" and self.mode != "recording":
+            self.meter.reset()       # neue Aufnahme: Pegelquelle erst abwarten
         self.mode = mode
         self.text = text
         if mode in ("done", "error"):
@@ -281,7 +285,8 @@ class Pill(QWidget):
             self.set_mode("ready" if self.on else "off")
         self._apply_tick_interval()
         if self.mode == "recording":
-            self.update()   # Atmungs-Animation
+            self.meter.feed(level_read(st))
+            self.update()   # Pegel bzw. Atmungs-Animation
 
     # ----------------------------------------------------------- Zeichnen
     def paintEvent(self, _ev):
@@ -299,35 +304,56 @@ class Pill(QWidget):
         p.fillPath(path, self._bg_color())
         # Balken bleiben immer voll deckend — nur der Ovalhintergrund wird transparent
         self._draw_wave(p, pill.left() + pad, pill.center().y(), wave_w, 14 * s)
-        if self.cfg.pill_preview and self.text and self.mode in ("recording", "done", "error"):
-            self._draw_bubble(p, pill, s)
+        bubble = self.bubble_text()
+        if bubble:
+            self._draw_bubble(p, pill, s, bubble)
+
+    def mic_silent(self):
+        """Aufnahme läuft, der Pegel kommt an, aber seit 1,5 s ist nichts zu
+        hören: stummgeschaltet, falsches Gerät oder keine Mikrofonfreigabe."""
+        return self.mode == "recording" and self.meter.silent()
+
+    def bubble_text(self):
+        """Hinweis „kein Ton" geht vor (auch ohne Vorschau), sonst der
+        Vorschau- bzw. Ergebnistext, wenn eingeschaltet."""
+        if self.mic_silent():
+            return tr("mic_silent")
+        if self.cfg.pill_preview and self.text and \
+                self.mode in ("recording", "done", "error"):
+            return self.text
+        return ""
 
     def _wave_color(self):
         if self.mode == "off":
             return WAVE_GRAY
-        if self.mode == "error":
+        if self.mode == "error" or self.mic_silent():
             return WAVE_AMBER
         return WAVE_PINE        # ready / recording / transcribing / done
 
+    def wave_fracs(self):
+        """Höhen der fünf Balken (0..1), siehe LevelMeter.wave_fracs."""
+        return self.meter.wave_fracs(self.mode == "recording")
+
     def _draw_wave(self, p, x, cy, w, h):
         """Fünf Balken — bewegen sich nur bei Aufnahme, sonst ruhend."""
-        animating = self.mode == "recording"
-        rest = [0.30, 0.46, 0.38, 0.52, 0.34]
-        n = 5
+        fracs = self.wave_fracs()
+        n = len(fracs)
         gap = w * 0.11
         bw = (w - gap * (n - 1)) / n
-        t = time.monotonic()
         p.setPen(Qt.NoPen)
         p.setBrush(self._wave_color())
-        for i in range(n):
-            frac = (0.22 + 0.78 * (0.5 + 0.5 * math.sin(t * 7.5 + i * 1.1))) \
-                if animating else rest[i]
+        if self.mic_silent():
+            # flache, durchgehende Linie: hier kommt nichts an
+            lh = max(2.0, h * 0.14)
+            p.drawRoundedRect(QRectF(x, cy - lh / 2, w, lh), lh / 2, lh / 2)
+            return
+        for i, frac in enumerate(fracs):
             bh = max(2.0, h * frac)
             bx = x + i * (bw + gap)
             p.drawRoundedRect(QRectF(bx, cy - bh / 2, bw, bh), bw / 2, bw / 2)
 
-    def _draw_bubble(self, p, pill, s):
-        txt = self.text if len(self.text) <= 140 else "…" + self.text[-139:]
+    def _draw_bubble(self, p, pill, s, text):
+        txt = text if len(text) <= 140 else "…" + text[-139:]
         f = QFont()
         f.setPixelSize(int(11 * s))
         p.setFont(f)

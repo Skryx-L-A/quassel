@@ -83,6 +83,8 @@ STRINGS = {
     "mic_transcribing": ("Transcribing…", "Transkribiere…"),
     "mic_nothing": ("No audio captured — check your microphone!", "Keine Audiodaten — Mikrofon prüfen!"),
     "mic_result": ("Recognized: {text}", "Erkannt: {text}"),
+    "mic_silent": ("No sound from the microphone. Check mute, the selected input and microphone access.",
+                   "Kein Ton vom Mikrofon. Stummschaltung, gewähltes Gerät und Mikrofonfreigabe prüfen."),
     "no_server": ("Whisper server unreachable", "Whisper-Server nicht erreichbar"),
     "no_mic": ("No microphone — is it on and connected?",
                "Kein Mikrofon — ist es an und verbunden?"),

@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- The pill now shows your real microphone level while you dictate instead of a
+  fixed animation. If nothing arrives from the microphone for 1.5 seconds, the
+  bars turn into a flat amber line and the pill says so, so a muted or wrong
+  microphone, or missing microphone access, is visible right away instead of
+  after a dictation that comes back empty.
 - Programmer dictation no longer rewrites ordinary prose. With the mode on, "Punkt gleich
   wichtig" became ".= wichtig" and "at" became "@" in every sentence. Code is now only
   formatted when you start the dictation with "Code:". If you relied on the mode being

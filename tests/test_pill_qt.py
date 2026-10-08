@@ -377,3 +377,231 @@ def test_tick_reads_the_isolated_state_file_not_the_running_instance(pill, tmp_p
     pill.tick()
     assert pill.mode == "done"
     assert pill.text == "isolierter Testtext"
+
+
+# ------------------------------------------- H112 echter Mikrofonpegel
+@pytest.fixture
+def fresh_level_state(monkeypatch):
+    """Modulzustand von state.py (letztes Dokument, Drossel) je Test frisch."""
+    monkeypatch.setattr(state, "_doc", {"state": "idle", "text": "", "ts": 0.0})
+    monkeypatch.setattr(state, "_level_written", float("-inf"))
+
+
+def test_level_set_only_while_recording(fresh_level_state):
+    state.state_set("idle")
+    assert state.level_set(0.5, now=1.0) is False
+    assert "level" not in state.state_read()
+    state.state_set("recording")
+    assert state.level_set(0.5, now=2.0) is True
+    st = state.state_read()
+    assert st["state"] == "recording" and st["level"] == 0.5
+    assert state.level_read(st) == 0.5
+
+
+def test_level_set_is_throttled_and_keeps_state_timestamp(fresh_level_state):
+    """Höchstens LEVEL_HZ Schreibvorgänge je Sekunde; 'ts' bleibt der
+    Zeitpunkt des Zustandswechsels, sonst hielte die Pille jedes Pegel-Update
+    für einen neuen Zustand."""
+    state.state_set("recording")
+    ts = state.state_read()["ts"]
+    assert state.level_set(0.1, now=10.0) is True
+    assert state.level_set(0.2, now=10.0 + 0.5 / state.LEVEL_HZ) is False
+    assert state.level_set(0.3, now=10.0 + 1.01 / state.LEVEL_HZ) is True
+    st = state.state_read()
+    assert st["level"] == 0.3 and st["ts"] == ts
+
+
+def test_level_write_is_atomic(fresh_level_state, tmp_path):
+    state.state_set("recording")
+    state.level_set(0.25, now=1.0)
+    assert not os.path.exists(state.STATE + ".tmp")
+    assert sorted(os.listdir(os.path.dirname(state.STATE))) == ["state.json"]
+
+
+def test_preview_text_keeps_level_but_new_state_drops_it(fresh_level_state):
+    state.state_set("recording")
+    state.level_set(0.4, now=1.0)
+    state.state_set("recording", "live text")
+    assert state.state_read()["level"] == 0.4
+    state.state_set("transcribing")
+    assert "level" not in state.state_read()
+
+
+def test_level_read_rejects_stale_or_missing():
+    now = 1000.0
+    assert state.level_read({"state": "recording"}, now=now) is None
+    assert state.level_read({"level": 0.3, "level_ts": now - 0.2}, now=now) == 0.3
+    assert state.level_read({"level": 0.3, "level_ts": now - 2.0}, now=now) is None
+    assert state.level_read({"level": "x", "level_ts": now}, now=now) is None
+
+
+def test_meter_waits_for_a_level_source():
+    m = state.LevelMeter(now=0.0)
+    m.feed(None, now=5.0)
+    assert m.seen is False and m.silent(now=5.0) is False
+
+
+def test_meter_reports_silence_after_one_and_a_half_seconds():
+    m = state.LevelMeter(now=0.0)
+    m.feed(0.0, now=0.1)
+    assert m.silent(now=1.4) is False
+    m.feed(0.0, now=1.5)
+    assert m.silent(now=1.5) is True
+    m.feed(0.2, now=1.6)                      # jemand spricht: Hinweis weg
+    assert m.silent(now=1.6) is False
+
+
+def test_meter_treats_a_lost_level_as_silence():
+    m = state.LevelMeter(now=0.0)
+    m.feed(0.2, now=0.0)
+    for t in (0.5, 1.0, 1.6):
+        m.feed(None, now=t)
+    assert m.silent(now=1.6) is True
+
+
+def test_meter_scale_speech_visible_noise_flat():
+    to = state.LevelMeter.to_frac
+    assert to(0.0) == 0.0
+    assert to(state.LevelMeter.SILENT_LEVEL) == 0.0    # Digitalstille
+    assert 0.5 < to(1000 / 8000) < 0.8                 # normale Sprache
+    assert to(1.0) == pytest.approx(1.0, abs=0.01)
+    assert to(0.05) < to(0.1) < to(0.5)
+
+
+def test_meter_bars_follow_history():
+    m = state.LevelMeter(now=0.0)
+    for i, lv in enumerate([0.0, 0.01, 0.1, 0.5, 1.0]):
+        m.feed(lv, now=i * 0.1)
+    bars = m.bars()
+    assert len(bars) == 5 and bars == sorted(bars)
+    calm = m.bars(calm=True)
+    assert calm[2] == max(calm)                        # ruhiges Profil
+
+
+def test_rms_level_reads_fresh_audio_and_zero_when_stalled(tmp_path, monkeypatch):
+    import struct
+    from quassel import audio
+    raw = tmp_path / "rec.raw"
+    monkeypatch.setattr(audio, "RAW", str(raw))
+    monkeypatch.setattr(audio, "RAW_B", str(tmp_path / "rec-b.raw"))
+    raw.write_bytes(struct.pack("<4800h", *([4000, -4000] * 2400)))
+    now = os.path.getmtime(raw)
+    assert audio.rms_level(now=now) == pytest.approx(0.5, abs=0.01)
+    # Stream hängt: die Datei wächst nicht mehr -> kein eingefrorener Ausschlag
+    assert audio.rms_level(now=now + audio.LEVEL_STALE_S + 0.1) == 0.0
+
+
+def test_level_pump_publishes_until_stopped():
+    import threading
+    from quassel import audio
+    got = []
+    done = threading.Event()
+
+    def publish(v):
+        got.append(v)
+        if len(got) >= 3:
+            done.set()
+    pump = audio.LevelPump(publish, hz=200, level=lambda: 0.25).start()
+    try:
+        assert done.wait(2.0)
+    finally:
+        pump.stop()
+    n = len(got)
+    time.sleep(0.05)
+    assert len(got) == n and set(got) == {0.25}
+    assert pump._thread is None
+
+
+def test_level_pump_stops_quietly_on_error():
+    from quassel import audio
+
+    def broken():
+        raise OSError("weg")
+    pump = audio.LevelPump(lambda v: None, hz=200, level=broken).start()
+    pump._thread.join(timeout=2.0)
+    assert not pump._thread.is_alive()
+    pump.stop()
+
+
+def _recording(pill, level=None, now=None):
+    """Pille in die Aufnahme versetzen und optional einen Pegel einspeisen."""
+    doc = {"state": "recording", "text": "", "ts": 123.0}
+    if level is not None:
+        doc["level"] = level
+        doc["level_ts"] = time.time() if now is None else now
+    os.makedirs(os.path.dirname(state.STATE), exist_ok=True)
+    with open(state.STATE, "w", encoding="utf-8") as f:
+        import json
+        json.dump(doc, f)
+    pill.on = True
+    pill.tick()
+
+
+def test_pill_shows_real_level_not_animation(pill):
+    _recording(pill, level=0.3)
+    first = pill.wave_fracs()
+    time.sleep(0.03)
+    assert pill.wave_fracs() == first          # keine Sinus-Bewegung
+    assert first[-1] == pytest.approx(state.LevelMeter.to_frac(0.3))
+    assert pill.bubble_text() == ""
+
+
+def test_pill_without_level_source_keeps_animation(pill):
+    _recording(pill)                              # älterer Daemon: kein Pegel
+    assert pill.meter.seen is False
+    assert not pill.mic_silent()
+
+
+def test_pill_shows_flat_line_and_hint_when_mic_is_silent(pill, monkeypatch):
+    from quassel import i18n
+    i18n.set_language("en")
+    try:
+        _recording(pill, level=0.0)
+        pill.meter.quiet_since -= 2.0             # 2 s ohne Ton
+        assert pill.mic_silent()
+        assert pill.wave_fracs() == [0.0] * 5
+        assert pill.bubble_text().startswith("No sound from the microphone")
+        assert pill._wave_color() == pill_qt.WAVE_AMBER
+    finally:
+        i18n.set_language(None)
+
+
+def test_silent_hint_shows_even_without_preview(pill):
+    pill.cfg.pill_preview = False
+    _recording(pill, level=0.0)
+    pill.meter.quiet_since -= 2.0
+    assert pill.bubble_text() != ""
+
+
+def test_new_recording_resets_the_meter(pill):
+    _recording(pill, level=0.0)
+    pill.meter.quiet_since -= 2.0
+    pill.set_mode("transcribing")
+    pill.set_mode("recording")
+    assert pill.meter.seen is False and not pill.mic_silent()
+
+
+def _amber_pixels(img):
+    amber = pill_qt.WAVE_AMBER
+    hits = 0
+    for y in range(img.height()):
+        for x in range(img.width()):
+            c = img.pixelColor(x, y)
+            if abs(c.red() - amber.red()) < 40 and abs(c.green() - amber.green()) < 40 \
+                    and abs(c.blue() - amber.blue()) < 40:
+                hits += 1
+    return hits
+
+
+def test_offscreen_render_silent_pill_is_amber_with_text(pill):
+    """Sichtprüfung ohne Fenster: grab() rendert offscreen. Die stumme Pille
+    zeigt bernsteinfarbene Linie und Hinweisblase; die sprechende Pine-Balken."""
+    pill.cfg.pill_preview = False
+    _recording(pill, level=0.0)
+    pill.meter.quiet_since -= 2.0
+    silent = pill.grab().toImage()
+    assert _amber_pixels(silent) > 0
+    _recording(pill, level=0.4)
+    pill.meter.quiet_since = time.monotonic()
+    talking = pill.grab().toImage()
+    assert _amber_pixels(talking) == 0
