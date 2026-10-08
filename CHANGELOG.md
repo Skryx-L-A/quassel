@@ -25,6 +25,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   AI step. When a clean-up result fails validation, the original dictation is
   kept. The settings and insertion flow still need to be connected before this
   option appears in the app.
+- Per-app profiles: Quassel can use different settings depending on the app you
+  dictate into. A profile can set the language, turn the AI clean-up on or off or
+  pick an AI mode, switch programmer dictation and spoken punctuation, and forbid
+  Enter. With Enter forbidden (meant for terminals), "press enter" does nothing and
+  a line break at the end of the text is dropped, so a dictated command is never
+  run by accident. Profiles live in `profiles.ini` next to `config.ini`; without
+  that file nothing changes. Ready-made profiles cover terminals, IDEs and mail
+  programs. On Wayland, the active app is only known under Hyprland and Sway;
+  GNOME and KDE keep the normal settings. Window titles are never read.
 
 ### Changed
 - The pill now shows your real microphone level while you dictate instead of a
