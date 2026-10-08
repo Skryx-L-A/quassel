@@ -46,6 +46,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- macOS preserves every pasteboard item and format across dictation insertion.
+  If an item cannot be read, Quassel types without changing the pasteboard.
 - Windows keeps dictation text out of clipboard history and cloud sync. It
   preserves common image, file and rich text clipboard formats, and types
   directly when a clipboard format cannot be safely restored.
