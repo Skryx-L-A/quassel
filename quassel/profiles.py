@@ -296,3 +296,46 @@ def strip_trailing_enter(text):
     stripped = text.rstrip()
     tail = text[len(stripped):]
     return stripped if ("\n" in tail or "\r" in tail) else text
+
+
+CLI_USAGE = "usage: quassel profiles init|list|path"
+
+
+def _fmt_value(value):
+    if value is True:
+        return "on"
+    if value is False:
+        return "off"
+    return "off" if value is None else str(value)
+
+
+def cli(args, out=print):
+    """Einstieg für `quassel profiles init|list|path` (quassel/cli.py).
+    args: Liste der Wörter nach "profiles". -> Exit-Code
+    (0 ok, 1 Datei existiert schon bei init, 2 Aufruf falsch)."""
+    cmd = args[0] if args else ""
+    if cmd == "path" and len(args) == 1:
+        out(PROFILES)
+        return 0
+    if cmd == "init" and len(args) == 1:
+        if write_defaults():
+            out("created " + PROFILES)
+            return 0
+        out("already exists, left unchanged: " + PROFILES)
+        return 1
+    if cmd == "list" and len(args) == 1:
+        if not exists():
+            out("no profiles file: %s (create it with: quassel profiles init)" % PROFILES)
+            return 0
+        found = load()
+        if not found:
+            out("no valid profiles in " + PROFILES)
+            return 0
+        for prof in found:
+            settings = ", ".join("%s=%s" % (k, _fmt_value(v))
+                                 for k, v in sorted(prof.settings.items()))
+            out("%s: match=%s%s" % (prof.name, ", ".join(prof.patterns),
+                                    " | " + settings if settings else ""))
+        return 0
+    out(CLI_USAGE)
+    return 2

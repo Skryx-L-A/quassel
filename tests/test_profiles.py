@@ -443,3 +443,33 @@ def test_daemon_prewarms_at_start(monkeypatch):
     monkeypatch.setattr(daemon, "AudioDucker", lambda: None)
     daemon.Daemon()
     assert calls == [1]
+
+
+def run_cli(*args):
+    lines = []
+    code = profiles.cli(list(args), out=lines.append)
+    return code, lines
+
+
+def test_cli_path_init_list(tmp_path):
+    """OPEN 5: `quassel profiles init|list|path`."""
+    assert run_cli("path") == (0, [profiles.PROFILES])
+    code, lines = run_cli("list")
+    assert code == 0 and "quassel profiles init" in lines[0]
+    assert run_cli("init") == (0, ["created " + profiles.PROFILES])
+    code, lines = run_cli("init")
+    assert code == 1 and "left unchanged" in lines[0]
+    code, lines = run_cli("list")
+    assert code == 0 and [l.split(":")[0] for l in lines] == ["Terminal", "IDE", "Mail"]
+    assert "allow_enter=off" in lines[0] and "programmer_mode=on" in lines[0]
+
+
+def test_cli_rejects_unknown_calls():
+    for args in ((), ("edit",), ("list", "x")):
+        assert run_cli(*args) == (2, [profiles.CLI_USAGE])
+
+
+def test_cli_list_with_broken_file(tmp_path):
+    write(tmp_path, "[profile:X]\nlanguage = de\n")
+    code, lines = run_cli("list")
+    assert code == 0 and lines[0].startswith("no valid profiles")

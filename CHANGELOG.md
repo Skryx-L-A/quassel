@@ -28,9 +28,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Per-app profiles: Quassel can use different settings depending on the app you
   dictate into. A profile can set the language, turn the AI clean-up on or off or
   pick an AI mode, switch programmer dictation and spoken punctuation, and forbid
-  Enter. With Enter forbidden (meant for terminals), "press enter" does nothing and
-  a line break at the end of the text is dropped, so a dictated command is never
-  run by accident. Profiles live in `profiles.ini` next to `config.ini`; without
+  Enter. Where a profile turns programmer dictation on, you don't need to start
+  with "Code:". With Enter forbidden (meant for terminals), "press enter" only shows
+  "Enter is blocked in this app", a line break at the end of the text is dropped, and
+  live typing writes line breaks as spaces, so a dictated command is never run by
+  accident. Profiles live in `profiles.ini` next to `config.ini`; without
   that file nothing changes. Ready-made profiles cover terminals, IDEs and mail
   programs. On Wayland, the active app is only known under Hyprland and Sway;
   GNOME and KDE keep the normal settings. Window titles are never read.
