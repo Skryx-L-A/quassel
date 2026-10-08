@@ -38,6 +38,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and transcribes the wrong audio. Windows also gets the start-tone trim of the
   other platforms (160 ms instead of 120 ms) and a tray entry "Stop dictation
   now" that ends a hanging dictation and drops its text.
+- Windows: with fast user switching or Remote Desktop, a second user's Quassel
+  no longer quits right after starting because it found the first user's
+  instance. The single-instance channel is now per user and session, and only
+  your own user account can use it to open the settings.
 - macOS can again copy history and file-transcription results without relying
   on the Linux-only `xclip` command.
 - Known Whisper subtitle and “for watching” silence artifacts are discarded;

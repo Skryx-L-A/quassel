@@ -11,7 +11,9 @@ Threads: der Raw-Input-Hook reiht Tasten ein, der Ereignis-Thread
 synchron, der Aktions-Thread (dictation.ActionRunner) transkribiert und
 fügt ein. Der Qt-Hauptthread zeichnet nur und bekommt Zustände per Signal.
 """
+import getpass
 import os
+import re
 import sys
 import threading
 import time
@@ -23,7 +25,7 @@ from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from .. import config, dictation, i18n, whisperclient
+from .. import config, dictation, i18n, profile, whisperclient
 from ..audio import wav_from_raw
 from ..mediacontrol import AudioDucker
 from ..i18n import tr
@@ -360,11 +362,14 @@ class WinApp(QObject):
         self.cfgpoll.start(1000)
 
         # Einzelinstanz-Kanal: weitere Starts melden sich hier und wir
-        # öffnen stattdessen das Einstellungsfenster
-        QLocalServer.removeServer("quassel-app")
+        # öffnen stattdessen das Einstellungsfenster. Name je Benutzer und
+        # Sitzung, Zugriff nur für den eigenen Benutzer (Audit A11).
+        name = ipc_name()
+        QLocalServer.removeServer(name)
         self.ipc = QLocalServer()
+        self.ipc.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         self.ipc.newConnection.connect(self.on_second_instance)
-        self.ipc.listen("quassel-app")
+        self.ipc.listen(name)
 
         if not server.installed():
             threading.Thread(target=self.first_run_setup, daemon=True).start()
@@ -495,6 +500,39 @@ class WinApp(QObject):
                 "ready" if self.enabled else "off"))
 
 
+def _session_id():
+    """Windows-Sitzungsnummer dieses Prozesses (schneller Benutzerwechsel,
+    Remotedesktop); None, wenn nicht ermittelbar."""
+    try:
+        import ctypes
+        sid = ctypes.c_ulong()
+        if ctypes.windll.kernel32.ProcessIdToSessionId(os.getpid(), ctypes.byref(sid)):
+            return sid.value
+    except Exception:  # noqa: BLE001 — ohne Nummer bleibt der Benutzername
+        pass
+    return None
+
+
+def ipc_name(user=None, session=None):
+    """Name des Einzelinstanz-Kanals. QLocalServer legt unter Windows eine
+    Named Pipe im globalen Namensraum an: ein fester Name galt für alle
+    Benutzer und Sitzungen, und beim schnellen Benutzerwechsel beendete sich
+    die Instanz des zweiten Nutzers sofort. Benutzer, Sitzung und Profil
+    machen den Namen eindeutig."""
+    if user is None:
+        try:
+            user = os.environ.get("USERNAME") or getpass.getuser()
+        except Exception:  # noqa: BLE001
+            user = ""
+    if session is None:
+        session = _session_id()
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", user or "user")[:64]
+    name = "quassel-app%s-%s" % (profile.suffix(), safe)
+    if session is not None:
+        name += "-s%d" % session
+    return name
+
+
 def _panic_label():
     return "Diktat sofort beenden" if i18n.current() == "de" else "Stop dictation now"
 
@@ -585,7 +623,7 @@ def main():
         audiocheck()
         return
     probe = QLocalSocket()
-    probe.connectToServer("quassel-app")
+    probe.connectToServer(ipc_name())
     if probe.waitForConnected(300):
         probe.disconnectFromServer()      # Erstinstanz öffnet die Einstellungen
         return
