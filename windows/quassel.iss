@@ -129,6 +129,8 @@ begin
   // Wunsch mitlöschen, bei stiller Deinstallation unangetastet lassen.
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
     if MsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO) = IDYES then
+    begin
       DelTree(ExpandConstant('{localappdata}\Quassel'), True, True, True);
       DelTree(ExpandConstant('{userappdata}\Quassel'), True, True, True);
+    end;
 end;
