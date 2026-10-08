@@ -19,7 +19,11 @@ Schutzregeln dieses Skripts:
 Aufruf:
   python scripts/bench/run_bench.py [MANIFEST] [--runs N] [--json PFAD]
       [--md PFAD] [--root PFAD] [--backend whisper|transcribe-cpp|all]
-      [--transcribe-cpp BINÄRPFAD]
+      [--transcribe-cpp BINÄRPFAD] [--tcpp-model GGUF] [--tcpp-family NAME]
+      [--tcpp-compute auto|metal|cuda|vulkan|cpu]
+
+transcribe-cpp startet je Clip einen transcribe-cli-Prozess; die Gesamtzeit
+enthält deshalb das Laden des Modells (scripts/tcpp/README.md).
 
 Der Report eines echten Laufs gehört nicht nach docs/measurements/ (das
 entscheidet der Orchestrator); --json/--md schreiben dorthin, wo der Aufrufer
@@ -50,6 +54,7 @@ from quassel.backends import (SpeechResult,         # noqa: E402,F401 (Vertrag)
                               TranscriptionOptions,
                               TranscribeCppBackend,
                               WhisperServerBackend)
+from quassel.backends import tcpp_families          # noqa: E402
 
 DEFAULT_TIMEOUT = 120
 HYPOTHESIS_PREVIEW_CHARS = 60
@@ -149,7 +154,7 @@ def run_clip(backend, item, wav_path, *, language, runs, timeout,
     """Einen Clip messen: Ergebnispunkte im Stil von docs/measurements/."""
     duration = manifest_mod.wav_duration_seconds(wav_path)
     ref = item.ref or ""
-    totals, servers, texts, errors = [], [], [], []
+    totals, servers, texts, errors, notes = [], [], [], [], []
     for _ in range(runs):
         opts = TranscriptionOptions(cfg=SimpleNamespace(language=language),
                                     timeout=timeout, language_hint=language)
@@ -166,6 +171,11 @@ def run_clip(backend, item, wav_path, *, language, runs, timeout,
             else:
                 result = backend.transcribe(str(wav_path), opts)
             text = result.text
+            if getattr(result, "error", None):
+                error = result.error
+            for note in getattr(result, "notes", ()) or ():
+                if note not in notes:
+                    notes.append(note)
         except Exception as exc:   # noqa: BLE001 — ein fehlgeschlagener Lauf ist ein Messwert
             error = f"{type(exc).__name__}: {exc}"
         totals.append(time.perf_counter() - start)
@@ -216,6 +226,8 @@ def run_clip(backend, item, wav_path, *, language, runs, timeout,
         point["request"] = whisper_request_preview(wav_path, language, timeout)
     if errors:
         point["errors"] = errors
+    if notes:
+        point["notes"] = notes
     return point
 
 
@@ -295,13 +307,60 @@ def select_backends(args):
         backends.append(("whisper-server", WhisperServerBackend(), True))
     if args.backend in ("transcribe-cpp", "all"):
         if args.transcribe_cpp:
-            backends.append(("transcribe-cpp",
-                             TranscribeCppBackend(binary=args.transcribe_cpp),
+            backends.append(("transcribe-cpp", transcribe_cpp_backend(args),
                              False))
         else:
             print("transcribe-cpp: ohne --transcribe-cpp BINÄRPFAD "
-                  "übersprungen (Stub)", file=sys.stderr)
+                  "übersprungen", file=sys.stderr)
     return backends
+
+
+def _dictionary_words():
+    from quassel import config
+    return config.dictionary_words()
+
+
+def transcribe_cpp_backend(args):
+    """CLI-Adapter wie im Produkt; das Wörterbuch ist dasselbe wie beim
+    whisper-Server, wirkt aber nur bei Familien mit vocabulary."""
+    return TranscribeCppBackend(
+        binary=args.transcribe_cpp,
+        model=getattr(args, "tcpp_model", None),
+        family=getattr(args, "tcpp_family", None),
+        compute=getattr(args, "tcpp_compute", None) or "auto",
+        vocabulary=_dictionary_words)
+
+
+def transcribe_cpp_meta(backend, display_name=None):
+    """Modell und Parameter des transcribe-cpp-Abschnitts für den Report."""
+    family = backend.family.name if backend.family else None
+    quant = backend.quant
+    model_file = os.path.basename(backend.model) if backend.model else None
+    label = display_name or model_file or "unbekannt (kein --tcpp-model)"
+    model = (f"{label} (Familie {family or 'unbekannt'}, "
+             f"Quantisierung {quant or 'unbekannt'})")
+    if backend.family and backend.family.vocabulary:
+        prompt = ("Wörterbuch über --vocabulary-file (dieselbe Liste wie "
+                  "beim whisper-Server); kein Kontexttext")
+    else:
+        prompt = f"nicht unterstützt (Familie {family or 'unbekannt'})"
+    params = {
+        "binary": backend.binary,
+        "model_path": backend.model,
+        "model_file": model_file,
+        "family": family,
+        "quant": quant,
+        "compute": backend.compute,
+        "upstream": f"transcribe.cpp {tcpp_families.UPSTREAM_TAG}",
+        "process": "ein transcribe-cli-Prozess je Clip (Modellladen in der "
+                   "Gesamtzeit enthalten)",
+        "language": "je Clip aus dem Manifest; Familien ohne Auto-Erkennung "
+                    "bekommen bei mixed/auto 'de' (Hinweis im Clip)",
+        "prompt": prompt,
+        "audio_ctx": "nicht anwendbar (transcribe.cpp)",
+        "greedy": "Vorgabe der Modellfamilie (nicht gesteuert)",
+    }
+    return model, params
 
 
 def report_for_backends(backends, items, root, *, meta, open_lines, runs,
@@ -324,14 +383,7 @@ def report_for_backends(backends, items, root, *, meta, open_lines, runs,
         if is_whisper:
             model, params = whisper_backend_meta()
         else:
-            model = transcribe_cpp_model or \
-                "unbekannt (Stub; Modellwahl nicht verdrahtet)"
-            params = {
-                "binary": getattr(backend, "binary", None),
-                "prompt": "nicht unterstützt (capabilities.prompt=False)",
-                "audio_ctx": "nicht unterstützt (Stub)",
-                "greedy": "nicht gesteuert (Stub)",
-            }
+            model, params = transcribe_cpp_meta(backend, transcribe_cpp_model)
         print(f"{name}: gesund, {len(items)} Clips × {runs} Läufe "
               f"(Modell: {model})", file=sys.stderr)
         sections.append(run_backend_section(
@@ -385,8 +437,14 @@ def render_markdown(report):
                       "(kein echter Lauf).", ""]
             continue
         params = section["params"]
+        lines += [f"- Modell: {section['model']}"]
+        if params.get("family") or params.get("quant"):
+            lines += [f"- transcribe.cpp: Familie {params.get('family') or 'n/a'}"
+                      f" · Quantisierung {params.get('quant') or 'n/a'}"
+                      f" · Rechenwerk {params.get('compute') or 'n/a'}"
+                      f" · {params.get('upstream', 'n/a')}"
+                      f" · {params.get('process', 'n/a')}"]
         lines += [
-            f"- Modell: {section['model']}",
             f"- Parameter: prompt: {params.get('prompt', 'n/a')} · "
             f"audio_ctx: {params.get('audio_ctx', 'n/a')} · "
             f"greedy: {params.get('greedy', 'n/a')}",
@@ -463,11 +521,19 @@ def parse_args(argv=None):
     parser.add_argument("--backend", choices=("whisper", "transcribe-cpp", "all"),
                         default="whisper")
     parser.add_argument("--transcribe-cpp", default=None, dest="transcribe_cpp",
-                        help="Binary-Pfad; ohne Angabe wird das Stub-Backend "
-                             "übersprungen")
+                        help="Pfad zu transcribe-cli; ohne Angabe wird "
+                             "transcribe-cpp übersprungen")
+    parser.add_argument("--tcpp-model", default=None, dest="tcpp_model",
+                        help="GGUF-Modelldatei für transcribe-cpp")
+    parser.add_argument("--tcpp-family", default=None, dest="tcpp_family",
+                        choices=sorted(tcpp_families.FAMILIES),
+                        help="Modellfamilie (sonst aus dem Dateinamen)")
+    parser.add_argument("--tcpp-compute", default="auto", dest="tcpp_compute",
+                        choices=("auto", "metal", "cuda", "vulkan", "cpu"),
+                        help="Rechenwerk für transcribe-cli --backend")
     parser.add_argument("--transcribe-cpp-model", default=None,
                         dest="transcribe_cpp_model",
-                        help="Modellname für den Report (transcribe-cpp)")
+                        help="Anzeigename statt des Dateinamens im Report")
     return parser.parse_args(argv)
 
 
