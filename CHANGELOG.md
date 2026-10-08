@@ -46,6 +46,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- macOS: selecting the system default microphone now follows changes made
+  between dictations when the device is already in the audio device list.
 - Linux recording now begins before the Bluetooth card check, avoiding a
   delay that could cut off the first word.
 - The microphone test in the Control Center now says what went wrong instead

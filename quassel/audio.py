@@ -219,7 +219,11 @@ def _mac_device(mic):
     """Geräte-Index für mic (Name aus list_mics oder Index-String);
     None = Standard-Eingabegerät."""
     if not mic or mic == "default":
-        return None
+        from . import coreaudio
+        device = coreaudio.default_input_device()
+        mic = coreaudio.device_name(device) if device is not None else None
+        if not mic:
+            return None
     try:
         return int(mic)
     except ValueError:
