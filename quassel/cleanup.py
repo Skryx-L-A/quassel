@@ -17,9 +17,9 @@ class CleanupResult:
     fallback_reason: str | None = None
 
 
-_FILLER = re.compile(r"(?i)(?<!\w)(?:äh+|ähm+|aeh+|aehm+|öhm+|oehm+|uh+|umm+|hm+)(?:\.{2,})?(?!\w)[, ]*")
-_INITIAL_FILLER = re.compile(r"(?i)^\s*(?:(?:also|sozusagen|you know)\s*[,،:]\s*)+")
-_PAIRED_FILLER = re.compile(r"(?i),\s*(?:halt|sozusagen|you know)\s*,\s*")
+_FILLER = re.compile(r"(?i)(?<!\w)(?:äh+|ähm+|aeh+|aehm+|öhm+|oehm+|uh+|hm+)(?:\.{2,})?(?!\w)[, ]*")
+_INITIAL_FILLER = re.compile(r"(?i)^\s*(?:(?:also|sozusagen|you know|um)\s*[,،:]\s*)+")
+_PAIRED_FILLER = re.compile(r"(?i),\s*(?:halt|sozusagen|you know|um)\s*,\s*")
 _REPEAT = re.compile(r"(?i)(?<!\w)([\wÄÖÜäöüß]+)(\s+)\1(?!\w)")
 _CORRECTION = re.compile(
     r"(?i)(?<!\w)(?P<first>(?:am|at)\s+[\w:.]+)\s*,?\s*"

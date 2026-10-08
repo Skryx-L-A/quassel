@@ -100,6 +100,10 @@ def test_cleanup_corrections_are_separate_from_asr_dictionary(tmp_path, monkeypa
     assert cfg.cleanup_terms == ["PyTorch"]
     assert cfg.cleanup_replacements == {"pie torch": "PyTorch"}
     assert config.dictionary_words() == ["PyTorch"]
+    config.save({("cleanup", "enabled"): "true", ("cleanup", "level"): "leicht"})
+    cfg.reload(force=True)
+    from quassel.cleanup import cleanup
+    assert cleanup("pie torch startet", cfg.cleanup_level, cfg).text == "PyTorch startet"
 
 
 def test_dictionary_save_invalidates_the_cache(tmp_path, monkeypatch):
