@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- "Raw text back" without a new global shortcut: the macOS menu bar menu can
+  offer it as an entry, and on Linux `quassel-type-cli raw-last` asks the
+  running dictation service to put the unedited text of the last dictation on
+  the clipboard. The command never reads the text itself; it stays only in the
+  service's memory and is never written to disk.
 - AI page: "Refresh" and "Test" also work with OpenAI-compatible servers such
   as llama-server, LM Studio or vLLM. Quassel asks Ollama for its models first
   and otherwise reads the server's model list (/v1/models); an address ending
