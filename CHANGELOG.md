@@ -34,6 +34,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- The Linux quick installer works again. Releases after v2.2.0 never had the
+  prebuilt speech engines it asked for, so the one-line install stopped with
+  "Engine download failed". It now checks the release first and, when the engine
+  package is not there, builds the speech engine itself (a few minutes) and says
+  so. Downloaded engines are checked against a checksum.
+- The Linux installer builds a fixed, known version of whisper.cpp (v1.9.5)
+  instead of whatever was newest that day, and rebuilds it when that version
+  changes. An installation made earlier is moved to the same version on the
+  next run.
+- `./install.sh --model small-q5_1` now also switches an existing installation
+  to that model. Before, it only downloaded the file and left the old model
+  active. Without `--model`, a model you already chose is kept.
 - Windows now runs the same dictation flow as Linux and macOS instead of its own
   copy, which had drifted apart. Three Windows problems go away with it: a failed
   dictation (speech engine not reachable or transcription error) is saved as a

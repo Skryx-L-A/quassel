@@ -4,7 +4,12 @@
 #  Lokale, private Spracheingabe: Strg+Meta halten -> sprechen -> loslassen
 #  -> Text erscheint am Cursor. / Local private voice typing.
 #
-#  Aufruf:   ./install.sh [--model tiny|base|small|medium|large-v3-turbo]
+#  Aufruf:   ./install.sh [--model <name>] [--prebuilt] [--all]
+#            --model     Modell wählen (z. B. small-q5_1); gilt auch bei
+#                        bestehender Installation (setzt MODEL_PATH)
+#            --prebuilt  vorgebaute Engine aus dem Release laden, falls es sie
+#                        gibt (sonst automatisch Quellbau)
+#            --all       alle Modelle laden
 # ============================================================================
 set -euo pipefail
 
@@ -24,14 +29,25 @@ VENV="$DATA/venv"
 MODEL=""
 PREBUILT=0          # --prebuilt: vorgebaute Engine laden statt kompilieren
 ALL_MODELS=0        # --all: alle Modelle statt nur des passenden
-RELEASE="https://github.com/Skryx-L-A/quassel/releases/latest/download"
+MODEL_EXPLICIT=0    # --model gesetzt: überschreibt MODEL_PATH einer bestehenden Installation
+SERVER_BIN_PATH=""
+ENGINE_DESC=""
+
+# shellcheck source=scripts/whisper-cpp-pin.sh
+source "$SRC/scripts/whisper-cpp-pin.sh"
+# shellcheck source=scripts/install-lib.sh
+source "$SRC/scripts/install-lib.sh"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --model) MODEL="${2:?}"; shift 2 ;;
+        --model)
+            MODEL="${2:?--model braucht einen Wert}"
+            [[ "$MODEL" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
+                || die "Ungültiger Modellname: $MODEL"
+            MODEL_EXPLICIT=1; shift 2 ;;
         --prebuilt) PREBUILT=1; shift ;;
         --all) ALL_MODELS=1; shift ;;
-        -h|--help) grep '^#' "$0" | head -8; exit 0 ;;
+        -h|--help) grep '^#' "$0" | head -12; exit 0 ;;
         *) die "Unbekannte Option: $1" ;;
     esac
 done
@@ -115,38 +131,20 @@ say "3/8  Spracherkennungs-Engine (vorgebaut laden ODER selbst kompilieren)"
 # ----------------------------------------------------------------------------
 mkdir -p "$DATA" "$BIN" "$LIB"
 HAS_GPU=0
+USE_SOURCE=1
 if [[ "$PREBUILT" -eq 1 ]]; then
-    # Vorgebaute portable Engine aus dem Release laden — kein git/Compiler nötig.
-    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
-        EVAR="cuda"; HAS_GPU=1
-    else
-        EVAR="cpu"
+    # Vorgebaute portable Engine aus dem Release — kein Compiler nötig. Gibt es
+    # sie im Release nicht (die meisten Releases haben keine), baut der Quell-
+    # Pfad unten die Engine; das ist der gewöhnliche Weg, kein Fehler.
+    if install_prebuilt_engine; then
+        USE_SOURCE=0
+        ok "Engine ($ENGINE_DESC)"
     fi
-    EDIR="$DATA/engine/$EVAR"
-    if [[ ! -x "$EDIR/whisper-server" ]]; then
-        mkdir -p "$EDIR"
-        echo "    Lade vorgebaute Engine ($EVAR)…"
-        curl -L --fail --progress-bar -o "$DATA/engine-$EVAR.tar.gz" \
-            "$RELEASE/quassel-engine-linux-$EVAR-x86_64.tar.gz" \
-            || die "Engine-Download fehlgeschlagen ($EVAR)"
-        tar -xzf "$DATA/engine-$EVAR.tar.gz" -C "$DATA/engine"
-        rm -f "$DATA/engine-$EVAR.tar.gz"
-    fi
-    # Wrapper: gebündelte Libs prozess-lokal (System bleibt unangetastet);
-    # der NVIDIA-Treiber kommt zur Laufzeit immer vom Zielsystem.
-    cat > "$EDIR/run-server.sh" <<'WRAP'
-#!/usr/bin/env bash
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export LD_LIBRARY_PATH="$here:${LD_LIBRARY_PATH:-}"
-exec "$here/whisper-server" "$@"
-WRAP
-    chmod +x "$EDIR/run-server.sh"
-    SERVER_BIN_PATH="$EDIR/run-server.sh"
-    ok "Engine (vorgebaut): $EVAR"
-else
-    if [[ ! -d "$DATA/whisper.cpp" ]]; then
-        git clone --depth 1 https://github.com/ggml-org/whisper.cpp "$DATA/whisper.cpp"
-    fi
+fi
+if [[ "$USE_SOURCE" -eq 1 ]]; then
+    # Fester Stand (scripts/whisper-cpp-pin.sh), nicht der Tip von master.
+    whisper_checkout "$DATA/whisper.cpp" \
+        || die "whisper.cpp $WHISPER_CPP_TAG konnte nicht geholt werden"
     GPU="CPU"; CMAKE_FLAGS=(-DCMAKE_BUILD_TYPE=Release)
     if command -v nvcc >/dev/null; then
         CMAKE_FLAGS+=(-DGGML_CUDA=1); GPU="NVIDIA/CUDA"; HAS_GPU=1
@@ -158,16 +156,26 @@ else
           cmake -B build "$@" >/dev/null &&
           cmake --build build -j"$(nproc)" --config Release >/dev/null )
     }
-    if [[ ! -x "$DATA/whisper.cpp/build/bin/whisper-server" ]]; then
+    # Neu bauen, wenn der Binary fehlt, der Stand gewechselt hat oder sich die
+    # erkannte GPU-Ausstattung geändert hat.
+    STAMP_FILE="$DATA/whisper.cpp/.quassel-build"
+    WANT_STAMP="$(whisper_build_stamp "${CMAKE_FLAGS[*]}")"
+    if [[ ! -x "$DATA/whisper.cpp/build/bin/whisper-server" ]] \
+        || [[ "$(cat "$STAMP_FILE" 2>/dev/null || true)" != "$WANT_STAMP" ]]; then
+        say "     whisper.cpp $WHISPER_CPP_TAG bauen (dauert einige Minuten)"
         if ! build_whisper "${CMAKE_FLAGS[@]}"; then
             warn "GPU-Build fehlgeschlagen – baue CPU-Version"
             GPU="CPU"; HAS_GPU=0
             build_whisper -DCMAKE_BUILD_TYPE=Release
         fi
+        # Auch nach CPU-Rückfall der angeforderte Stand: sonst würde jeder Lauf
+        # den fehlschlagenden GPU-Build wiederholen.
+        [[ -x "$DATA/whisper.cpp/build/bin/whisper-server" ]] \
+            && printf '%s\n' "$WANT_STAMP" > "$STAMP_FILE"
     fi
     [[ -x "$DATA/whisper.cpp/build/bin/whisper-server" ]] || die "whisper.cpp-Build fehlgeschlagen"
     SERVER_BIN_PATH="$DATA/whisper.cpp/build/bin/whisper-server"
-    ok "whisper.cpp gebaut ($GPU)"
+    ok "whisper.cpp $WHISPER_CPP_TAG gebaut ($GPU)"
 fi
 
 # ----------------------------------------------------------------------------
@@ -187,7 +195,15 @@ dl_model() {
 # Standardmodell: mit GPU das volle large-v3-turbo; ohne GPU ein QUANTISIERTES
 # Modell passend zur CPU (hwdetect: medium-q5/small-q5/base-q5) — auf CPU klar
 # schneller bei nahezu gleicher Genauigkeit.
-if [[ -z "$MODEL" ]]; then
+SENV="$HOME/.config/quassel/server.env"
+KEPT_MODEL=""
+if [[ -z "$MODEL" && -s "$SENV" ]]; then
+    # Bestehende Installation ohne --model: das konfigurierte Modell bleibt,
+    # sofern die Datei noch da ist (kein erneuter Download des Standardmodells).
+    CUR_MODEL_PATH="$(env_value "$SENV" MODEL_PATH)"
+    [[ -n "$CUR_MODEL_PATH" && -s "$CUR_MODEL_PATH" ]] && KEPT_MODEL="$CUR_MODEL_PATH"
+fi
+if [[ -z "$MODEL" && -z "$KEPT_MODEL" ]]; then
     if [[ "$HAS_GPU" -eq 1 ]]; then
         MODEL="large-v3-turbo"
     else
@@ -198,11 +214,16 @@ if [[ -z "$MODEL" ]]; then
 fi
 if [[ "$ALL_MODELS" -eq 1 ]]; then
     for m in tiny base small medium large-v3-turbo; do dl_model "$m"; done
-else
+elif [[ -z "$KEPT_MODEL" ]]; then
     dl_model "$MODEL"
 fi
-MODELFILE="ggml-${MODEL}.bin"
-ok "Modell: $MODELFILE  (Standard für diese Hardware)"
+if [[ -n "$KEPT_MODEL" ]]; then
+    MODEL_FILE_PATH="$KEPT_MODEL"
+    ok "Modell: $(basename "$KEPT_MODEL")  (bestehende Einstellung; mit --model ändern)"
+else
+    MODEL_FILE_PATH="$DATA/models/ggml-${MODEL}.bin"
+    ok "Modell: ggml-${MODEL}.bin"
+fi
 
 # VAD-Modell (Silero, ~0.9 MB): überspringt Stille -> schneller + verhindert
 # Halluzinationen auf Stille. Optional — schlägt der Download fehl, läuft alles
@@ -250,15 +271,28 @@ THREADS=$(nproc 2>/dev/null || echo 4); [[ "$THREADS" -gt 8 ]] && THREADS=8
 if [[ ! -s "$HOME/.config/quassel/server.env" ]]; then
     cat > "$HOME/.config/quassel/server.env" <<EOF
 SERVER_BIN=$SERVER_BIN_PATH
-MODEL_PATH=$DATA/models/$MODELFILE
+MODEL_PATH=$MODEL_FILE_PATH
 WHISPER_THREADS=$THREADS
 WHISPER_DECODE=$DECODE
 VAD_MODEL=$VAD_PATH
 EOF
 else
     # Bestehende server.env nicht überschreiben (Modellwahl bleibt), aber Thread-
-    # Zahl, Decode-Flags und VAD-Modell bei Bedarf ergänzen.
-    SENV="$HOME/.config/quassel/server.env"
+    # Zahl, Decode-Flags und VAD-Modell bei Bedarf ergänzen. Ausnahmen: ein
+    # ausdrückliches --model setzt MODEL_PATH, und ein SERVER_BIN, der nicht
+    # mehr ausführbar ist, wird auf die eben eingerichtete Engine gesetzt.
+    if [[ "$MODEL_EXPLICIT" -eq 1 ]]; then
+        if set_env_key "$SENV" MODEL_PATH "$MODEL_FILE_PATH"; then
+            ok "MODEL_PATH auf $(basename "$MODEL_FILE_PATH") gesetzt (--model)"
+        else
+            warn "$SENV nicht schreibbar – Modell bleibt wie bisher."
+        fi
+    fi
+    CUR_SERVER_BIN="$(env_value "$SENV" SERVER_BIN)"
+    if [[ -n "$SERVER_BIN_PATH" && ! -x "$CUR_SERVER_BIN" ]]; then
+        set_env_key "$SENV" SERVER_BIN "$SERVER_BIN_PATH" \
+            || warn "$SENV nicht schreibbar – SERVER_BIN bleibt wie bisher."
+    fi
     # Einmalige Migration, NICHT die "füllt nur Fehlendes"-Regel darunter:
     # "-bs 5" war der frühere Vorgabewert dieses Programms selbst (kein
     # Nutzerwille), durch eigene Messung abgelöst (36 Dateien/938
