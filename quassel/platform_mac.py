@@ -429,7 +429,7 @@ def _osa_quote(s):
 
 # ---------------------------------------------------------- Audio-Ducking
 # Backend für quassel.mediacontrol: Gesamtton stummschalten (osascript) bzw.
-# spielende Player (Music.app, Spotify) pausieren.
+# spielende scriptbare Player pausieren.
 class _OsaTimedOut:
     """Ersatz für das CompletedProcess, wenn osascript nicht antwortet. Leeres
     stdout heißt für die Aufrufer: Ton ist nicht stumm, es spielt nichts —
@@ -452,7 +452,7 @@ def _output_muted():
     return r.stdout.strip() == "true"
 
 
-_MUSIC_APPS = ("Music", "Spotify")
+_MUSIC_APPS = ("Music", "Spotify", "Podcasts")
 
 
 def _playing_apps():
@@ -468,6 +468,12 @@ def _playing_apps():
         r = _osa(script)
         if r.stdout.strip() == "playing":
             playing.append(app)
+    # VLC exposes a boolean `playing`, not Music's `player state` enum.
+    r = _osa('if application "VLC" is running then\n'
+             '  tell application "VLC" to return playing\n'
+             'end if\nreturn false')
+    if r.stdout.strip() == "true":
+        playing.append("VLC")
     return playing
 
 

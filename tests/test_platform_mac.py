@@ -445,6 +445,20 @@ def test_duck_apply_music_pauses_playing_apps(monkeypatch):
     assert paused == ["Music", "Spotify"]
 
 
+def test_detects_additional_scriptable_players_without_browsers(monkeypatch):
+    scripts = []
+    def osa(script):
+        scripts.append(script)
+        if 'application "Podcasts"' in script:
+            return SimpleNamespace(stdout="playing\n")
+        if 'application "VLC"' in script:
+            return SimpleNamespace(stdout="true\n")
+        return SimpleNamespace(stdout="no\n")
+    monkeypatch.setattr(pm, "_osa", osa)
+    assert pm._playing_apps() == ["Podcasts", "VLC"]
+    assert not any("Safari" in script or "Chrome" in script for script in scripts)
+
+
 def test_duck_restore_music_resumes_only_paused_apps(monkeypatch):
     resumed = []
     monkeypatch.setattr(pm, "_play_app", lambda app: resumed.append(app))

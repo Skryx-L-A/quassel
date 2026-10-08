@@ -84,6 +84,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- macOS music ducking also checks Podcasts and VLC and resumes only players
+  that were playing before dictation.
 - Pasting on macOS follows the current keyboard layout, including layouts
   where the V key has a different physical position.
 - Bluetooth microphones are recognized in the packaged macOS app even when
