@@ -220,9 +220,15 @@ def test_profiles_failure_is_reported(c, monkeypatch):
     assert opened == [] and c.profiles_status.text().startswith("✕")
 
 
-def test_no_page_needs_horizontal_scrolling(c, qapp):
+@pytest.mark.parametrize("lang", ["de", "en"])
+def test_no_page_needs_horizontal_scrolling(tmp_path, monkeypatch, qapp, lang):
     """Lange Einträge (Dropdowns, Pfade) dürfen keine Seite breiter als das
-    Fenster machen. Offscreen-Plattform: kein sichtbares Fenster."""
+    Fenster machen; Deutsch hat die längeren Texte. Offscreen-Plattform:
+    kein sichtbares Fenster."""
+    monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
+    monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
+    config.save({("ui", "language"): lang, ("system", "onboarded"): "true"})
+    c = center.Center()
     c.resize(760, 900)
     c.show()
     try:
@@ -235,3 +241,5 @@ def test_no_page_needs_horizontal_scrolling(c, qapp):
         assert too_wide == []
     finally:
         c.hide()
+        c.close()
+        i18n.set_language(None)
