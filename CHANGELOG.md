@@ -22,6 +22,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lasts.
 
 ### Changed
+- Linux starts checking clipboard contents while recording and uses fewer
+  clipboard commands when inserting a dictation.
 - The pill now shows your real microphone level while you dictate instead of a
   fixed animation. If nothing arrives from the microphone for 1.5 seconds, the
   bars turn into a flat amber line and the pill says so, so a muted or wrong
@@ -46,6 +48,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Linux leaves images, files and rich clipboard contents alone when inserting
+  text and keeps anything you copy during the restore delay.
 - macOS preserves every pasteboard item and format across dictation insertion.
   If an item cannot be read, Quassel types without changing the pasteboard.
 - Windows keeps dictation text out of clipboard history and cloud sync. It

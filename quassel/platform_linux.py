@@ -62,12 +62,10 @@ else:
 
 def clip_copy(text):
     if IS_WAYLAND:
-        _run(["wl-copy"], input=text, text=True, check=False)
-        _run(["wl-copy", "--primary"], input=text, text=True, check=False)
+        return _run(["wl-copy"], input=text, text=True, check=False).returncode == 0
     else:
-        for sel in ("clipboard", "primary"):
-            _run(["xclip", "-selection", sel], input=text, text=True,
-                           check=False)
+        return _run(["xclip", "-selection", "clipboard"], input=text,
+                    text=True, check=False).returncode == 0
 
 
 def clip_read():
@@ -77,20 +75,107 @@ def clip_read():
     return r.stdout if r.returncode == 0 else ""
 
 
+_clip_lock = threading.Lock()
+_original = None
+_last_written = None
+_generation = 0
+_prepared = None
+_prepare_id = 0
+_TEXT_TYPES = {"text", "TEXT", "STRING", "UTF8_STRING", "COMPOUND_TEXT",
+               "text/plain", "text/plain;charset=utf-8", "TARGETS", "TIMESTAMP", "MULTIPLE"}
+
+
+def _snapshot():
+    """Read clipboard type list before changing it; None means unsafe/unknown."""
+    args = (["wl-paste", "--list-types"] if IS_WAYLAND else
+            ["xclip", "-selection", "clipboard", "-o", "-t", "TARGETS"])
+    result = _run(args, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return None
+    types = {value.strip() for value in result.stdout.splitlines() if value.strip()}
+    if not types or not types <= _TEXT_TYPES:
+        return None
+    return clip_read()
+
+
+def prepare_clipboard():
+    """Start bounded snapshot during recording, before transcription finishes."""
+    global _prepare_id, _prepared
+    with _clip_lock:
+        _prepare_id += 1
+        _prepared = None
+        generation = _prepare_id
+
+    def read():
+        global _prepared
+        snapshot = _snapshot()
+        with _clip_lock:
+            if generation == _prepare_id:
+                _prepared = snapshot
+
+    threading.Thread(target=read, daemon=True).start()
+
+
+def _begin():
+    global _original, _prepared, _last_written
+    with _clip_lock:
+        if _original is not None:
+            if _last_written is None or clip_read() == _last_written:
+                return _original
+            _original = None
+            _last_written = None
+        saved = _prepared
+        _prepared = None
+    if saved is None:
+        saved = _snapshot()
+    else:
+        # A user may copy something while recording: take the new item.
+        current = clip_read()
+        if current != saved:
+            saved = _snapshot()
+    with _clip_lock:
+        _original = saved
+    return saved
+
+
+def _type_direct(text):
+    # stdin keeps dictation out of process arguments and command logs.
+    return _run(["ydotool", "type", "--file", "-"], input=text,
+                text=True, check=False).returncode == 0
+
+
+def _restore_if_ours(delay, generation):
+    global _original, _last_written
+    time.sleep(delay)
+    with _clip_lock:
+        if generation != _generation:
+            return
+        old, written = _original, _last_written
+        _original = None
+        _last_written = None
+        if old is not None and written is not None and clip_read() == written:
+            clip_copy(old)
+
+
 def paste(text):
-    old = clip_read()
-    clip_copy(text)
+    global _last_written, _generation
+    old = _begin()
+    if old is None:
+        if _type_direct(text):
+            return True
+        notify("Clipboard format cannot be preserved; dictation was not inserted")
+        return False
+    if not clip_copy(text):
+        return False
+    with _clip_lock:
+        _last_written = text
+        _generation += 1
+        generation = _generation
     time.sleep(0.25)
     # Shift+Einfg: KEY_LEFTSHIFT=42, KEY_INSERT=110
     result = _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
-    if result.returncode == 0 and old:
-        def restore():
-            # großzügig warten: XWayland-Fenster holen den Clipboard-Inhalt
-            # teils verzögert ab — zu frühes Wiederherstellen fügt sonst den
-            # ALTEN Inhalt ein
-            time.sleep(6)
-            clip_copy(old)
-        threading.Thread(target=restore, daemon=True).start()
+    if result.returncode == 0:
+        threading.Thread(target=_restore_if_ours, args=(6, generation), daemon=True).start()
     return result.returncode == 0
 
 
@@ -99,22 +184,31 @@ def type_chunk(text):
     (das macht streaming_restore() einmal am Diktatende)."""
     if not text:
         return
-    clip_copy(text)
+    global _last_written, _generation
+    if _begin() is None:
+        if not _type_direct(text):
+            notify("Clipboard format cannot be preserved; dictation was not inserted")
+            return False
+        return True
+    if not clip_copy(text):
+        return False
+    with _clip_lock:
+        _last_written = text
+        _generation += 1
     time.sleep(0.12)
     return _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False).returncode == 0
 
 
 def streaming_begin():
     """Zwischenablage vor dem Streaming sichern."""
-    return clip_read()
+    return _begin()
 
 
 def streaming_restore(old):
-    if old:
-        def restore():
-            time.sleep(2)
-            clip_copy(old)
-        threading.Thread(target=restore, daemon=True).start()
+    if old is not None:
+        with _clip_lock:
+            generation = _generation
+        threading.Thread(target=_restore_if_ours, args=(2, generation), daemon=True).start()
 
 
 def send_backspaces(n):

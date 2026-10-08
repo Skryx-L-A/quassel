@@ -24,6 +24,7 @@ Thread-Garantien (gelten für jede Plattform):
 """
 import glob
 import os
+import sys
 import queue
 import threading
 import time
@@ -380,6 +381,9 @@ class DictationCore:
             return False
         if self.cfg.beep:
             beep.start()                 # aufsteigender Ton: jetzt sprechen
+        if sys.platform.startswith("linux"):
+            from . import platform_linux
+            platform_linux.prepare_clipboard()
         self._bt = self._mic_is_bluetooth()
         self._vad = self._server_vad()
         self.ducker.apply(self.cfg.mute_mode)
