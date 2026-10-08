@@ -28,6 +28,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- The macOS warnings about a missing ffmpeg and about a dictation service that
+  keeps restarting are now shown in English as well, and the restart warning
+  points to the log file that is actually used.
 - The macOS menu bar menu is now in English or German, following the app
   language, and switches right away when you change the language in the
   Control Center. It used to be German only ("Bereit", "Ausschalten",
