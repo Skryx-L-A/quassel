@@ -250,6 +250,31 @@ class Daemon(dictation.DictationCore):
             self._sync_wakeword()
             self._mac_watchdog(listener)
 
+    def _linux_finish(self):
+        """Diktat-Ende im Linux-Loop. Die Schleife liest die Tastatur
+        einthreadig und wartet weiter auf den Rest, bevor sie das nächste
+        Ereignis liest — die Reihenfolge bleibt also wie bisher. Gewartet wird
+        aber auf dem Aktions-Thread mit Frist: hängt der Rest (wl-paste,
+        Server), meldet der Watchdog das einmal samt Thread-Stacks, und der
+        Not-Aus lässt ihn zurück, statt mit ihm stehen zu bleiben (D55)."""
+        rest = self.finish()
+        if rest is None:
+            return True
+        runner = self._runner
+        if runner is None:
+            rest()
+            return True
+        done = runner.run_blocking("finish", rest, on_stall=self._linux_stall,
+                                   stall_after=ACTION_STALL)
+        if not done:
+            log("linux: Diktat-Rest zurückgelassen (Not-Aus)")
+        return done
+
+    def _linux_stall(self, secs):
+        log("linux: Diktat-Rest hängt seit %.0fs; Thread-Stacks folgen. "
+            "Not-Aus: kill -USR2 %d" % (secs, os.getpid()))
+        faulthandler.dump_traceback()
+
     def _forget_lost_keys(self, pressed, gone, st):
         """Nach dem Verschwinden von Geräten (Deskriptoren in gone) deren
         gedrückte Tasten vergessen (Audit B35) und, wenn der Chord dadurch
@@ -265,14 +290,15 @@ class Daemon(dictation.DictationCore):
 
     def _install_panic_signal(self):
         """Not-Aus per Signal (SIGUSR2): beendet ein hängendes Diktat auch
-        dann, wenn der Event-Tap nicht mehr reagiert — der Menüpunkt „Diktat
-        sofort beenden" schickt genau dieses Signal an den Daemon-Prozess."""
+        dann, wenn der Hotkey nicht mehr reagiert — unter macOS schickt der
+        Menüpunkt „Diktat sofort beenden" genau dieses Signal, unter Linux
+        `systemctl --user kill -s USR2 quasseld`."""
         if not hasattr(signal, "SIGUSR2"):
             return
         try:
             signal.signal(signal.SIGUSR2, lambda *_: self.panic_stop())
         except (OSError, ValueError):   # nicht im Haupt-Thread -> kein Handler
-            log("mac: SIGUSR2-Handler nicht installierbar (Not-Aus nur übers Menü)")
+            log("daemon: SIGUSR2-Handler nicht installierbar (Not-Aus nur übers Menü)")
 
     def _mac_watchdog(self, listener, now=None):
         """Sicherheitslimit im Freihand-Modus (Pendant zu MAX_RECORD im
@@ -349,6 +375,11 @@ class Daemon(dictation.DictationCore):
             sys.exit(1)
         state_set("idle")
         notify(tr("ready"), 2000)
+        # Der lange Teil läuft auf einem Aktions-Thread, die Schleife wartet
+        # darauf in kurzen Schritten: so kommt der Not-Aus (SIGUSR2) auch
+        # dann durch, wenn Server oder Einfügen hängen (Audit D55).
+        self._runner = dictation.ActionRunner(name="quassel-actions", log=log)
+        self._install_panic_signal()
         self._sync_wakeword()
 
         while True:
@@ -451,9 +482,7 @@ class Daemon(dictation.DictationCore):
             if pending and (not pressed or time.monotonic() - pending_since > 2.0):
                 pending = False
                 pressed.clear()
-                # Linux liest die Tastatur einthreadig: hier läuft auch der
-                # lange Teil, wie bisher, mitten in dieser Schleife.
-                self.finish_now()
+                self._linux_finish()
 
 
 class PressedKeys:

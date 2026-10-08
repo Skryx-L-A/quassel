@@ -56,6 +56,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   had let go, instead of recording forever. Keys that were held on the vanished
   keyboard no longer count as pressed, so the hotkey works again right away.
   Hold-to-talk recordings also stop after five minutes, like hands-free ones.
+- Linux: a dictation that hangs (the clipboard owner does not answer, the speech
+  engine stalls) no longer freezes Quassel for good. After a minute the log
+  says so and records where it is stuck, and the emergency stop now exists on
+  Linux too: `systemctl --user kill -s USR2 quasseld` ends the dictation, drops
+  its text and makes the hotkey usable again.
 - macOS can again copy history and file-transcription results without relying
   on the Linux-only `xclip` command.
 - Known Whisper subtitle and “for watching” silence artifacts are discarded;
