@@ -46,6 +46,8 @@ def _write(doc):
 
 
 def state_set(state, text=""):
+    """Zustand schreiben. Rückgabe: der Zeitstempel als Kennung dieser
+    Meldung (für state_clear_text)."""
     global _doc
     with _lock:
         doc = {"state": state, "text": text, "ts": time.time()}
@@ -56,6 +58,28 @@ def state_set(state, text=""):
             doc["level_ts"] = _doc["level_ts"]
         _doc = doc
         _write(doc)
+        return doc["ts"]
+
+
+def state_clear_text(ts):
+    """Den Text einer angezeigten Meldung aus state.json entfernen (Audit A6:
+    das letzte Diktat bleibt sonst als Klartext auf der Platte und in Backups).
+    Nur, wenn seither nichts Neues gemeldet wurde; Zustand, Zeitstempel und
+    Pegel bleiben, damit die Pille nichts neu zeichnet. True = geleert."""
+    global _doc
+    with _lock:
+        st = state_read()
+        if st.get("ts") != ts or not st.get("text"):
+            return False
+        doc = dict(st)
+        doc["text"] = ""
+        try:
+            _write(doc)
+        except OSError:
+            return False
+        if _doc.get("ts") == ts:
+            _doc = dict(_doc, text="")
+        return True
 
 
 def level_set(level, now=None):

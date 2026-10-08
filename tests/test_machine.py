@@ -54,6 +54,83 @@ def test_other_key_cancels():
     m.key(65, True, t+0.2)                  # andere Taste während Chord
     assert ev["cancel"] == ["canceled_key"], ev
 
+# ---------------------------------------------- Linux-Schleife (Audit B35)
+# Die evdev-Schleife in daemon.py hat eine eigene Zustandsführung; geprüft
+# werden hier ihre Bausteine, ohne /dev/input.
+from types import SimpleNamespace
+
+
+def test_pressed_keys_are_kept_per_device():
+    from quassel.daemon import PressedKeys
+    keys = PressedKeys()
+    keys.press(3, 29)                      # Strg auf Tastatur 3
+    keys.press(4, 125)                     # Meta auf Tastatur 4
+    assert keys.chord(A, B)
+    assert keys.drop(4) is True            # Tastatur 4 schläft ein
+    assert not keys.chord(A, B)
+    assert keys.codes() == {29}
+    assert keys.drop(4) is False
+    keys.release(3, 29)
+    assert not keys
+
+
+def test_lost_keyboard_ends_a_held_dictation():
+    from quassel.daemon import keys_lost
+    assert keys_lost("hold", chord_down=False) == ("idle", True)
+    assert keys_lost("hold", chord_down=True) == ("hold", False)
+    assert keys_lost("toggle_armed", chord_down=False) == ("toggle", False)
+    assert keys_lost("toggle", chord_down=False) == ("toggle", False)
+    assert keys_lost("drain", chord_down=False) == ("idle", False)
+    assert keys_lost("idle", chord_down=False) == ("idle", False)
+
+
+def _daemon(active=True, started=0.0):
+    from quassel import daemon as daemon_mod
+    d = daemon_mod.Daemon.__new__(daemon_mod.Daemon)
+    d.rec = SimpleNamespace(active=active, started=started)
+    d.cfg = SimpleNamespace(chord="ctrl+meta")
+    return d, daemon_mod
+
+
+def test_max_record_also_ends_the_hold_mode():
+    d, daemon_mod = _daemon(started=100.0)
+    late = 100.0 + daemon_mod.MAX_RECORD + 1
+    for st in ("hold", "toggle", "toggle_armed"):
+        assert d._record_expired(st, late), st
+    assert not d._record_expired("hold", 100.0 + daemon_mod.MAX_RECORD - 1)
+    assert not d._record_expired("await2", late)
+    d.rec.active = False
+    assert not d._record_expired("hold", late)
+
+
+def test_forgetting_a_lost_device_releases_the_chord(monkeypatch):
+    d, daemon_mod = _daemon()
+    monkeypatch.setattr(daemon_mod, "log", lambda m: None)
+    group_a, group_b = daemon_mod.CHORDS["ctrl+meta"]
+    keys = daemon_mod.PressedKeys()
+    keys.press(7, next(iter(group_a)))
+    keys.press(7, next(iter(group_b)))
+    assert d._forget_lost_keys(keys, [9], "hold") == ("hold", False)   # anderes Gerät
+    assert d._forget_lost_keys(keys, [7], "hold") == ("idle", True)
+    assert not keys
+
+
+def test_scan_devices_reports_closed_devices_before_reuse(monkeypatch):
+    from quassel import daemon as daemon_mod
+    listing = ["event0", "event1"]
+    closed = []
+    opened = iter([10, 11, 12])
+    monkeypatch.setattr(daemon_mod.os, "listdir", lambda p: list(listing))
+    monkeypatch.setattr(daemon_mod.os, "open", lambda p, flags: next(opened))
+    monkeypatch.setattr(daemon_mod.os, "close", closed.append)
+    fds, gone = {}, []
+    daemon_mod.scan_devices(fds, on_close=gone.append)
+    assert set(fds) == {10, 11}
+    listing.remove("event1")
+    daemon_mod.scan_devices(fds, on_close=gone.append)
+    assert gone == [11] and closed == [11] and set(fds) == {10}
+
+
 if __name__ == "__main__":
     for fn in [test_hold_to_talk, test_single_tap_cancels, test_double_tap_handsfree, test_other_key_cancels]:
         fn(); print("ok:", fn.__name__)

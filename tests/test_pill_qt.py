@@ -752,3 +752,15 @@ def test_silent_mic_wins_over_secure_input_hint(pill, monkeypatch):
     pill.meter.quiet_since -= 2.0
     from quassel.i18n import tr
     assert pill.bubble_text() == tr("mic_silent")
+
+
+def test_clearing_the_text_keeps_level_and_timestamp(fresh_level_state):
+    """state_clear_text (A6, aus next) und der Pegel (H112) im selben Dokument."""
+    ts = state.state_set("recording", "geheim")
+    state.level_set(0.4, now=1.0)
+    assert state.state_clear_text(ts) is True
+    st = state.state_read()
+    assert st["text"] == "" and st["ts"] == ts and st["level"] == 0.4
+    state.state_set("recording", "neu")            # _doc wurde mit geleert
+    assert state.state_read()["level"] == 0.4
+    assert state.state_clear_text(ts) is False     # inzwischen Neues gemeldet

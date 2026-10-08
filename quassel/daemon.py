@@ -7,47 +7,47 @@ Modi:
 
 Während der Aufnahme entstehen alle ~2 s Teiltranskripte (letzte 15 s Audio)
 für die Live-Vorschau in der Pille (state.json).
+
+Der Ablauf eines Diktats selbst (Aufnahme, Transkription, Einfügen, Rettung,
+Not-Aus) steht in dictation.py und wird mit der Windows-App geteilt. Hier
+bleiben die Plattform-Anbindung für Linux und macOS und die beiden
+Hotkey-Schleifen.
 """
 import faulthandler
-import glob
 import os
 import select
 import signal
 import struct
 import sys
-import threading
 import time
 
 from . import __version__
-from . import (aimodes, beep, config, dictprompt, i18n, learn, progmode, stats, textproc,
-               textreplace, vad, wakeword, whisperclient)
+# textproc und whisperclient nutzt dictation.py; hier mit importiert, damit
+# Tests sie über dieses Modul ersetzen können.
+from . import beep, config, dictation, i18n, textproc, whisperclient  # noqa: F401
+from .dictation import (  # noqa: F401 — Namen bleiben hier ansprechbar
+    LEAD_TRIM_MS, LEAD_TRIM_NOVAD_BT_MS, PARTIAL_EVERY, PARTIAL_MAX_WAIT,
+    PARTIAL_WINDOW, RESCUE_GLOB, RESCUE_KEEP, RESCUE_NAME, SERVER_WAIT_COLD,
+    SERVER_WAIT_FINISH, SLOW_STOP, TAIL_PAD_BT_MS, WAKE_RAW,
+    PartialLoop, postprocess_transcript)
 from .mediacontrol import AudioDucker
-from .streaming import StreamTyper
-from .audio import RATE, SAMPLE_BYTES, Recorder, mac_backend, wav_from_raw
+from .audio import Recorder, mac_backend, wav_from_raw
 from .config import CHORDS
 from .i18n import tr
 from .platform import (mic_is_bluetooth, notify, paste, send_backspaces,
                        send_enter, type_chunk, streaming_begin, streaming_restore)
-from .state import PARTWAV, RUNDIR, WAV, state_set
+from .state import PARTWAV, RUNDIR, WAV, state_clear_text, state_set  # noqa: F401
 
 EVENT_FORMAT = "llHHi"
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
 EV_KEY = 1
 KEY_PRESS = 1
 
-MAX_RECORD = 300       # s: Sicherheitslimit im Freihand-Modus
+MAX_RECORD = 300       # s: Sicherheitslimit je Aufnahme (Halten und Freihand)
+# Zustände der Linux-Schleife, in denen eine Aufnahme läuft.
+RECORDING_STATES = ("hold", "toggle_armed", "toggle")
 RESCAN_EVERY = 5       # s: /dev/input auf neue Tastaturen prüfen
-# Am Diktat-Ende wartet niemand zwei Minuten auf einen Server, der ohnehin
-# schon lief. Beim Kaltstart lädt er dagegen erst das Modell — dort wird lange
-# gewartet, statt ein fertiges Diktat wegzuwerfen.
-SERVER_WAIT_FINISH = 30
-SERVER_WAIT_COLD = 600
-# Gerettete Aufnahmen: Server tot oder Transkription gescheitert.
-RESCUE_NAME = "rescued-%Y%m%d-%H%M%S"       # via time.strftime, ohne Endung
-RESCUE_GLOB = "rescued-*.wav"
-RESCUE_KEEP = 5
 PANIC_EXIT_WAIT = 5.0  # s: so lange wartet der Not-Aus auf das Ende einer Aktion
-SLOW_STOP = 0.5        # s: ab hier ist das Stoppen der Aufnahme meldenswert
 # Der Ereignis-Thread führt den synchronen Teil der Aktionen selbst aus, und
 # darin steckt osascript (Benachrichtigung, Ducking) mit je 5 s Frist. Der Wert
 # liegt darüber, damit ein zäher, aber normaler Start keinen Fehlalarm samt
@@ -58,40 +58,8 @@ DEAD_STALL = 30.0      # s: danach ist der Prozess verloren -> Selbstneustart
 # Beendigungscode für den Selbstneustart. Die Aufsicht in mac_app.py startet den
 # Daemon danach neu; 0 wäre ein normales Ende, 1 ein Fehler.
 RESTART_EXIT = 3
-PARTIAL_EVERY = 2.0    # s: Mindestabstand der Live-Vorschau-Transkripte
-PARTIAL_WINDOW = 15    # s: Vorschau nutzt nur die letzten N Sekunden Audio
-# Obergrenze für den adaptiven Abstand (PartialLoop.run): ein einzelner
-# langsamer Durchlauf (Server-Kaltstart, kurzer Systemhänger) soll die
-# Vorschau nicht minutenlang verstummen lassen. 10 s = Fünffaches des
-# Mindestabstands -- genug Puffer für eine kurze Verlangsamung, aber die
-# Vorschau meldet sich spätestens nach 10 s wieder.
-PARTIAL_MAX_WAIT = 10.0
-
-
-def postprocess_transcript(raw_text, cfg, language=None, pcm=None):
-    """Bekannte Stille-Antworten wie ein leeres Diktat behandeln."""
-    if dictprompt.is_silence_hallucination(raw_text, pcm=pcm):
-        return None, None
-    if language is None:
-        return textproc.postprocess(raw_text, cfg)
-    cfg_with_language = type("CfgWithLanguage", (), {
-        "commands": getattr(cfg, "commands", True),
-        "punctuation": getattr(cfg, "punctuation", True),
-        "language": language,
-    })()
-    return textproc.postprocess(raw_text, cfg_with_language)
-
-# Eigene Roh-/WAV-Dateien für den Wake-Listener (getrennt vom Tastatur-Pfad)
-WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
-WAKE_WAV = os.path.join(os.path.dirname(WAV), "wake.wav")
-
-# Vorlauf verwerfen + Ende puffern. WICHTIG: läuft VAD (serverseitig), entfernt
-# es Stille/BT-Ramp am Anfang selbst — dann NUR unseren eigenen Start-Ton
-# wegschneiden (sonst doppelt geschnitten -> erstes Wort weg). Ohne VAD den
-# BT-Profilwechsel-Müll am Anfang großzügig trimmen.
-LEAD_TRIM_MS = 160            # nur der Start-Ton (mit VAD)
-LEAD_TRIM_NOVAD_BT_MS = 400   # ohne VAD: BT-Ramp am Anfang
-TAIL_PAD_MS, TAIL_PAD_BT_MS = 250, 450
+# Nachlauf; hier statt nur in dictation.py, damit Tests ihn abschalten können.
+TAIL_PAD_MS = dictation.TAIL_PAD_MS
 
 
 def log(msg):
@@ -100,92 +68,10 @@ def log(msg):
     print("%s %s" % (time.strftime("%H:%M:%S"), msg), file=sys.stderr, flush=True)
 
 
-class PartialLoop(threading.Thread):
-    """Erzeugt während der Aufnahme Teiltranskripte für Live-Vorschau und
-    (im Freihand-Modus mit aktivem Streaming) für das Live-Tippen.
-
-    streamer: optionaler StreamTyper. show_preview: ob die Pillen-Blase den
-    Vorschautext zeigt (im Streaming nur den noch nicht getippten Rest)."""
-
-    def __init__(self, rec, cfg, owner):
-        super().__init__(daemon=True)
-        self.rec, self.cfg = rec, cfg
-        self.owner = owner          # Daemon — streamer wird ggf. mitten im Lauf gesetzt
-        self.stop_event = threading.Event()
-
-    def run(self):
-        whisperclient.ensure_server()   # Modell vorladen -> finale Transkription flott
-        # Adaptiver Abstand statt fest PARTIAL_EVERY: der Server bearbeitet
-        # Teil- und Finaltranskript NACHEINANDER, und ein Teiltranskript
-        # kostet fast so viel wie das Finale (whisper.cpp füllt jede Eingabe
-        # ohnehin auf ein volles 30-s-Fenster auf). Bei festem Abstand wäre
-        # der Server während des ganzen Diktats > 80% ausgelastet, gemessen
-        # im CPU-Sparlauf. delay wird nach jedem Durchlauf auf dessen eigene
-        # Dauer angehoben (Untergrenze PARTIAL_EVERY, Obergrenze
-        # PARTIAL_MAX_WAIT) -> Auslastung bleibt strukturell < 50%.
-        delay = PARTIAL_EVERY
-        while not self.stop_event.wait(delay):
-            iter_start = time.monotonic()
-            try:
-                if not self.rec.active:
-                    return
-                # Ohne Streaming UND ohne Vorschaublase braucht niemand das
-                # Teiltranskript — die teure Transkription dann überspringen
-                # (spart auf schwacher CPU viel Last, die sonst das Finale bremst).
-                if self.owner.streamer is None and not self.cfg.pill_preview:
-                    continue
-                data = self.rec.raw_bytes()
-                if len(data) < RATE * SAMPLE_BYTES // 2:   # < 0,5 s
-                    continue
-                data = data[-(RATE * SAMPLE_BYTES * PARTIAL_WINDOW):]
-                try:
-                    wav_from_raw(data, PARTWAV)
-                except OSError:
-                    continue
-                # Erneut prüfen, unmittelbar VOR der teuren Transkription: das
-                # Diktat kann zwischen Schleifenstart und hier beendet worden
-                # sein. Ohne diese zweite Prüfung würde ein Teiltranskript
-                # starten, obwohl das Finale schon ansteht -- und sich hinter
-                # ihm in die Warteschlange des Servers stellen.
-                if self.stop_event.is_set() or not self.rec.active:
-                    return
-                result = whisperclient.transcribe_result(PARTWAV, self.cfg, timeout=20)
-                raw = result.text
-                # Ehrlich bleiben: die HTTP-Anfrage selbst lässt sich
-                # clientseitig nicht abbrechen, sie läuft am Server so oder so
-                # durch, und das Finale wartet trotzdem dahinter. Hier wird
-                # nur noch das ERGEBNIS verworfen, kein Zeitgewinn erzielt.
-                if raw is None or self.stop_event.is_set() or not self.rec.active:
-                    continue
-                kind, text = postprocess_transcript(
-                    raw, self.cfg, result.language or getattr(self.cfg, "language", "auto"))
-                if kind != "text":
-                    continue
-                streamer = self.owner.streamer
-                show = self.cfg.pill_preview
-                if streamer is not None:
-                    streamer.update(text)
-                    # Blase zeigt nur den noch nicht getippten Rest (oder nichts)
-                    state_set("recording",
-                              text[len(streamer.typed):].strip() if show else "")
-                else:
-                    state_set("recording", text if show else "")
-            finally:
-                delay = max(PARTIAL_EVERY,
-                            min(time.monotonic() - iter_start, PARTIAL_MAX_WAIT))
-
-    def stop(self):
-        self.stop_event.set()
-
-
-class Daemon:
+class Daemon(dictation.DictationCore):
     # Entprellung der Watchdog-Warnung: eine Meldung je Hänger, nicht alle 5 s.
     _stall_logged = False
     _listener = None            # MacHotkeyListener, nur im mac-Loop gesetzt
-    # Not-Aus-Ereignis des gerade laufenden Diktats (je Diktat eines, siehe
-    # _finish_capture) und Name des laufenden synchronen Teils.
-    _panic_flag = None
-    _sync_action = None
     # Prozessende ohne Aufräumen: ein reguläres sys.exit liefe beim Abbau der
     # Audio-Bibliothek erneut in den verklemmten CoreAudio-Mutex. Als Attribut,
     # damit Tests den Aufruf abfangen können, statt sich selbst zu beenden.
@@ -205,122 +91,90 @@ class Daemon:
         self._bt = False             # ist die aktive Aufnahmequelle Bluetooth?
         self._vad = False            # läuft serverseitig VAD? (dann Vorlauf nicht doppelt trimmen)
 
-    # ------------------------------------------------------------- Aufnahme
-    def start_recording(self):
-        self.cfg.reload()
-        i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
-        # Vor dem Startton, damit eine im Kontrollzentrum geänderte Gerätewahl
-        # schon beim nächsten Diktat greift und nicht erst nach einem Neustart.
-        beep.set_output(self.cfg.beep_output)
-        # Starten und Beenden laufen auf DEMSELBEN Thread (dem Ereignis-Thread
-        # des Hotkeys, im Linux-Loop der Hauptschleife): die Reihenfolge steht
-        # damit strukturell fest, kein Schloss muss sie herstellen.
-        if not self.rec.start(self.cfg.mic):
-            if sys.platform == "darwin":
-                # sounddevice-Pfad: es fehlt kein Programm, sondern ein
-                # nutzbares Eingabegerät (oder die Mikrofon-Freigabe).
-                missing = ("ffmpeg" if mac_backend() == "ffmpeg"
-                           else "Mikrofonzugriff")
-            else:
-                missing = "pw-record/parecord"
-            notify("Fehler: %s fehlt" % missing)
-            return False
-        if self.cfg.beep:
-            beep.start()                 # aufsteigender Ton: jetzt sprechen
-        self._bt = mic_is_bluetooth(self.cfg.mic)
-        self._vad = bool(config.read_serverenv().get("VAD_MODEL"))
-        self.ducker.apply(self.cfg.mute_mode)
-        self.streamer = None
-        self.partial = PartialLoop(self.rec, self.cfg, self)
-        self.partial.start()
-        state_set("recording")
-        return True
+    # ------------------------------------------------- Plattform-Anbindung
+    # Jede Methode löst ihren Namen erst beim Aufruf in DIESEM Modul auf:
+    # Tests ersetzen daemon.paste, daemon.state_set usw. und treffen damit
+    # die gemeinsame Ablaufsteuerung.
+    def _state(self, state, text=""):
+        return state_set(state, text)
 
-    def enable_streaming(self):
-        """Beim Wechsel in den Freihand-Modus: Streaming starten, falls
-        eingeschaltet. (Im Halten-Modus technisch unmöglich -> nie hier.)"""
-        if self.streamer is not None or not self.cfg.streaming:
-            return
-        self._clip_backup = streaming_begin()
+    def _clear_state_text(self, token):
+        state_clear_text(token)
 
-        def typ(chunk):
-            type_chunk(chunk)
+    def _notify(self, text):
+        notify(text)
 
-        def dele(n):
-            send_backspaces(n)
-        self.streamer = StreamTyper(self.cfg.streaming_mode, typ, dele)
+    def _log(self, msg):
+        log(msg)
 
-    def cancel_recording(self, reason_key):
-        # Wie finish(): läuft synchron auf dem Ereignis-Thread und zählt
-        # solange als laufendes Diktat (siehe _busy).
-        self._sync_action = "cancel"
-        try:
-            if self.partial:
-                self.partial.stop()
-                self.partial = None
-            if self.streamer is not None:
-                streaming_restore(self._clip_backup)
-                self.streamer = None
-            self.rec.stop()
-            if self.cfg.beep:
-                beep.stop()
-            self.ducker.restore()
-            state_set("idle")
-            notify("✖ " + tr(reason_key))
-        finally:
-            self._sync_action = None
-        # Ein Stream, der beim Abbruch aufgegeben werden musste, vergiftet den
-        # Prozess genauso wie einer am Diktat-Ende.
+    def _paste(self, text):
+        return paste(text)
+
+    def _send_backspaces(self, n):
+        send_backspaces(n)
+
+    def _send_enter(self):
+        send_enter()
+
+    def _type_chunk(self, chunk):
+        type_chunk(chunk)
+
+    def _streaming_begin(self):
+        return streaming_begin()
+
+    def _streaming_restore(self, backup):
+        streaming_restore(backup)
+
+    def _wav_from_raw(self, data, path):
+        wav_from_raw(data, path)
+
+    def _new_partial(self):
+        return PartialLoop(self.rec, self.cfg, self)
+
+    def _rundir(self):
+        return RUNDIR
+
+    def _new_recorder(self, raw_path):
+        return Recorder(raw_path=raw_path)
+
+    def _mic_is_bluetooth(self):
+        return mic_is_bluetooth(self.cfg.mic)
+
+    def _server_vad(self):
+        return bool(config.read_serverenv().get("VAD_MODEL"))
+
+    def _report_mic_missing(self):
+        if sys.platform == "darwin":
+            # sounddevice-Pfad: es fehlt kein Programm, sondern ein
+            # nutzbares Eingabegerät (oder die Mikrofon-Freigabe).
+            missing = ("ffmpeg" if mac_backend() == "ffmpeg"
+                       else "Mikrofonzugriff")
+        else:
+            missing = "pw-record/parecord"
+        notify("Fehler: %s fehlt" % missing)
+
+    def _tail_pad_ms(self):
+        return TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS
+
+    def _after_audio_released(self):
         self._restart_if_audio_poisoned()
 
-    def panic_stop(self, *_args):
-        """Not-Aus: laufende Aufnahme sofort beenden, ohne zu transkribieren.
-
-        Aus JEDEM Thread aufrufbar, auch aus dem SIGUSR2-Handler. Jeder Schritt
-        hier hat eine harte Frist (Recorder-Stopp, osascript), damit der Not-Aus
-        nicht genau dort hängen bleibt, wo das Diktat schon hängt. Läuft weder
-        eine Aufnahme noch eine Aktion, gibt es nichts zu beenden — dann sagt
-        die Methode das und tut sonst nichts."""
-        if not self._busy():
-            log("panic: Not-Aus ohne laufendes Diktat")
-            notify(tr("nothing_running"))
-            return
-        # Merker des LAUFENDEN Diktats: wer „sofort beenden" drückt, will von
-        # diesem Diktat keinen Text mehr. Ein später begonnenes Diktat hat sein
-        # eigenes Ereignis und bleibt davon unberührt.
-        if self._panic_flag is not None:
-            self._panic_flag.set()
-        log("panic: Not-Aus -> laufendes Diktat wird abgebrochen")
-        if self.partial:
-            self.partial.stop()
-            self.partial = None
-        if self.streamer is not None:
-            streaming_restore(self._clip_backup)
-            self.streamer = None
-        try:
-            self.rec.stop()
-        except Exception as exc:   # noqa: BLE001 — der Not-Aus darf an nichts scheitern
-            log("panic: rec.stop() fehlgeschlagen: %r" % exc)
-        if self.cfg.beep:
-            beep.stop()
-        self.ducker.restore()
-        state_set("idle")
-        notify(tr("panic_stopped"))
-        # Die Maschine steht nach einem Not-Aus womöglich noch auf "toggle" —
-        # der nächste Chord-Druck liefe sonst in ein finish() ohne Aufnahme.
-        if self._listener is not None:
-            self._listener.force_reset()
+    def _after_panic(self):
         self._restart_if_audio_poisoned(after_panic=True)
 
-    def _busy(self):
-        """Läuft gerade ein Diktat? Drei Zustände zählen dazu: die Aufnahme
-        selbst, der synchrone Teil des Beendens (zwischen rec.stop() und der
-        Übergabe an den Aktions-Thread — dort ist die Aufnahme schon aus und
-        die Aktion noch nicht gestartet) und der lange Rest."""
-        if self.rec.active or self._sync_action is not None:
+    def _reset_hotkey(self):
+        if self._listener is not None:
+            self._listener.force_reset()
+
+    def _action_running(self):
+        if self._listener is not None and self._listener.current_action is not None:
             return True
-        return (self._listener is not None
-                and self._listener.current_action is not None)
+        return super()._action_running()
+
+    def _wake_transcribe(self, pcm):
+        # Über die Modulnamen dieses Moduls, damit Tests sie ersetzen können.
+        return dictation.wake_transcribe(self.cfg, pcm, dictation.scratch_wav("wake"),
+                                         wav_from_raw, log)
 
     def _restart_if_audio_poisoned(self, after_panic=False):
         """Musste ein Aufnahme-Stream aufgegeben werden, steckt in CoreAudio ein
@@ -356,359 +210,6 @@ class Daemon:
             time.sleep(0.1)
         return True
 
-    def finish(self):
-        """Aufnahme beenden — der SYNCHRONE Teil, er läuft auf dem Thread, der
-        auch die Aufnahmen startet (Hotkey-Ereignis-Thread bzw. der Linux-Loop).
-
-        Nachlauf, Recorder stoppen und Rohdaten lesen bleiben damit strukturell
-        vor dem Start des nächsten Diktats — kein Schloss kann diese Reihenfolge
-        herstellen, ein gemeinsamer Thread schon. Alles Langsame (Server,
-        Transkription, Nachbearbeitung, Einfügen) kommt als Callable zurück und
-        läuft auf dem Aktions-Thread; None heißt, es gibt nichts mehr zu tun."""
-        rest = None
-        self._sync_action = "finish"
-        try:
-            rest = self._finish_capture()
-        finally:
-            self._sync_action = None
-            if rest is None:
-                self._restart_if_audio_poisoned()
-        return rest
-
-    def finish_now(self):
-        """Das ganze Diktat auf EINEM Thread abwickeln — für den Linux-Loop,
-        der die Tastatur ohnehin einthreadig liest, und überall dort, wo es
-        keinen Aktions-Thread gibt."""
-        rest = self.finish()
-        if rest is not None:
-            rest()
-
-    def _finish_capture(self):
-        if self.partial:
-            self.partial.stop()
-            self.partial = None
-        # Streamer und die zugehörige Zwischenablagen-Sicherung EINMAL übernehmen:
-        # der Rest läuft lange, und ein neues Freihand-Diktat setzt self.streamer
-        # inzwischen für SICH — ab hier zählt nur die lokale Kopie.
-        streamer, clip_backup = self.streamer, self._clip_backup
-        self.streamer = None
-        # Eigenes Not-Aus-Ereignis für GENAU dieses Diktat. Ein Flag für alle
-        # wäre falsch: ein neues Diktat würde den Not-Aus des vorherigen
-        # aufheben, und dessen Text käme doch noch ins Fenster.
-        panic = threading.Event()
-        self._panic_flag = panic
-        # Nachlauf: kurz weiter aufnehmen, damit das letzte Wort nicht abschneidet
-        # (Bluetooth braucht mehr). Dann stoppen + Stopp-Ton.
-        time.sleep((TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS) / 1000.0)
-        t_stop = time.monotonic()
-        # Der Rückgabewert ist die eben geschlossene Rohdatei: ein neues Diktat
-        # schreibt in die andere, gelesen wird trotzdem diese hier.
-        done_path = self.rec.stop()
-        stop_took = time.monotonic() - t_stop
-        if stop_took > SLOW_STOP:
-            log("dict: rec.stop() dauerte %.1fs (Audiogerät träge?)" % stop_took)
-        if self.cfg.beep:
-            beep.stop()
-        self.ducker.restore()
-        data = self.rec.raw_bytes(done_path)
-        raw_len = len(data)
-        # Vorlauf verwerfen: mit VAD nur den eigenen Start-Ton (VAD macht den Rest
-        # — sonst würde das erste Wort doppelt weggeschnitten); ohne VAD bei BT
-        # den Profilwechsel-Müll großzügig.
-        if self._vad:
-            trim_ms = LEAD_TRIM_MS
-        else:
-            trim_ms = LEAD_TRIM_NOVAD_BT_MS if self._bt else LEAD_TRIM_MS
-        trim = int(RATE * SAMPLE_BYTES * trim_ms / 1000)
-        trim -= trim % SAMPLE_BYTES
-        if len(data) > trim + 8000:
-            data = data[trim:]
-        log("dict: bt=%s vad=%s rec=%.2fs trim=%dms pad=%dms" % (
-            self._bt, self._vad, raw_len / (RATE * SAMPLE_BYTES), trim_ms,
-            TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS))
-        if len(data) < 8000:  # < ~0,25 s Audio
-            state_set("idle")
-            notify(tr("too_short"))
-            return None
-        state_set("transcribing")
-        return lambda: self._finish_rest(streamer, clip_backup, data, panic)
-
-    def _finish_rest(self, streamer, clip_backup, data, panic):
-        """Der lange Teil: Server, Transkription, Nachbearbeitung, Einfügen.
-        Läuft auf dem Aktions-Thread und fasst den Recorder nicht mehr an."""
-        try:
-            self._transcribe_and_insert(streamer, clip_backup, data, panic)
-        finally:
-            self._restart_if_audio_poisoned()
-
-    def _transcribe_and_insert(self, streamer, clip_backup, data, panic):
-        # Beim Kaltstart lädt der Server erst das Modell; eine kurze Frist wäre
-        # dort gleichbedeutend mit einem weggeworfenen Diktat.
-        deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
-                    else SERVER_WAIT_COLD)
-        if not whisperclient.ensure_server(deadline=deadline):
-            self._fail_with_rescue(data, streamer, clip_backup)
-            return
-        wav_from_raw(data, WAV)
-        result = whisperclient.transcribe_result(WAV, self.cfg)
-        raw_text = result.text
-        if raw_text is None:
-            self._fail_with_rescue(data, streamer, clip_backup)
-            return
-        if panic.is_set():
-            # „Diktat sofort beenden" wurde gedrückt, während transkribiert
-            # wurde: kein Text mehr ins Fenster.
-            log("panic: Ergebnis verworfen (Not-Aus während der Transkription)")
-            if streamer is not None:
-                streaming_restore(clip_backup)
-            state_set("idle")
-            return
-        kind, value = postprocess_transcript(raw_text, self.cfg,
-                                              result.language or getattr(self.cfg, "language", "auto"), data)
-        if kind is None:
-            if streamer is not None:
-                streaming_restore(clip_backup)
-            state_set("error", tr("nothing"))
-            return
-        if kind == "command":
-            action = value
-            # Im Streaming wurde das Kommando ("scratch that" / "press enter")
-            # selbst live getippt -> diese Länge zurücknehmen.
-            live_typed = len(streamer.typed) if streamer is not None else 0
-            if streamer is not None:
-                streaming_restore(clip_backup)
-            if action == "enter":
-                if live_typed:
-                    send_backspaces(live_typed)
-                send_enter()
-                self.last_paste_len = 0
-                state_set("done", tr("pressed_enter"))
-                return
-            # action == "undo": im Streaming das live Getippte, sonst letztes Diktat
-            undo = live_typed if live_typed else self.last_paste_len
-            if undo > 0:
-                send_backspaces(undo)
-                self.last_paste_len = 0
-                state_set("done", tr("deleted"))
-            else:
-                state_set("error", tr("nothing"))
-            return
-        mech = self._refine_mechanical(value)
-        if streamer is not None:
-            # Streaming: KI auf den Endtext, dann Zielfenster exakt darauf bringen.
-            final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
-            typed = streamer.finish(final)
-            self.last_paste_len = len(typed)
-            streaming_restore(clip_backup)
-            value = final
-        elif self.cfg.ai_enabled:
-            # Lokale KI braucht Sekunden. ERST den Rohtext einfügen (solange der
-            # Fokus sicher im Zielfeld ist), DANN durch die KI-Fassung ersetzen —
-            # sonst landet bei langsamen Modellen nichts mehr im Fenster.
-            paste(mech)
-            self.last_paste_len = len(mech)
-            state_set("transcribing")
-            final = self._ai_refine(mech)
-            if final != mech:
-                send_backspaces(len(mech))
-                paste(final)
-                self.last_paste_len = len(final)
-                log("ai: replaced %d -> %d chars" % (len(mech), len(final)))
-            value = final
-        else:
-            paste(mech)
-            self.last_paste_len = len(mech)
-            value = mech
-        state_set("done", value)
-        secs = len(data) / (RATE * SAMPLE_BYTES)
-        self._after_insert(value, secs)
-
-    # --------------------------------------------------- Rettung der Aufnahme
-    def _fail_with_rescue(self, data, streamer, clip_backup):
-        """Server nicht erreichbar oder Transkription gescheitert: die Aufnahme
-        ist gesprochen und darf nicht einfach verschwinden — als WAV sichern und
-        den Pfad in der Fehlermeldung nennen."""
-        if streamer is not None:
-            streaming_restore(clip_backup)
-        path = self._rescue(data)
-        text = tr("no_server")
-        if path:
-            text += " · " + tr("rescued").format(path=path)
-        state_set("error", text)
-
-    def _rescue(self, data):
-        """Rohdaten als eigene WAV-Datei ablegen. Rückgabe: Pfad oder None."""
-        os.makedirs(RUNDIR, exist_ok=True)
-        # Der Name hat Sekundenauflösung. Bei totem Server scheitern zwei
-        # Diktate leicht in derselben Sekunde — dann zählt ein Suffix weiter,
-        # statt die erste Rettung stillschweigend zu überschreiben.
-        stem = os.path.join(RUNDIR, time.strftime(RESCUE_NAME))
-        path, n = stem + ".wav", 1
-        while os.path.exists(path):
-            path = "%s-%d.wav" % (stem, n)
-            n += 1
-        try:
-            wav_from_raw(data, path)
-        except OSError as exc:
-            log("rescue: %s nicht schreibbar: %r" % (path, exc))
-            return None
-        log("rescue: Aufnahme gesichert -> %s" % path)
-        self._prune_rescues()
-        return path
-
-    def _prune_rescues(self):
-        """Nur die letzten RESCUE_KEEP Rettungen behalten — der Ordner ist eine
-        Notfallablage, kein Archiv."""
-        try:
-            old = sorted(glob.glob(os.path.join(RUNDIR, RESCUE_GLOB)))
-        except OSError:
-            return
-        for path in old[:-RESCUE_KEEP]:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-
-    def _refine_mechanical(self, text):
-        """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
-        if self.cfg.programmer_mode:
-            text = progmode.apply_if_addressed(text)
-        if self.cfg.text_replace:
-            rules = config.replacement_rules()
-            if rules:
-                text = textreplace.apply_rules(text, rules)
-        return text
-
-    def _refine(self, text):
-        """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
-        text = self._refine_mechanical(text)
-        if self.cfg.ai_enabled:
-            text = self._ai_refine(text)
-        return text
-
-    def _ai_refine(self, text):
-        """Lokale KI-Nachbearbeitung (Ollama): Sprach-Modus ('als E-Mail', …) hat
-        Vorrang, sonst optional ein Auto-Modus auf jedes Diktat. Schlägt etwas fehl
-        oder läuft Ollama nicht, bleibt der Rohtext (KI darf nie Worte verlieren)."""
-        self.cfg.ai_modes_text = config.ai_modes_text()
-        mode, remaining = None, text
-        if self.cfg.ai_voice_modes:
-            m, rest = aimodes.detect_voice_mode(text)
-            if m is None:
-                m, rest = self._detect_custom_voice(text)
-            if m:
-                mode, remaining = m, rest
-        if mode is None and self.cfg.ai_post_process:
-            mode = self.cfg.ai_post_mode
-        if mode is None or not remaining.strip():
-            return text
-        return aimodes.transform(remaining, mode, self.cfg)
-
-    def _detect_custom_voice(self, text):
-        """Eigenen Modusnamen als Eröffnungsphrase erkennen ('tweet: …')."""
-        return aimodes.detect_custom_voice_mode(
-            text, getattr(self.cfg, "ai_modes_text", "") or "")
-
-    def _after_insert(self, value, seconds=0.0):
-        """Nach dem Einfügen: Verlauf, Statistik, Wörterbuch-Lernen."""
-        if self.cfg.history_enabled:
-            try:
-                config.history_append(value)
-            except OSError:
-                pass
-        if self.cfg.stats_enabled:
-            try:
-                stats.record(value, seconds=seconds)
-            except Exception:    # noqa: BLE001 — Statistik darf nie stören
-                pass
-        if self.cfg.auto_learn and not self.cfg.programmer_mode:
-            try:
-                config.dictionary_learn(value)
-            except Exception:    # noqa: BLE001 — Lernen darf nie stören
-                pass
-
-    # ----------------------------------------------------- Wake-Word (opt-in)
-    def _sync_wakeword(self):
-        """Listener nach Konfig starten/stoppen (idempotent)."""
-        if self.cfg.wakeword_enabled and self.wake is None:
-            self.wake = wakeword.WakeListener(
-                self.cfg, self._wake_record_utterance, self._wake_transcribe,
-                self._wake_insert, is_busy=lambda: self.rec.active)
-            self.wake.start()
-        elif not self.cfg.wakeword_enabled and self.wake is not None:
-            self.wake.stop()
-            self.wake = None
-
-    def _wake_record_utterance(self):
-        """Eine Äußerung über VAD aufnehmen (für den Wake-Listener). Eigener
-        Recorder + eigene Rohdatei, damit der Tastatur-Pfad und die Pille
-        ungestört bleiben. Schwelle wird am Grundrauschen kalibriert."""
-        rec = Recorder(raw_path=WAKE_RAW)
-        if not rec.start(self.cfg.mic):
-            return None
-        prev = 0
-        det = None
-        peak = 0.0
-        base_samples = []
-        deadline = time.monotonic() + 12
-        try:
-            while time.monotonic() < deadline and self.wake is not None:
-                time.sleep(0.1)
-                data = rec.raw_bytes()
-                new = data[prev:]
-                prev = len(data)
-                if not new:
-                    continue
-                lvl = vad.frame_rms(new)
-                peak = max(peak, lvl)
-                if det is None:
-                    # erste ~0.4 s: Grundrauschen messen, dann Schwelle setzen
-                    base_samples.append(lvl)
-                    if len(base_samples) >= 4:
-                        noise = sorted(base_samples)[len(base_samples) // 2]
-                        thr = max(220.0, noise * 2.2)
-                        det = vad.SilenceDetector(silence_rms=thr,
-                                                  min_speech_sec=0.25, hang_sec=1.0)
-                        det.feed(new)   # Kalibrier-Frames nur als Rauschwert genutzt
-                else:
-                    det.feed(new)
-                    if det.stopped:
-                        break
-        finally:
-            rec.stop()
-        data = rec.raw_bytes()
-        started = det.speech_started if det is not None else False
-        log("wake: rec %d bytes, peak_rms=%.0f, speech=%s" % (len(data), peak, started))
-        if not started or len(data) < 8000:
-            return None
-        return data
-
-    def _wake_transcribe(self, pcm):
-        if not pcm or not whisperclient.ensure_server():
-            return None
-        try:
-            wav_from_raw(pcm, WAKE_WAV)
-        except OSError:
-            return None
-        # Wake-Phrase als Bias mitgeben, damit Whisper das Kunstwort eher trifft.
-        text = whisperclient.transcribe(WAKE_WAV, self.cfg, timeout=30,
-                                        prompt_extra=self.cfg.wakeword_phrase)
-        # Nur Länge und Treffer loggen: der Listener hört alles im Raum, der Text
-        # darf nie in eine Logdatei.
-        heard = (text or "").strip()
-        matched, _ = wakeword.match_wake(heard, self.cfg.wakeword_phrase)
-        log("wake: heard %d chars, match=%s" % (len(heard), "yes" if matched else "no"))
-        return text
-
-    def _wake_insert(self, raw_text):
-        kind, value = postprocess_transcript(raw_text, self.cfg)
-        if kind != "text" or not value.strip():
-            return
-        value = self._refine(value)
-        paste(value)
-        self.last_paste_len = len(value)
-        state_set("done", value)
-        self._after_insert(value)
 
     # ------------------------------------------------------------- Hauptloop
     def run(self):
@@ -749,16 +250,55 @@ class Daemon:
             self._sync_wakeword()
             self._mac_watchdog(listener)
 
+    def _linux_finish(self):
+        """Diktat-Ende im Linux-Loop. Die Schleife liest die Tastatur
+        einthreadig und wartet weiter auf den Rest, bevor sie das nächste
+        Ereignis liest — die Reihenfolge bleibt also wie bisher. Gewartet wird
+        aber auf dem Aktions-Thread mit Frist: hängt der Rest (wl-paste,
+        Server), meldet der Watchdog das einmal samt Thread-Stacks, und der
+        Not-Aus lässt ihn zurück, statt mit ihm stehen zu bleiben (D55)."""
+        rest = self.finish()
+        if rest is None:
+            return True
+        runner = self._runner
+        if runner is None:
+            rest()
+            return True
+        done = runner.run_blocking("finish", rest, on_stall=self._linux_stall,
+                                   stall_after=ACTION_STALL)
+        if not done:
+            log("linux: Diktat-Rest zurückgelassen (Not-Aus)")
+        return done
+
+    def _linux_stall(self, secs):
+        log("linux: Diktat-Rest hängt seit %.0fs; Thread-Stacks folgen. "
+            "Not-Aus: kill -USR2 %d" % (secs, os.getpid()))
+        faulthandler.dump_traceback()
+
+    def _forget_lost_keys(self, pressed, gone, st):
+        """Nach dem Verschwinden von Geräten (Deskriptoren in gone) deren
+        gedrückte Tasten vergessen (Audit B35) und, wenn der Chord dadurch
+        fehlt, so weitermachen, als wäre er losgelassen worden. Rückgabe
+        (Zustand, jetzt einfügen?)."""
+        if not any([pressed.drop(fd) for fd in gone]):
+            return st, False
+        group_a, group_b = CHORDS[self.cfg.chord]
+        st, finish = keys_lost(st, pressed.chord(group_a, group_b))
+        if finish:
+            log("linux: Tastatur verschwand mit gehaltenem Chord -> Aufnahme endet")
+        return st, finish
+
     def _install_panic_signal(self):
         """Not-Aus per Signal (SIGUSR2): beendet ein hängendes Diktat auch
-        dann, wenn der Event-Tap nicht mehr reagiert — der Menüpunkt „Diktat
-        sofort beenden" schickt genau dieses Signal an den Daemon-Prozess."""
+        dann, wenn der Hotkey nicht mehr reagiert — unter macOS schickt der
+        Menüpunkt „Diktat sofort beenden" genau dieses Signal, unter Linux
+        `systemctl --user kill -s USR2 quasseld`."""
         if not hasattr(signal, "SIGUSR2"):
             return
         try:
             signal.signal(signal.SIGUSR2, lambda *_: self.panic_stop())
         except (OSError, ValueError):   # nicht im Haupt-Thread -> kein Handler
-            log("mac: SIGUSR2-Handler nicht installierbar (Not-Aus nur übers Menü)")
+            log("daemon: SIGUSR2-Handler nicht installierbar (Not-Aus nur übers Menü)")
 
     def _mac_watchdog(self, listener, now=None):
         """Sicherheitslimit im Freihand-Modus (Pendant zu MAX_RECORD im
@@ -810,8 +350,15 @@ class Daemon:
             notify(tr("audio_restart"))
             self._exit(RESTART_EXIT)
 
+    def _record_expired(self, st, now):
+        """Sicherheitslimit: eine Aufnahme läuft höchstens MAX_RECORD. Gilt
+        auch im Halten-Modus (Audit B35): verschwindet die Tastatur, während
+        der Chord gehalten wird, käme sonst nie ein Loslassen."""
+        return (st in RECORDING_STATES and self.rec.active
+                and now - self.rec.started > MAX_RECORD)
+
     def _run_linux(self):
-        pressed = set()
+        pressed = PressedKeys()
         st = "idle"                 # idle|hold|await2|toggle_armed|toggle|drain
         # Einfügen erst, wenn ALLE Modifier losgelassen sind — sonst käme beim
         # Ziel z.B. Strg+Meta+Shift+Einfg an statt Shift+Einfg.
@@ -828,12 +375,21 @@ class Daemon:
             sys.exit(1)
         state_set("idle")
         notify(tr("ready"), 2000)
+        # Der lange Teil läuft auf einem Aktions-Thread, die Schleife wartet
+        # darauf in kurzen Schritten: so kommt der Not-Aus (SIGUSR2) auch
+        # dann durch, wenn Server oder Einfügen hängen (Audit D55).
+        self._runner = dictation.ActionRunner(name="quassel-actions", log=log)
+        self._install_panic_signal()
         self._sync_wakeword()
 
         while True:
             now = time.monotonic()
             if now - last_scan > RESCAN_EVERY:
-                scan_devices(fds)
+                gone = []
+                scan_devices(fds, on_close=gone.append)
+                st, lost = self._forget_lost_keys(pressed, gone, st)
+                if lost:
+                    pending, pending_since = True, now
                 # Config live nachladen (mtime-Check, billig): Hotkey-/
                 # Timing-Änderungen aus den Einstellungen greifen sofort
                 if self.cfg.reload():
@@ -846,7 +402,11 @@ class Daemon:
             try:
                 rlist, _, _ = select.select(list(fds), [], [], timeout)
             except OSError:
-                scan_devices(fds)
+                gone = []
+                scan_devices(fds, on_close=gone.append)
+                st, lost = self._forget_lost_keys(pressed, gone, st)
+                if lost:
+                    pending, pending_since = True, now
                 continue
 
             now = time.monotonic()
@@ -857,9 +417,9 @@ class Daemon:
             if st == "await2" and now - t_tap > self.cfg.double_window:
                 self.cancel_recording("canceled_tap")
                 st = "idle"
-            # Sicherheitslimit im Freihand-Modus
-            if st in ("toggle", "toggle_armed") and self.rec.active \
-                    and now - self.rec.started > MAX_RECORD:
+            # Sicherheitslimit, auch im Halten-Modus
+            if self._record_expired(st, now):
+                log("linux: MAX_RECORD erreicht -> Aufnahme wird beendet")
                 st = "idle"
                 pending, pending_since = True, now
 
@@ -869,6 +429,9 @@ class Daemon:
                 except OSError:
                     fds.pop(fd, None)
                     os.close(fd)
+                    st, lost = self._forget_lost_keys(pressed, [fd], st)
+                    if lost:
+                        pending, pending_since = True, now
                     continue
                 for off in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
                     _, _, etype, code, value = struct.unpack_from(EVENT_FORMAT, data, off)
@@ -877,12 +440,12 @@ class Daemon:
                     now = time.monotonic()
 
                     if code in mods:
-                        before = bool(pressed & group_a) and bool(pressed & group_b)
+                        before = pressed.chord(group_a, group_b)
                         if value == KEY_PRESS:
-                            pressed.add(code)
+                            pressed.press(fd, code)
                         else:
-                            pressed.discard(code)
-                        chord = bool(pressed & group_a) and bool(pressed & group_b)
+                            pressed.release(fd, code)
+                        chord = pressed.chord(group_a, group_b)
 
                         if chord and not before:        # Chord komplett gedrückt
                             if st == "idle" and not pending:
@@ -912,20 +475,75 @@ class Daemon:
                         # Tastenkürzel (z.B. Strg+Meta+Pfeil) -> abbrechen
                         if value == KEY_PRESS and st in ("hold", "toggle_armed"):
                             self.cancel_recording("canceled_key")
-                            st = "drain" if (pressed & group_a and pressed & group_b) else "idle"
+                            st = "drain" if pressed.chord(group_a, group_b) else "idle"
 
             # Ausstehendes Einfügen, sobald alle Modifier losgelassen sind
             # (Fallback nach 2 s, falls ein Release-Event verloren ging)
             if pending and (not pressed or time.monotonic() - pending_since > 2.0):
                 pending = False
                 pressed.clear()
-                # Linux liest die Tastatur einthreadig: hier läuft auch der
-                # lange Teil, wie bisher, mitten in dieser Schleife.
-                self.finish_now()
+                self._linux_finish()
 
 
-def scan_devices(fds):
-    """Alle lesbaren /dev/input/event* öffnen (neue Geräte nachladen)."""
+class PressedKeys:
+    """Gedrückte Modifier je Eingabegerät (Audit B35). Ein Gerät, das
+    verschwindet (Bluetooth-Tastatur schläft ein, Hub), sendet kein Loslassen
+    mehr; ohne Zuordnung blieben seine Tasten für immer gedrückt, und der
+    nächste Chord würde nicht mehr erkannt."""
+
+    def __init__(self):
+        self._by_fd = {}
+
+    def press(self, fd, code):
+        self._by_fd.setdefault(fd, set()).add(code)
+
+    def release(self, fd, code):
+        keys = self._by_fd.get(fd)
+        if keys is not None:
+            keys.discard(code)
+            if not keys:
+                del self._by_fd[fd]
+
+    def drop(self, fd):
+        """Tasten eines verschwundenen Geräts vergessen. True = es war eine
+        gedrückt."""
+        return bool(self._by_fd.pop(fd, None))
+
+    def codes(self):
+        out = set()
+        for keys in self._by_fd.values():
+            out |= keys
+        return out
+
+    def chord(self, group_a, group_b):
+        codes = self.codes()
+        return bool(codes & group_a) and bool(codes & group_b)
+
+    def clear(self):
+        self._by_fd.clear()
+
+    def __bool__(self):
+        return any(self._by_fd.values())
+
+
+def keys_lost(st, chord_down):
+    """Übergang, wenn Tasten durch ein verschwundenes Gerät wegfallen: fehlt
+    der Chord jetzt, gilt er als losgelassen. Rückgabe (Zustand, einfügen?)."""
+    if chord_down:
+        return st, False
+    if st == "hold":
+        return "idle", True          # wie Loslassen nach dem Halten
+    if st == "toggle_armed":
+        return "toggle", False       # Freihand läuft weiter
+    if st == "drain":
+        return "idle", False
+    return st, False
+
+
+def scan_devices(fds, on_close=None):
+    """Alle lesbaren /dev/input/event* öffnen (neue Geräte nachladen).
+    on_close(fd) erfährt jedes geschlossene Gerät, BEVOR seine Nummer an ein
+    neues gehen kann."""
     present = set()
     try:
         entries = os.listdir("/dev/input")
@@ -945,6 +563,8 @@ def scan_devices(fds):
             pass
     for fd, path in list(fds.items()):
         if path not in present:
+            if on_close is not None:
+                on_close(fd)
             os.close(fd)
             del fds[fd]
 

@@ -1,10 +1,19 @@
 """Quassel für Windows — alles in einem Qt-Prozess.
 
 Tray-Icon (an/aus, Einstellungen, Beenden) + schwebende Pille + Hotkey-Hook
-+ lokaler whisper-server.exe. Teilt config/i18n/textproc/whisperclient mit
-der Linux-Version; nur Tastatur/Audio/Einfügen sind Windows-spezifisch.
++ lokaler whisper-server.exe. Der Ablauf eines Diktats (Aufnahme,
+Transkription, Einfügen, Rettung, Not-Aus) ist derselbe wie unter Linux und
+macOS: quassel/dictation.py. Hier liegen nur die Windows-Anbindung
+(WinDictation) und die Oberfläche.
+
+Threads: der Raw-Input-Hook reiht Tasten ein, der Ereignis-Thread
+(dictation.ChordPump) treibt die Chord-Maschine und stoppt Aufnahmen
+synchron, der Aktions-Thread (dictation.ActionRunner) transkribiert und
+fügt ein. Der Qt-Hauptthread zeichnet nur und bekommt Zustände per Signal.
 """
+import getpass
 import os
+import re
 import sys
 import threading
 import time
@@ -16,45 +25,15 @@ from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from .. import (__version__, aimodes, beep, config, dictprompt, i18n, learn, progmode, stats,
-                textproc, textreplace, vad, wakeword, whisperclient)
-from ..audio import RATE, SAMPLE_BYTES, wav_from_raw
-from ..config import CHORDS
+from .. import config, dictation, i18n, profile, whisperclient
+from ..audio import wav_from_raw
 from ..mediacontrol import AudioDucker
-from ..streaming import StreamTyper
 from ..i18n import tr
-from ..state import PARTWAV, WAV
 from . import server
 from .audio_win import Recorder
 from .hook import CHORDS_VK, KeyboardHook
-from .machine import ChordMachine
-from .paste import paste, send_backspaces, send_enter, type_chunk
-
-PARTIAL_EVERY = 2.0    # s: Mindestabstand der Live-Vorschau-Transkripte
-# Anfang verwerfen (Einschwingen/Start-Ton) und Ende puffern (nicht abschneiden).
-LEAD_TRIM_MS = 120
-TAIL_PAD_MS = 250
-PARTIAL_WINDOW = 15
-# Obergrenze für den adaptiven Abstand (PartialWorker.run) -- Spiegelung von
-# daemon.py: siehe dort für die Begründung (10 s = Fünffaches des
-# Mindestabstands, ein einzelner langsamer Durchlauf verstummt die Vorschau
-# nicht minutenlang).
-PARTIAL_MAX_WAIT = 10.0
-
-
-def postprocess_transcript(raw_text, cfg, language=None, pcm=None):
-    """Bekannte Stille-Antworten wie ein leeres Diktat behandeln."""
-    if dictprompt.is_silence_hallucination(raw_text, pcm=pcm):
-        return None, None
-    if language is None:
-        return textproc.postprocess(raw_text, cfg)
-    cfg_with_language = type("CfgWithLanguage", (), {
-        "commands": getattr(cfg, "commands", True),
-        "punctuation": getattr(cfg, "punctuation", True),
-        "language": language,
-    })()
-    return textproc.postprocess(raw_text, cfg_with_language)
-
+from .paste import (paste, send_backspaces, send_enter, streaming_begin,
+                    streaming_restore, type_chunk)
 
 DEBUG_LOG_MAX = 1_000_000   # ab ~1 MB eine Generation wegrotieren
 
@@ -94,70 +73,6 @@ def app_icon():
     pix.fill(QColor("#6A2EE0"))
     return QIcon(pix)
 
-
-class PartialWorker(threading.Thread):
-    """Live-Vorschau: Teiltranskripte während der Aufnahme."""
-
-    def __init__(self, rec, cfg, on_partial, is_streaming=None):
-        super().__init__(daemon=True)
-        self.rec, self.cfg = rec, cfg
-        self.on_partial = on_partial
-        self.is_streaming = is_streaming
-        self.stop_event = threading.Event()
-
-    def run(self):
-        t = time.monotonic()
-        whisperclient.ensure_server()
-        dlog("partial: ensure_server %.2fs" % (time.monotonic() - t))
-        # Adaptiver Abstand statt fest PARTIAL_EVERY -- Spiegelung von
-        # daemon.PartialLoop.run: der Server bearbeitet Teil- und
-        # Finaltranskript nacheinander, ein Teiltranskript kostet fast so
-        # viel wie das Finale. delay wird nach jedem Durchlauf auf dessen
-        # eigene Dauer angehoben (Untergrenze PARTIAL_EVERY, Obergrenze
-        # PARTIAL_MAX_WAIT) -> Auslastung bleibt strukturell < 50%.
-        delay = PARTIAL_EVERY
-        while not self.stop_event.wait(delay):
-            iter_start = time.monotonic()
-            try:
-                if not self.rec.active:
-                    return
-                # Weder Vorschau noch Streaming -> Teiltranskript spart man sich (CPU).
-                if not self.cfg.pill_preview and not (self.is_streaming and self.is_streaming()):
-                    continue
-                data = self.rec.raw_bytes()
-                if len(data) < RATE * SAMPLE_BYTES // 2:
-                    continue
-                data = data[-(RATE * SAMPLE_BYTES * PARTIAL_WINDOW):]
-                try:
-                    wav_from_raw(data, PARTWAV)
-                except OSError:
-                    continue
-                # Erneut prüfen, unmittelbar VOR der teuren Transkription: das
-                # Diktat kann seit Schleifenstart beendet worden sein --
-                # sonst stellt sich ein unnötiges Teiltranskript in der
-                # Warteschlange des Servers vor das Finale.
-                if self.stop_event.is_set() or not self.rec.active:
-                    return
-                t = time.monotonic()
-                result = whisperclient.transcribe_result(PARTWAV, self.cfg, timeout=20)
-                text = result.text
-                dlog("partial: transcribe %.2fs (%d Bytes Audio)"
-                     % (time.monotonic() - t, len(data)))
-                # Ehrlich bleiben: die HTTP-Anfrage lässt sich clientseitig
-                # nicht abbrechen, sie läuft am Server so oder so durch, und
-                # das Finale wartet trotzdem dahinter. Hier wird nur noch das
-                # ERGEBNIS verworfen, kein Zeitgewinn erzielt.
-                if text is not None and not self.stop_event.is_set() and self.rec.active:
-                    kind, clean = postprocess_transcript(text, self.cfg,
-                                                         result.language or getattr(self.cfg, "language", "auto"))
-                    if kind == "text":
-                        self.on_partial(clean)
-            finally:
-                delay = max(PARTIAL_EVERY,
-                            min(time.monotonic() - iter_start, PARTIAL_MAX_WAIT))
-
-    def stop(self):
-        self.stop_event.set()
 
 
 class _Bubble(QWidget):
@@ -338,6 +253,78 @@ class Pill(QWidget):
                 self.bubble.move(bx, by)
 
 
+class WinDictation(dictation.DictationCore):
+    """Windows-Anbindung der gemeinsamen Ablaufsteuerung. Läuft auf dem
+    Ereignis- und dem Aktions-Thread; die Oberfläche erreicht sie nur über
+    das Qt-Signal des Besitzers (thread-sicher)."""
+
+    def __init__(self, owner):
+        self.owner = owner              # WinApp: Signal, enabled, Pumpe
+        self.cfg = owner.cfg
+        self.rec = Recorder()
+        self.partial = None
+        self.last_paste_len = 0
+        self.streamer = None
+        self._clip_backup = None
+        self.ducker = AudioDucker()     # Musik/Ton beim Diktieren leise schalten
+        self.wake = None
+        self._runner = None             # setzt WinApp, sobald die Threads stehen
+
+    # ------------------------------------------------- Plattform-Anbindung
+    def _state(self, state, text=""):
+        if state == "idle":
+            state = "ready" if self.owner.enabled else "off"
+        self.owner.sig_state.emit(state, text)
+
+    def _notify(self, text):
+        # Windows meldet Abbruch und "zu kurz" nur über die Pille (wie bisher);
+        # der Text landet im Debug-Log.
+        dlog("notify: " + text)
+
+    def _log(self, msg):
+        dlog(msg)
+
+    def _paste(self, text):
+        return paste(text)
+
+    def _send_backspaces(self, n):
+        send_backspaces(n)
+
+    def _send_enter(self):
+        send_enter()
+
+    def _type_chunk(self, chunk):
+        type_chunk(chunk)
+
+    def _streaming_begin(self):
+        return streaming_begin()
+
+    def _streaming_restore(self, backup):
+        streaming_restore(backup)
+
+    def _wav_from_raw(self, data, path):
+        wav_from_raw(data, path)
+
+    def _new_recorder(self, raw_path):
+        return Recorder(raw_path=raw_path)
+
+    def _server_vad(self):
+        return server.vad_model_path() is not None
+
+    def _report_mic_missing(self):
+        # Nicht still scheitern: sonst bleibt die Pille grau und der Nutzer
+        # weiß nicht, warum nichts passiert (z.B. Mikro aus/weg).
+        self._state("error", tr("no_mic"))
+
+    def _reset_hotkey(self):
+        pump = getattr(self.owner, "pump", None)
+        if pump is not None:
+            pump.force_reset()
+
+    def _wake_busy(self):
+        return self.rec.active or not self.owner.enabled
+
+
 class WinApp(QObject):
     sig_state = Signal(str, str)
 
@@ -347,35 +334,27 @@ class WinApp(QObject):
         self.cfg = config.Cfg()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
         whisperclient.STARTER = server.start          # Server-Start = Windows-Variante
-        self.rec = Recorder()
-        self.partial = None
-        self.last_paste_len = 0
-        self.streamer = None
-        self._clip_backup = None
-        self.ducker = AudioDucker()   # Musik/Ton beim Diktieren leise schalten
-        self._capturing = False       # lief rec.start erfolgreich? (sonst Mikro-Fehler)
         self.enabled = True
-        self.wake = None              # WakeListener-Thread (nur wenn Wake-Word an)
+        self.core = WinDictation(self)
 
         self.pill = Pill()
         self.sig_state.connect(self._apply_state)
 
-        ga, gb = CHORDS_VK[self.cfg.chord]
-        self.machine = ChordMachine(
-            ga, gb, self.on_start, self.on_finish, self.on_cancel,
-            self.cfg.hold_min, self.cfg.double_window)
-        self.machine.on_handsfree = self.enable_streaming
         self.hook = KeyboardHook()
         self.hook.start()
+        self.runner = dictation.ActionRunner(name="quassel-actions", log=dlog)
+        self.core._runner = self.runner
+        ga, gb = CHORDS_VK[self.cfg.chord]
+        self.pump = dictation.ChordPump(
+            self.hook.events, self.core, self.runner, ga, gb,
+            self.cfg.hold_min, self.cfg.double_window,
+            is_enabled=lambda: self.enabled, log=dlog)
+        self.pump.start()
 
         self.tray = QSystemTrayIcon(app_icon())
         self.tray.setToolTip("Quassel")
         self.build_menu()
         self.tray.show()
-
-        self.poll = QTimer()
-        self.poll.timeout.connect(self.pump)
-        self.poll.start(20)
 
         # Hotkey-Wechsel aus den Einstellungen live übernehmen
         self.cfgpoll = QTimer()
@@ -383,14 +362,21 @@ class WinApp(QObject):
         self.cfgpoll.start(1000)
 
         # Einzelinstanz-Kanal: weitere Starts melden sich hier und wir
-        # öffnen stattdessen das Einstellungsfenster
-        QLocalServer.removeServer("quassel-app")
+        # öffnen stattdessen das Einstellungsfenster. Name je Benutzer und
+        # Sitzung, Zugriff nur für den eigenen Benutzer (Audit A11).
+        name = ipc_name()
+        QLocalServer.removeServer(name)
         self.ipc = QLocalServer()
+        self.ipc.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         self.ipc.newConnection.connect(self.on_second_instance)
-        self.ipc.listen("quassel-app")
+        self.ipc.listen(name)
 
         if not server.installed():
             threading.Thread(target=self.first_run_setup, daemon=True).start()
+
+    @property
+    def rec(self):
+        return self.core.rec
 
     def on_second_instance(self):
         sock = self.ipc.nextPendingConnection()
@@ -421,12 +407,16 @@ class WinApp(QObject):
         except Exception as e:  # noqa: BLE001
             self.sig_state.emit("error", str(e)[:80])
 
+
     # ------------------------------------------------------------------ Menü
     def build_menu(self):
         menu = QMenu()
         self.act_toggle = QAction(tr("turn_off"), menu)
         self.act_toggle.triggered.connect(self.toggle)
         menu.addAction(self.act_toggle)
+        self.act_panic = QAction(_panic_label(), menu)
+        self.act_panic.triggered.connect(self.panic)
+        menu.addAction(self.act_panic)
         self.act_settings = QAction(tr("settings"), menu)
         self.act_settings.triggered.connect(self.open_settings)
         menu.addAction(self.act_settings)
@@ -446,6 +436,7 @@ class WinApp(QObject):
         i18n.set_language(None if self.cfg.ui_language == "auto"
                           else self.cfg.ui_language)
         self.act_toggle.setText(tr("turn_off") if self.enabled else tr("turn_on"))
+        self.act_panic.setText(_panic_label())
         self.act_settings.setText(tr("settings"))
         self.act_quit.setText(tr("quit"))
         self.tray.setToolTip("Quassel")
@@ -469,315 +460,37 @@ class WinApp(QObject):
     def toggle(self):
         self.enabled = not self.enabled
         self.act_toggle.setText(tr("turn_off") if self.enabled else tr("turn_on"))
-        if not self.enabled and self.rec.active:
-            self.on_cancel("canceled_key")
+        if not self.enabled:
+            # Abbruch auf dem Ereignis-Thread, der auch startet und stoppt —
+            # nie quer aus dem Qt-Thread in eine laufende Aufnahme.
+            def cancel():
+                if self.core.rec.active:
+                    self.core.cancel_recording("canceled_key")
+                self.pump.force_reset()
+            self.pump.post(cancel)
         self.sig_state.emit("ready" if self.enabled else "off", "")
 
+    def panic(self):
+        """Not-Aus aus dem Tray: beendet eine laufende Aufnahme sofort und
+        verwirft deren Text, auch wenn Transkription oder Einfügen hängen."""
+        threading.Thread(target=self.core.panic_stop, daemon=True,
+                         name="quassel-panic").start()
+
     def quit(self):
+        self.pump.stop()
+        self.runner.stop()
         self.hook.stop()
         server.stop()
         self.app.quit()
 
     # --------------------------------------------------------------- Hotkey
     def reload_chord(self):
-        """Geänderten Chord aus der Config übernehmen (nicht mitten in
-        einer laufenden Aufnahme — die Maschine würde den Zustand verlieren)."""
+        """Geänderten Chord aus der Config übernehmen (greift erst im
+        Ruhezustand — die Maschine würde sonst ihren Zustand verlieren)."""
         self.cfg.reload()
         ga, gb = CHORDS_VK[self.cfg.chord]
-        if (set(ga) != self.machine.a or set(gb) != self.machine.b) \
-                and self.machine.state == "idle" and not self.rec.active:
-            self.machine = ChordMachine(
-                ga, gb, self.on_start, self.on_finish, self.on_cancel,
-                self.cfg.hold_min, self.cfg.double_window)
-            self.machine.on_handsfree = self.enable_streaming
-        self._sync_wakeword()       # Wake-Word nach Konfig starten/stoppen
-
-    def pump(self):
-        while not self.hook.events.empty():
-            vk, pressed = self.hook.events.get()
-            if self.enabled:
-                self.machine.key(vk, pressed)
-        self.machine.poll()
-
-    def on_start(self):
-        dlog("on_start")
-        self.cfg.reload()
-        t = time.monotonic()
-        if not self.rec.start(self.cfg.mic):
-            dlog("on_start: rec.start FEHLGESCHLAGEN")
-            # Nicht still scheitern lassen: sonst bleibt die Pille grau und der
-            # Nutzer weiss nicht, warum nichts passiert (z.B. Mikro aus/weg).
-            self.sig_state.emit("error", tr("no_mic"))
-            return
-        dlog("on_start: rec.start %.2fs" % (time.monotonic() - t))
-        if self.cfg.beep:
-            beep.start()                        # aufsteigender Ton: jetzt sprechen
-        self.ducker.apply(self.cfg.mute_mode)   # Musik pausieren / Ton stumm
-        self._capturing = True
-        self.streamer = None
-        self._clip_backup = None
-        self.partial = PartialWorker(self.rec, self.cfg, self._on_partial,
-                                     is_streaming=lambda: self.streamer is not None)
-        self.partial.start()
-        self.sig_state.emit("recording", "")
-
-    def _on_partial(self, text):
-        """Teiltranskript (nachbearbeitet): live tippen + Pille aktualisieren."""
-        if self.streamer is not None:
-            self.streamer.update(text)
-            rest = text[len(self.streamer.typed):].strip() if self.cfg.pill_preview else ""
-            self.sig_state.emit("recording", rest)
-        else:
-            self.sig_state.emit("recording", text if self.cfg.pill_preview else "")
-
-    def enable_streaming(self):
-        """Freihand-Modus erkannt -> Streaming starten, falls eingeschaltet."""
-        if self.streamer is not None or not self.cfg.streaming:
-            return
-        from .paste import streaming_begin
-        self._clip_backup = streaming_begin()
-        self.streamer = StreamTyper(self.cfg.streaming_mode, type_chunk, send_backspaces)
-
-    def on_cancel(self, reason_key):
-        self._capturing = False
-        if self.partial:
-            self.partial.stop()
-            self.partial = None
-        if self.streamer is not None:
-            from .paste import streaming_restore
-            streaming_restore(self._clip_backup)
-            self.streamer = None
-        self.rec.stop()
-        if self.cfg.beep:
-            beep.stop()
-        self.ducker.restore()                   # Musik/Ton wiederherstellen
-        self.sig_state.emit("ready", "")
-
-    def on_finish(self):
-        dlog("on_finish")
-        if not self._capturing:
-            return        # nichts aufgenommen (z.B. Mikro-Fehler): Meldung stehen lassen
-        self._capturing = False
-        if self.partial:
-            self.partial.stop()
-            self.partial = None
-        self.sig_state.emit("transcribing", "")
-        # Nachlauf/Stopp/Trim laufen im Worker, damit die UI nicht kurz einfriert.
-        threading.Thread(target=self._finish_audio, daemon=True).start()
-
-    def _finish_audio(self):
-        time.sleep(TAIL_PAD_MS / 1000.0)        # Nachlauf: letztes Wort nicht abschneiden
-        self.rec.stop()
-        if self.cfg.beep:
-            beep.stop()
-        self.ducker.restore()                   # Musik/Ton wiederherstellen
-        data = self.rec.raw_bytes()
-        trim = int(RATE * SAMPLE_BYTES * LEAD_TRIM_MS / 1000)
-        trim -= trim % SAMPLE_BYTES
-        if len(data) > trim + 8000:             # Vorlauf (Einschwingen/Ton) verwerfen
-            data = data[trim:]
-        if len(data) < 8000:
-            self.sig_state.emit("ready", "")
-            return
-        self._transcribe(data)
-
-    def _transcribe(self, data):
-        # Fehler hier liefen früher ins Leere: der Daemon-Thread starb leise
-        # und die Pille blieb für immer auf "Transkribiere..."
-        try:
-            self._transcribe_inner(data)
-        except Exception as e:  # noqa: BLE001
-            import traceback
-            dlog("transcribe: EXCEPTION " + traceback.format_exc())
-            self.sig_state.emit("error", str(e)[:80])
-
-    def _transcribe_inner(self, data):
-        t = time.monotonic()
-        if not whisperclient.ensure_server():
-            self.sig_state.emit("error", tr("no_server"))
-            return
-        dlog("transcribe: ensure_server %.2fs" % (time.monotonic() - t))
-        wav_from_raw(data, WAV)
-        t = time.monotonic()
-        result = whisperclient.transcribe_result(WAV, self.cfg)
-        raw = result.text
-        dlog("transcribe: inference %.2fs (%d Bytes Audio)"
-             % (time.monotonic() - t, len(data)))
-        if raw is None:
-            self.sig_state.emit("error", tr("no_server"))
-            return
-        from .paste import streaming_restore
-        kind, value = postprocess_transcript(raw, self.cfg,
-                                              result.language or getattr(self.cfg, "language", "auto"), data)
-        if kind is None:
-            if self.streamer is not None:
-                streaming_restore(self._clip_backup)
-                self.streamer = None
-            self.sig_state.emit("error", tr("nothing"))
-            return
-        if kind == "command":
-            action = value
-            live_typed = len(self.streamer.typed) if self.streamer is not None else 0
-            if self.streamer is not None:
-                streaming_restore(self._clip_backup)
-                self.streamer = None
-            if action == "enter":
-                if live_typed:
-                    send_backspaces(live_typed)
-                send_enter()
-                self.last_paste_len = 0
-                self.sig_state.emit("done", tr("pressed_enter"))
-                return
-            undo = live_typed if live_typed else self.last_paste_len
-            if undo:
-                send_backspaces(undo)
-                self.last_paste_len = 0
-                self.sig_state.emit("done", tr("deleted"))
-            else:
-                self.sig_state.emit("error", tr("nothing"))
-            return
-        mech = self._refine_mechanical(value)
-        t = time.monotonic()
-        if self.streamer is not None:
-            final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
-            typed = self.streamer.finish(final)
-            self.last_paste_len = len(typed)
-            streaming_restore(self._clip_backup)
-            self.streamer = None
-            value = final
-            dlog("transcribe: streaming finish %.2fs" % (time.monotonic() - t))
-        elif self.cfg.ai_enabled:
-            # KI braucht Sekunden -> ERST Rohtext einfügen (Fokus noch sicher),
-            # DANN durch die KI-Fassung ersetzen.
-            paste(mech)
-            self.last_paste_len = len(mech)
-            final = self._ai_refine(mech)
-            if final != mech:
-                send_backspaces(len(mech))
-                paste(final)
-                self.last_paste_len = len(final)
-                dlog("transcribe: ai replace %d -> %d" % (len(mech), len(final)))
-            value = final
-        else:
-            paste(mech)
-            self.last_paste_len = len(mech)
-            value = mech
-            dlog("transcribe: paste %.2fs (%d Zeichen)"
-                 % (time.monotonic() - t, len(value)))
-        self.sig_state.emit("done", value)
-        secs = len(data) / (RATE * SAMPLE_BYTES)
-        self._after_insert(value, secs)
-
-    def _refine_mechanical(self, text):
-        """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
-        if self.cfg.programmer_mode:
-            text = progmode.apply_if_addressed(text)
-        if self.cfg.text_replace:
-            rules = config.replacement_rules()
-            if rules:
-                text = textreplace.apply_rules(text, rules)
-        return text
-
-    def _refine(self, text):
-        """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
-        text = self._refine_mechanical(text)
-        if self.cfg.ai_enabled:
-            text = self._ai_refine(text)
-        return text
-
-    def _ai_refine(self, text):
-        """Lokale KI-Nachbearbeitung (Ollama): Sprach-Modus hat Vorrang, sonst
-        optionaler Auto-Modus. Fail-soft: bei Fehler bleibt der Rohtext."""
-        self.cfg.ai_modes_text = config.ai_modes_text()
-        mode, remaining = None, text
-        if self.cfg.ai_voice_modes:
-            m, rest = aimodes.detect_voice_mode(text)
-            if m is None:
-                m, rest = self._detect_custom_voice(text)
-            if m:
-                mode, remaining = m, rest
-        if mode is None and self.cfg.ai_post_process:
-            mode = self.cfg.ai_post_mode
-        if mode is None or not remaining.strip():
-            return text
-        return aimodes.transform(remaining, mode, self.cfg)
-
-    def _detect_custom_voice(self, text):
-        return aimodes.detect_custom_voice_mode(
-            text, getattr(self.cfg, "ai_modes_text", "") or "")
-
-    def _after_insert(self, value, seconds=0.0):
-        """Nach dem Einfügen: Verlauf, Statistik, Wörterbuch-Lernen."""
-        if self.cfg.history_enabled:
-            try:
-                config.history_append(value)
-            except OSError:
-                pass
-        if self.cfg.stats_enabled:
-            try:
-                stats.record(value, seconds=seconds)
-            except Exception:    # noqa: BLE001
-                pass
-        if self.cfg.auto_learn and not self.cfg.programmer_mode:
-            try:
-                config.dictionary_learn(value)
-            except Exception:    # noqa: BLE001
-                pass
-
-    # ----------------------------------------------------- Wake-Word (opt-in)
-    def _sync_wakeword(self):
-        """Listener nach Konfig starten/stoppen (idempotent)."""
-        if self.cfg.wakeword_enabled and self.wake is None:
-            self.wake = wakeword.WakeListener(
-                self.cfg, self._wake_record_utterance, self._wake_transcribe,
-                self._wake_insert, is_busy=lambda: self.rec.active or not self.enabled)
-            self.wake.start()
-        elif not self.cfg.wakeword_enabled and self.wake is not None:
-            self.wake.stop()
-            self.wake = None
-
-    def _wake_record_utterance(self):
-        rec = Recorder()
-        if not rec.start(self.cfg.mic):
-            return None
-        det = vad.SilenceDetector()
-        prev = 0
-        deadline = time.monotonic() + 12
-        try:
-            while time.monotonic() < deadline and self.wake is not None:
-                time.sleep(0.1)
-                data = rec.raw_bytes()
-                new = data[prev:]
-                prev = len(data)
-                if new:
-                    det.feed(new)
-                if det.stopped:
-                    break
-        finally:
-            rec.stop()
-        data = rec.raw_bytes()
-        if not det.speech_started or len(data) < 8000:
-            return None
-        return data
-
-    def _wake_transcribe(self, pcm):
-        if not pcm or not whisperclient.ensure_server():
-            return None
-        try:
-            wav_from_raw(pcm, WAV)
-        except OSError:
-            return None
-        return whisperclient.transcribe(WAV, self.cfg, timeout=30)
-
-    def _wake_insert(self, raw_text):
-        kind, value = postprocess_transcript(raw_text, self.cfg)
-        if kind != "text" or not value.strip():
-            return
-        value = self._refine(value)
-        paste(value)
-        self.last_paste_len = len(value)
-        self.sig_state.emit("done", value)
-        self._after_insert(value)
+        self.pump.reconfigure(ga, gb, self.cfg.hold_min, self.cfg.double_window)
+        self.core._sync_wakeword()  # Wake-Word nach Konfig starten/stoppen
 
     def _apply_state(self, state, text):
         self.pill.cfg.reload()
@@ -785,6 +498,43 @@ class WinApp(QObject):
         if state in ("done", "error"):
             QTimer.singleShot(3000, lambda: self.pill.set_mode(
                 "ready" if self.enabled else "off"))
+
+
+def _session_id():
+    """Windows-Sitzungsnummer dieses Prozesses (schneller Benutzerwechsel,
+    Remotedesktop); None, wenn nicht ermittelbar."""
+    try:
+        import ctypes
+        sid = ctypes.c_ulong()
+        if ctypes.windll.kernel32.ProcessIdToSessionId(os.getpid(), ctypes.byref(sid)):
+            return sid.value
+    except Exception:  # noqa: BLE001 — ohne Nummer bleibt der Benutzername
+        pass
+    return None
+
+
+def ipc_name(user=None, session=None):
+    """Name des Einzelinstanz-Kanals. QLocalServer legt unter Windows eine
+    Named Pipe im globalen Namensraum an: ein fester Name galt für alle
+    Benutzer und Sitzungen, und beim schnellen Benutzerwechsel beendete sich
+    die Instanz des zweiten Nutzers sofort. Benutzer, Sitzung und Profil
+    machen den Namen eindeutig."""
+    if user is None:
+        try:
+            user = os.environ.get("USERNAME") or getpass.getuser()
+        except Exception:  # noqa: BLE001
+            user = ""
+    if session is None:
+        session = _session_id()
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", user or "user")[:64]
+    name = "quassel-app%s-%s" % (profile.suffix(), safe)
+    if session is not None:
+        name += "-s%d" % session
+    return name
+
+
+def _panic_label():
+    return "Diktat sofort beenden" if i18n.current() == "de" else "Stop dictation now"
 
 
 def run_setup(full=False):
@@ -873,7 +623,7 @@ def main():
         audiocheck()
         return
     probe = QLocalSocket()
-    probe.connectToServer("quassel-app")
+    probe.connectToServer(ipc_name())
     if probe.waitForConnected(300):
         probe.disconnectFromServer()      # Erstinstanz öffnet die Einstellungen
         return
