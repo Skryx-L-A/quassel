@@ -542,16 +542,30 @@ class Recorder:
         cmd = record_command(mic)
         if cmd is None:
             return False
-        bt_before = _bluez_profiles()
         outfile = open(self.raw_path, "wb")
-        proc = subprocess.Popen(
-            cmd, stdout=outfile, stderr=subprocess.DEVNULL)
+        try:
+            proc = subprocess.Popen(
+                cmd, stdout=outfile, stderr=subprocess.DEVNULL)
+        except OSError:
+            outfile.close()
+            return False
         with self._lock:
-            self._bt_before = bt_before
             self.outfile = outfile
             self.proc = proc
             self.running_path = self.raw_path
             self.started = time.monotonic()
+        # pactl may take seconds. The capture must already be running while
+        # its Bluetooth profile snapshot is collected.
+        def profile_snapshot():
+            before = _bluez_profiles()
+            with self._lock:
+                if self.proc is proc:
+                    self._bt_before = before
+                    return
+            if before:
+                _restore_bluez_profiles(before)
+        threading.Thread(target=profile_snapshot, name="audio-profile-snapshot",
+                         daemon=True).start()
         return True
 
     def raw_bytes(self, path=None):
