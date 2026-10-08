@@ -9,9 +9,19 @@ import subprocess
 import threading
 import time
 import stat
+from types import SimpleNamespace
 
 KEY_BACKSPACE = 14
 KEY_ENTER = 28
+SUBPROCESS_TIMEOUT = 3
+
+
+def _run(args, **kwargs):
+    """Bounded subprocess call: a stalled clipboard/tool must not hang dictation."""
+    try:
+        return subprocess.run(args, timeout=SUBPROCESS_TIMEOUT, **kwargs)
+    except (OSError, subprocess.TimeoutExpired):
+        return SimpleNamespace(returncode=1, stdout="", stderr="")
 
 XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR",
     f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else "")
@@ -52,18 +62,18 @@ else:
 
 def clip_copy(text):
     if IS_WAYLAND:
-        subprocess.run(["wl-copy"], input=text, text=True, check=False)
-        subprocess.run(["wl-copy", "--primary"], input=text, text=True, check=False)
+        _run(["wl-copy"], input=text, text=True, check=False)
+        _run(["wl-copy", "--primary"], input=text, text=True, check=False)
     else:
         for sel in ("clipboard", "primary"):
-            subprocess.run(["xclip", "-selection", sel], input=text, text=True,
+            _run(["xclip", "-selection", sel], input=text, text=True,
                            check=False)
 
 
 def clip_read():
     cmd = (["wl-paste", "--no-newline", "-t", "text"] if IS_WAYLAND
            else ["xclip", "-selection", "clipboard", "-o"])
-    r = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    r = _run(cmd, capture_output=True, text=True, check=False)
     return r.stdout if r.returncode == 0 else ""
 
 
@@ -72,8 +82,8 @@ def paste(text):
     clip_copy(text)
     time.sleep(0.25)
     # Shift+Einfg: KEY_LEFTSHIFT=42, KEY_INSERT=110
-    subprocess.run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
-    if old:
+    result = _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
+    if result.returncode == 0 and old:
         def restore():
             # großzügig warten: XWayland-Fenster holen den Clipboard-Inhalt
             # teils verzögert ab — zu frühes Wiederherstellen fügt sonst den
@@ -81,6 +91,7 @@ def paste(text):
             time.sleep(6)
             clip_copy(old)
         threading.Thread(target=restore, daemon=True).start()
+    return result.returncode == 0
 
 
 def type_chunk(text):
@@ -90,7 +101,7 @@ def type_chunk(text):
         return
     clip_copy(text)
     time.sleep(0.12)
-    subprocess.run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
+    return _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False).returncode == 0
 
 
 def streaming_begin():
@@ -113,7 +124,7 @@ def send_backspaces(n):
         keys += [f"{KEY_BACKSPACE}:1", f"{KEY_BACKSPACE}:0"]
     delay = ["-d", "1"] if _ydotool_supports_fast_delay() else []
     while keys:
-        subprocess.run(["ydotool", "key"] + delay + keys[:400], check=False)
+        _run(["ydotool", "key"] + delay + keys[:400], check=False)
         keys = keys[400:]
 
 
@@ -125,7 +136,7 @@ def _ydotool_supports_fast_delay():
     global _fast_delay_supported
     if _fast_delay_supported is None:
         try:
-            result = subprocess.run(["ydotool", "key", "--help"],
+            result = _run(["ydotool", "key", "--help"],
                                     capture_output=True, text=True, timeout=2,
                                     check=False)
             _fast_delay_supported = "-d" in result.stdout or "--delay" in result.stdout
@@ -136,7 +147,7 @@ def _ydotool_supports_fast_delay():
 
 def send_enter():
     """Eingabetaste drücken (Sprachkommando 'press enter')."""
-    subprocess.run(["ydotool", "key", f"{KEY_ENTER}:1", f"{KEY_ENTER}:0"], check=False)
+    _run(["ydotool", "key", f"{KEY_ENTER}:1", f"{KEY_ENTER}:0"], check=False)
 
 
 def mic_is_bluetooth(mic="default"):
