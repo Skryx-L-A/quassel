@@ -14,6 +14,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- A command-line client can show Quassel's local status, manage the dictionary
+  and installed speech-model selection, transcribe an existing file, and safely
+  request the Linux service toggle or emergency stop. It never starts a
+  microphone recording or downloads a model unless `--download` is explicit.
+
 ### Changed
 - Short hold-to-talk dictations get their text sooner. The live preview used
   to send its first request after two seconds, and the speech engine works on
