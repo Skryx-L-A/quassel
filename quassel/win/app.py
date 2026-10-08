@@ -391,6 +391,8 @@ class WinApp(QObject):
         self.cfg = config.Cfg()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
         whisperclient.STARTER = server.start          # Server-Start = Windows-Variante
+        original_recover = selfheal.recover
+        selfheal.recover = lambda: original_recover(restart=server.restart_owned)
         self.enabled = True
         self.core = WinDictation(self)
 

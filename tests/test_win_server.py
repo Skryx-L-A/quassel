@@ -108,6 +108,21 @@ def test_unverified_pid_is_not_killed(tmp_path):
     run.assert_not_called()
 
 
+def test_restart_requires_owned_live_server(monkeypatch):
+    from quassel import selfheal
+    events = []
+    monkeypatch.setattr(server, "_proc", None)
+    assert server.restart_owned() is False
+    proc = MagicMock()
+    proc.poll.return_value = None
+    monkeypatch.setattr(server, "_proc", proc)
+    monkeypatch.setattr(server, "stop", lambda: events.append("stop"))
+    monkeypatch.setattr(server, "start", lambda: events.append("start"))
+    monkeypatch.setattr(selfheal, "functional_probe", lambda timeout=2: True)
+    assert server.restart_owned() is True
+    assert events == ["stop", "start"]
+
+
 def test_log_rotates_to_two_generations(tmp_path):
     with open(server.LOG_FILE, "wb") as out:
         out.write(b"x" * (1024 * 1024))

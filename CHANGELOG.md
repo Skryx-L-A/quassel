@@ -153,6 +153,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- When a speech server responds but cannot transcribe, Quassel can restart its own profile server once and retry the recording. The macOS app accepts restart requests from its own dictation process.
 - Windows now stops dictation on sleep and checks the speech server after wake. Linux clears held shortcut keys after sleep so the next shortcut works.
 - Windows microphone choices now follow the selected WASAPI device by name when device indexes change.
 - macOS permission guidance now follows the app language and names the selected dictation shortcut. The microphone permission description is readable in English and German.
