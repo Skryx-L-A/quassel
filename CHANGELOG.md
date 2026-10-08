@@ -27,6 +27,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lasts.
 
 ### Changed
+- The Control Center has shorter pages, each about one thing: General (status
+  and hotkey), Pill, While dictating (sound, media and live typing), Speech,
+  Microphone, and About on its own. Unfinished features such as the wake word
+  are collected on a "Beta features" page instead of sitting at the bottom of
+  the speech settings.
 - Fewer system notifications. Pressing the hotkey together with another key
   (for example to switch desktops) now ends quietly instead of announcing
   "Canceled (other key pressed)". A single tap and a recording that is too

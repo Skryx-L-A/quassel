@@ -202,3 +202,64 @@ def test_offscreen_render_of_the_permissions_step(tmp_path):
         assert img.width() >= 520 and not img.isNull()
     finally:
         d.close()
+
+
+# ------------------------------------------- G111 kürzere Seiten, Beta gesammelt
+def _page(c, key):
+    return c.stack.widget(c._page_keys.index(key))
+
+
+def test_pages_are_short():
+    """Höchstens drei Abschnitte je Seite; vorher hatten Allgemein vier und
+    Spracherkennung fünf."""
+    from PySide6.QtWidgets import QGroupBox
+    c = center.Center()
+    try:
+        counts = {key: len(_page(c, key).findChildren(QGroupBox)) for key in c._page_keys}
+        assert max(counts.values()) <= 3, counts
+    finally:
+        c.close()
+
+
+def test_beta_features_are_grouped_on_their_own_page():
+    config.save({("ui", "language"): "en"})
+    c = center.Center()
+    try:
+        assert c._page_keys[-3:] == ["nav_beta", "nav_system", "about"]
+        beta = _page(c, "nav_beta")
+        assert beta.isAncestorOf(c.wake_on) and beta.isAncestorOf(c.wake_phrase)
+        assert not _page(c, "nav_speech").isAncestorOf(c.wake_on)
+        assert c.sidebar.item(c._page_keys.index("nav_beta")).text() == "Beta features"
+    finally:
+        c.close()
+
+
+def test_settings_keep_their_place_after_the_split():
+    c = center.Center()
+    try:
+        assert _page(c, "nav_pill").isAncestorOf(c.pill_size)
+        assert _page(c, "nav_dictating").isAncestorOf(c.stream_on)
+        assert _page(c, "nav_dictating").isAncestorOf(c.beep_chk)
+        assert _page(c, "nav_mic").isAncestorOf(c.mic)
+        assert _page(c, "nav_speech").isAncestorOf(c.model)
+        assert _page(c, "nav_general").isAncestorOf(c.chord)
+    finally:
+        c.close()
+
+
+def test_onboarding_wake_button_opens_the_beta_page(monkeypatch):
+    class FakeDialog:
+        def __init__(self, *a, **k):
+            self.open_page = "wake"
+            self.open_settings = True
+
+        def exec(self):
+            return 1
+    monkeypatch.setattr(center, "OnboardingDialog", FakeDialog)
+    c = center.Center()
+    try:
+        c.cfg.onboarded = False
+        c._maybe_onboard()
+        assert c.sidebar.currentRow() == c._page_keys.index("nav_beta")
+    finally:
+        c.close()

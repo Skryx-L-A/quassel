@@ -466,15 +466,22 @@ class Center(QMainWindow):
         outer.addWidget(self.stack, 1)
 
         self._page_keys = []
+        # Kurze Seiten (G111): eine Aufgabe je Seite, Beta-Funktionen gesammelt
+        # unten vor „System".
         for key, builder in [("nav_general", self.page_general),
+                             ("nav_pill", self.page_pill),
+                             ("nav_dictating", self.page_dictating),
                              ("nav_speech", self.page_speech),
+                             ("nav_mic", self.page_mic),
                              ("nav_dict", self.page_dict),
                              ("nav_replace", self.page_replace),
                              ("nav_file", self.page_file),
                              ("nav_ai", self.page_ai),
                              ("nav_history", self.page_history),
                              ("nav_stats", self.page_stats),
-                             ("nav_system", self.page_system)]:
+                             ("nav_beta", self.page_beta),
+                             ("nav_system", self.page_system),
+                             ("about", self.page_about)]:
             QListWidgetItem(tr(key), self.sidebar)
             self.stack.addWidget(builder())
             self._page_keys.append(key)
@@ -515,6 +522,26 @@ class Center(QMainWindow):
         g.addLayout(row)
         self.hint = self.desc(tr("hint", chord=self.chord_label()), g)
 
+        g = self.group(tr("sec_hotkey"), lay)
+        self.chord = self.guard(QComboBox())
+        for key in config.CHORDS:
+            self.chord.addItem(tr(config.CHORD_LABEL_KEYS[key]), key)
+        self.chord.setCurrentIndex(list(config.CHORDS).index(self.cfg.chord))
+        self.chord.currentIndexChanged.connect(self.save_settings)
+        self.chord.setAccessibleName(tr("sec_hotkey"))
+        g.addWidget(self.chord)
+
+        lay.addStretch(1)
+        note = QLabel(tr("close_note"))
+        note.setObjectName("desc")
+        note.setAlignment(Qt.AlignCenter)
+        lay.addWidget(note)
+        return scroll
+
+    # ----------------------------------------------------- Seite: Pille
+    def page_pill(self):
+        scroll, lay = self.page()
+
         g = self.group(tr("sec_pill"), lay)
         self.pill_show = QCheckBox(tr("pill_show"))
         self.pill_show.setChecked(self.cfg.pill_enabled)
@@ -553,14 +580,13 @@ class Center(QMainWindow):
         self.pill_preview.toggled.connect(self.save_settings)
         g.addWidget(self.pill_preview)
 
-        g = self.group(tr("sec_hotkey"), lay)
-        self.chord = self.guard(QComboBox())
-        for key in config.CHORDS:
-            self.chord.addItem(tr(config.CHORD_LABEL_KEYS[key]), key)
-        self.chord.setCurrentIndex(list(config.CHORDS).index(self.cfg.chord))
-        self.chord.currentIndexChanged.connect(self.save_settings)
-        self.chord.setAccessibleName(tr("sec_hotkey"))
-        g.addWidget(self.chord)
+        lay.addStretch(1)
+        return scroll
+
+    # --------------------------------------------- Seite: Beim Diktieren
+    def page_dictating(self):
+        """Ton, Medien und Live-Tippen: was während eines Diktats passiert."""
+        scroll, lay = self.page()
 
         g = self.group(tr("sec_dictating"), lay)
         self.mute_combo = self.guard(QComboBox())
@@ -597,11 +623,23 @@ class Center(QMainWindow):
             self.labeled_row(tr("beep_out_label"), self.beep_out, g)
             self.desc(tr("beep_out_hint"), g)
 
+        # --- Streaming-Tippen (Live-Tippen ins Zielfenster, nur Freihand) ---
+        g = self.group(tr("sec_streaming"), lay)
+        self.stream_on = QCheckBox(tr("streaming_enable"))
+        self.stream_on.setChecked(self.cfg.streaming)
+        self.stream_on.toggled.connect(self.save_settings)
+        self.stream_on.toggled.connect(self._sync_streaming_enabled)
+        g.addWidget(self.stream_on)
+        self.desc(tr("streaming_hint"), g)
+        self.stream_mode = self.guard(QComboBox())
+        for val, key in (("word", "streaming_word"), ("stable", "streaming_stable")):
+            self.stream_mode.addItem(tr(key), val)
+        self.select_data(self.stream_mode, self.cfg.streaming_mode)
+        self.stream_mode.currentIndexChanged.connect(self.save_settings)
+        self.labeled_row(tr("streaming_mode"), self.stream_mode, g)
+        self._sync_streaming_enabled(self.cfg.streaming)
+
         lay.addStretch(1)
-        note = QLabel(tr("close_note"))
-        note.setObjectName("desc")
-        note.setAlignment(Qt.AlignCenter)
-        lay.addWidget(note)
         return scroll
 
     # ----------------------------------------------------- Seite: Sprache
@@ -630,22 +668,6 @@ class Center(QMainWindow):
         g.addWidget(self.progmode)
         self.desc(tr("programmer_hint"), g)
 
-        # --- Streaming-Tippen (Live-Tippen ins Zielfenster, nur Freihand) ---
-        g = self.group(tr("sec_streaming"), lay)
-        self.stream_on = QCheckBox(tr("streaming_enable"))
-        self.stream_on.setChecked(self.cfg.streaming)
-        self.stream_on.toggled.connect(self.save_settings)
-        self.stream_on.toggled.connect(self._sync_streaming_enabled)
-        g.addWidget(self.stream_on)
-        self.desc(tr("streaming_hint"), g)
-        self.stream_mode = self.guard(QComboBox())
-        for val, key in (("word", "streaming_word"), ("stable", "streaming_stable")):
-            self.stream_mode.addItem(tr(key), val)
-        self.select_data(self.stream_mode, self.cfg.streaming_mode)
-        self.stream_mode.currentIndexChanged.connect(self.save_settings)
-        self.labeled_row(tr("streaming_mode"), self.stream_mode, g)
-        self._sync_streaming_enabled(self.cfg.streaming)
-
         g = self.group(tr("model"), lay)
         self.model = self.guard(QComboBox())
         env = config.read_serverenv()
@@ -660,6 +682,13 @@ class Center(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setVisible(False)
         g.addWidget(self.progress)
+
+        lay.addStretch(1)
+        return scroll
+
+    # --------------------------------------------------- Seite: Mikrofon
+    def page_mic(self):
+        scroll, lay = self.page()
 
         g = self.group(tr("sec_mic"), lay)
         self.mic = self.guard(QComboBox())
@@ -679,8 +708,16 @@ class Center(QMainWindow):
         self.test_out = QLabel()
         self.test_out.setWordWrap(True)
         g.addWidget(self.test_out)
+        lay.addStretch(1)
+        return scroll
 
-        # --- Wake-Word (Freisprechen, opt-in, BETA) — Beta-Funktionen ganz unten ---
+    # ----------------------------------------------- Seite: Beta (G111)
+    def page_beta(self):
+        """Noch nicht fertige Funktionen an einem Ort, klar als Beta
+        gekennzeichnet — die übrigen Seiten bleiben dadurch kurz."""
+        scroll, lay = self.page()
+
+        self.desc(tr("beta_intro"), lay)
         g = self.group(tr("sec_wakeword"), lay)
         beta = self.desc(tr("wakeword_beta"), g)
         beta.setStyleSheet(f"color:{self._warn};font-weight:600;")   # Bernstein = Beta-Warnung
@@ -1018,6 +1055,12 @@ class Center(QMainWindow):
         self.reset_status.setObjectName("desc")
         g.addWidget(self.reset_status)
 
+        lay.addStretch(1)
+        return scroll
+
+    # ------------------------------------------------------- Seite: Über
+    def page_about(self):
+        scroll, lay = self.page()
         g = self.group(tr("about"), lay)
         row = QHBoxLayout()
         icon_lbl = QLabel()
@@ -1228,7 +1271,7 @@ class Center(QMainWindow):
                                record_fn=self._mictest_record)
         dlg.exec()
         if dlg.open_page == "wake":
-            self.show_page("nav_speech")        # dort steht das Wake-Word
+            self.show_page("nav_beta")          # dort steht das Wake-Word
         elif dlg.open_page == "speech":
             self.show_page("nav_speech")
         config.save({("system", "onboarded"): "true"})
