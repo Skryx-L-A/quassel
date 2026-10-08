@@ -28,6 +28,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- On macOS the dictation service log (`~/Library/Logs/Quassel/daemon.log`) no
+  longer grows without limit. From about 1 MB on it moves to `daemon.log.1`,
+  the one before to `daemon.log.2`; older logs are dropped, so it takes up
+  about 3 MB at most.
 - On macOS the hotkey is now named with Mac keys: "Control + Command (⌃⌘)",
   "Option + Command (⌥⌘)" and "Control + Option (⌃⌥)". The Control Center used
   to call it "Ctrl + Meta (Windows key)".

@@ -36,6 +36,11 @@ DAEMON_RESTART_EXIT = 3
 # Ausgaben des Daemon-Kindprozesses (bei Start über Finder/open gingen sie
 # sonst verloren). Je Profil getrennt, wie alle übrigen Verzeichnisse.
 LOG_DIR = os.path.expanduser("~/Library/Logs/" + profile.dirname("Quassel"))
+# Rotation: ab ~1 MB wandert das Log nach daemon.log.1 (und das vorige nach
+# .2); höchstens drei Dateien, also rund 3 MB. Windows rotiert sein
+# debug.log ab derselben Größe (win/app.py).
+LOG_MAX_BYTES = 1_000_000
+LOG_KEEP = 2
 
 # Finder startet Apps mit minimalem PATH (/usr/bin:/bin:...) — ohne die
 # Homebrew-Pfade findet shutil.which("ffmpeg") nichts. Die Aufnahme braucht
@@ -46,6 +51,31 @@ BREW_PATHS = ["/opt/homebrew/bin", "/usr/local/bin"]
 
 def daemon_log_path():
     return os.path.join(LOG_DIR, "daemon.log")
+
+
+def rotate_log(path, max_bytes=LOG_MAX_BYTES, keep=LOG_KEEP):
+    """Ist das Log größer als max_bytes, eine Generation weiterschieben
+    (path -> path.1 -> path.2, die älteste fällt weg). True, wenn rotiert.
+
+    Kopieren und Kürzen statt Umbenennen: der laufende Daemon hält die Datei
+    offen und schriebe nach einem Umbenennen weiter in die alte. Er hat sie
+    mit O_APPEND geöffnet ("ab"), also landet jede Zeile nach dem Kürzen
+    wieder am Dateianfang, ohne Loch. Was genau zwischen Kopieren und Kürzen
+    geschrieben wird, geht verloren; bei einem Log ist das hinnehmbar."""
+    try:
+        if os.path.getsize(path) <= max_bytes:
+            return False
+        for i in range(keep - 1, 0, -1):
+            older = "%s.%d" % (path, i)
+            if os.path.exists(older):
+                os.replace(older, "%s.%d" % (path, i + 1))
+        shutil.copyfile(path, path + ".1")
+        with open(path, "r+b") as f:
+            f.truncate(0)
+        return True
+    except OSError as e:
+        print("mac_app: Log nicht rotierbar: %s" % e, file=sys.stderr, flush=True)
+        return False
 
 
 def restart_giveup_hint():
@@ -129,6 +159,7 @@ class MacApp:
         # stderr/stdout in Logdatei: bei Start über Finder/open ginge die
         # Ausgabe (u.a. fehlende TCC-Freigaben) sonst verloren.
         os.makedirs(LOG_DIR, exist_ok=True)
+        rotate_log(daemon_log_path())
         with open(daemon_log_path(), "ab") as log_f:
             self.daemon = subprocess.Popen(daemon_command(), cwd=self._repo,
                                            start_new_session=True,
@@ -164,6 +195,7 @@ class MacApp:
         gestartet."""
         if not self.enabled or self.daemon is None:
             return
+        rotate_log(daemon_log_path())     # billig: ein stat je Aufruf
         if self.daemon.poll() is None:
             return
         code = self.daemon.returncode

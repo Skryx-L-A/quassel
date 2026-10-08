@@ -334,3 +334,65 @@ def test_retranslate_reaches_the_tray():
     mac.tray.retranslate.assert_called_once()
     mac.tray = None
     mac.retranslate()        # ohne Tray kein Fehler
+
+
+# --------------------------------------------------- D71 Log-Rotation
+def test_rotate_log_keeps_two_generations(tmp_path):
+    log = tmp_path / "daemon.log"
+    for n in range(4):
+        log.write_bytes(b"gen%d " % n + b"x" * 200)
+        assert mac_app.rotate_log(str(log), max_bytes=100, keep=2) is True
+        assert log.read_bytes() == b""
+    assert (tmp_path / "daemon.log.1").read_bytes().startswith(b"gen3")
+    assert (tmp_path / "daemon.log.2").read_bytes().startswith(b"gen2")
+    assert not (tmp_path / "daemon.log.3").exists()
+
+
+def test_rotate_log_leaves_small_or_missing_logs_alone(tmp_path):
+    log = tmp_path / "daemon.log"
+    assert mac_app.rotate_log(str(log)) is False           # fehlt
+    log.write_bytes(b"short\n")
+    assert mac_app.rotate_log(str(log), max_bytes=100) is False
+    assert log.read_bytes() == b"short\n"
+    assert not (tmp_path / "daemon.log.1").exists()
+
+
+def test_rotate_log_while_a_child_keeps_writing(tmp_path):
+    """Wie der Daemon: ein eigener Kindprozess schreibt über einen geerbten
+    O_APPEND-Dateideskriptor. Nach dem Rotieren landen seine Zeilen am Anfang
+    der gekürzten Datei, ohne Nullbytes davor."""
+    log = tmp_path / "daemon.log"
+    go = tmp_path / "go"
+    code = ("import os, sys, time\n"
+            "sys.stdout.write('A' * 300 + '\\n'); sys.stdout.flush()\n"
+            "while not os.path.exists(%r): time.sleep(0.01)\n"
+            "sys.stdout.write('after\\n'); sys.stdout.flush()\n" % str(go))
+    with open(log, "ab") as f:
+        child = subprocess.Popen([sys.executable, "-c", code], stdout=f)
+    try:
+        deadline = 50
+        while log.stat().st_size < 300 and deadline:
+            import time
+            time.sleep(0.05)
+            deadline -= 1
+        assert mac_app.rotate_log(str(log), max_bytes=100) is True
+        go.write_text("1")
+        child.wait(timeout=10)
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+    assert log.read_bytes() == b"after\n"
+    assert (tmp_path / "daemon.log.1").read_bytes().startswith(b"A" * 300)
+
+
+def test_start_and_supervise_rotate_the_daemon_log(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(mac_app, "rotate_log", lambda path: calls.append(path))
+    mac = mac_app.MacApp(MagicMock())
+    with patch.object(subprocess, "Popen", return_value=MagicMock()):
+        mac._start_daemon()
+    assert calls == [mac_app.daemon_log_path()]
+    mac.daemon.poll.return_value = None
+    mac._supervise(now=1.0)
+    assert calls == [mac_app.daemon_log_path()] * 2
