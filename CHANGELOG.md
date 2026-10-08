@@ -20,11 +20,40 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with what is still missing and a button to the right System Settings page),
   a microphone test that shows how loud you were without playing anything
   back, whether the speech model is ready, and a field to try dictating.
+- A command-line client can show Quassel's local status, manage the dictionary
+  and installed speech-model selection, transcribe an existing file, and safely
+  request the Linux service toggle or emergency stop. It never starts a
+  microphone recording or downloads a model unless `--download` is explicit.
+- Quassel can now be used as a local stdio MCP server for file transcription,
+  dictionary management, and status. Dictation history is not exposed unless
+  it is explicitly enabled in the MCP configuration.
+- File transcription now returns source-relative timestamped segments when the
+  local speech server provides them. The command line can write SRT or WebVTT,
+  including for long files split into processing chunks, and file-processing
+  callers can show progress or cancel safely.
 - macOS: when Secure Input is on (a password field, or Secure Keyboard Entry
   in Terminal), the system hides every key from Quassel and the hotkey does
   nothing. The pill now says so for a few seconds when it starts, and the menu
   bar status line shows "Secure input is on, hotkey paused" for as long as it
   lasts.
+- Prepared an optional, default-off dictation clean-up path with conservative
+  German and English filler removal, number formatting, and a protected local
+  AI step. When a clean-up result fails validation, the original dictation is
+  kept. The settings and insertion flow still need to be connected before this
+  option appears in the app.
+- Per-app profiles: Quassel can use different settings depending on the app you
+  dictate into. A profile can set the language, turn the AI clean-up on or off or
+  pick an AI mode, switch programmer dictation and spoken punctuation, and forbid
+  Enter. Where a profile turns programmer dictation on, you don't need to start
+  with "Code:". With Enter forbidden (meant for terminals), "press enter" only shows
+  "Enter is blocked in this app", a line break at the end of the text is dropped, and
+  live typing writes line breaks as spaces, so a dictated command is never run by
+  accident. Profiles live in `profiles.ini` next to `config.ini`; without
+  that file nothing changes. Ready-made profiles cover terminals, IDEs and mail
+  programs. On Wayland, the active app is only known under Hyprland and Sway;
+  GNOME and KDE keep the normal settings. Window titles are never read.
+  kept. The path now runs before a single final insertion when explicitly
+  enabled in the configuration file; control center settings are still pending.
 
 ### Changed
 - The Control Center has shorter pages, each about one thing: General (status
@@ -42,6 +71,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   respects "Show animations" being off, and tells screen readers its state. Its
   text bubble uses the pill's colors and stays readable when the pill is set
   almost transparent.
+- AI-enhanced dictation now finishes processing before inserting text once.
+  It no longer replaces an earlier insertion with backspaces after a model
+  response, which could erase text in a different window if focus changed.
+- Linux starts checking clipboard contents while recording and uses fewer
+  clipboard commands when inserting a dictation.
 - The pill now shows your real microphone level while you dictate instead of a
   fixed animation. If nothing arrives from the microphone for 1.5 seconds, the
   bars turn into a flat amber line and the pill says so, so a muted or wrong
@@ -75,6 +109,21 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unplugged, and the pill shows it too. Windows no longer shows raw error
   texts from the setup. A slow server is no longer asked a second time over
   curl, which made a timeout take twice as long.
+- On Wayland systems with a recent wl-copy, Linux marks dictated clipboard
+  text as sensitive so compatible clipboard managers can omit it from history.
+- Linux leaves images, files and rich clipboard contents alone when inserting
+  text and keeps anything you copy during the restore delay.
+- macOS preserves every pasteboard item and format across dictation insertion.
+  If an item cannot be read, Quassel types without changing the pasteboard.
+- Windows keeps dictation text out of clipboard history and cloud sync. It
+  preserves common image, file and rich text clipboard formats, and types
+  directly when a clipboard format cannot be safely restored.
+- Windows restores an earlier clipboard item only if it still holds Quassel's
+  own dictation text, so a new copy made while dictating is kept.
+- Windows now stops only a verified Quassel speech server process, so other
+  speech server processes are left alone.
+- macOS and Windows keep bounded speech server diagnostic logs in the profile
+  data folder to make startup failures easier to diagnose.
 - The microphone test in the Control Center now says what went wrong instead
   of "Whisper server unreachable" for everything: missing microphone access on
   macOS (with the place to allow it), a microphone that is busy or unplugged, a
@@ -125,6 +174,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it used to fall back to English even on a German system, because only the
   terminal sets the usual language variable. Windows now asks the system for
   its display language as well.
+- README, INSTALL and the website no longer point Linux and Windows users to offline
+  packages "in the latest release": those exist only for v2.2.0. The pages now say so
+  and link that release, and the Linux quick-installer text describes what it really
+  does (sets up the speech engine, building it when no prebuilt one exists).
+- The Linux quick installer works again. Releases after v2.2.0 never had the
+  prebuilt speech engines it asked for, so the one-line install stopped with
+  "Engine download failed". It now checks the release first and, when the engine
+  package is not there, builds the speech engine itself (a few minutes) and says
+  so. Downloaded engines are checked against a checksum.
+- The Linux installer builds a fixed, known version of whisper.cpp (v1.9.5)
+  instead of whatever was newest that day, and rebuilds it when that version
+  changes. An installation made earlier is moved to the same version on the
+  next run.
+- `./install.sh --model small-q5_1` now also switches an existing installation
+  to that model. Before, it only downloaded the file and left the old model
+  active. Without `--model`, a model you already chose is kept.
 - Windows now runs the same dictation flow as Linux and macOS instead of its own
   copy, which had drifted apart. Three Windows problems go away with it: a failed
   dictation (speech engine not reachable or transcription error) is saved as a

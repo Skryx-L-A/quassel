@@ -24,7 +24,7 @@ import time
 from . import __version__
 # textproc und whisperclient nutzt dictation.py; hier mit importiert, damit
 # Tests sie über dieses Modul ersetzen können.
-from . import beep, config, dictation, i18n, textproc, whisperclient  # noqa: F401
+from . import beep, config, dictation, i18n, profiles, textproc, whisperclient  # noqa: F401
 from .dictation import (  # noqa: F401 — Namen bleiben hier ansprechbar
     LEAD_TRIM_MS, LEAD_TRIM_NOVAD_BT_MS, PARTIAL_EVERY, PARTIAL_MAX_WAIT,
     PARTIAL_WINDOW, RESCUE_GLOB, RESCUE_KEEP, RESCUE_NAME, SERVER_WAIT_COLD,
@@ -91,6 +91,7 @@ class Daemon(dictation.DictationCore):
         self.wake = None             # WakeListener-Thread (nur wenn Wake-Word an)
         self._bt = False             # ist die aktive Aufnahmequelle Bluetooth?
         self._vad = False            # läuft serverseitig VAD? (dann Vorlauf nicht doppelt trimmen)
+        profiles.prewarm()           # Per-App-Profile: AppKit nicht erst im ersten Diktat laden
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode löst ihren Namen erst beim Aufruf in DIESEM Modul auf:

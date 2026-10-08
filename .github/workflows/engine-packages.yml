@@ -1,0 +1,87 @@
+name: Engine packages
+
+# Baut die portablen Linux-Engine-Pakete (whisper-server, CPU und CUDA) und
+# haengt sie an ein bestehendes Release, damit `install.sh --prebuilt` und der
+# Online-Installer sie laden koennen. Fehlen die Pakete, baut der Installer
+# die Engine selbst (Quellbau) – dieser Workflow macht nur den schnellen Weg
+# moeglich. Er laeuft erst, wenn ein Release veroeffentlicht wird oder
+# jemand ihn von Hand mit einem Tag startet; er wird nirgends sonst ausgeloest.
+#
+# Der whisper.cpp-Stand kommt aus scripts/whisper-cpp-pin.sh. Zu jedem Paket
+# gehoert eine .sha256-Datei; der Installer verlangt sie.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach the packages to (e.g. v2.8.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.variant }} engine
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            image: quay.io/pypa/manylinux_2_28_x86_64
+            script: build-engine-cpu.sh
+          - variant: cuda
+            image: nvidia/cuda:12.6.3-devel-ubi8
+            script: build-engine-cuda.sh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - name: Build whisper-server in the container
+        env:
+          IMAGE: ${{ matrix.image }}
+          SCRIPT: ${{ matrix.script }}
+        run: |
+          mkdir -p "$PWD/out" "$PWD/work"
+          docker run --rm \
+            -v "$PWD:/src:ro" -v "$PWD/out:/out" -v "$PWD/work:/work" \
+            "$IMAGE" bash "/src/scripts/offline/$SCRIPT"
+      - name: Pack the engine
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          test -x "out/$VARIANT/whisper-server"
+          asset="quassel-engine-linux-$VARIANT-x86_64.tar.gz"
+          tar -C out -czf "$asset" "$VARIANT"
+          sha256sum "$asset" > "$asset.sha256"
+          tar -tzf "$asset" | head -20
+      - uses: actions/upload-artifact@v7
+        with:
+          name: engine-${{ matrix.variant }}
+          path: |
+            quassel-engine-linux-${{ matrix.variant }}-x86_64.tar.gz
+            quassel-engine-linux-${{ matrix.variant }}-x86_64.tar.gz.sha256
+          if-no-files-found: error
+
+  attach:
+    name: Attach to the release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          ls -l packages
+          gh release upload "$TAG" packages/quassel-engine-linux-* --clobber

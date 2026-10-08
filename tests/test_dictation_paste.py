@@ -40,7 +40,8 @@ def test_with_ai_the_final_text_still_reaches_the_clipboard(monkeypatch, tmp_pat
     monkeypatch.setattr(dictation.DictationCore, "_ai_refine",
                         lambda self, text: "Hallo Welt.")
     core = run(monkeypatch, tmp_path, False, ai_enabled=True)
-    assert core.pasted == ["hallo welt", "Hallo Welt."]
+    # B19: erst fertig verfeinern, dann EINMAL einfügen (kein Rohtext vorab).
+    assert core.pasted == ["Hallo Welt."]
     assert core.states[-1][0] == "error"
 
 

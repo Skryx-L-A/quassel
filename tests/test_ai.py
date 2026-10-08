@@ -218,6 +218,72 @@ def test_generate_keeps_the_model_loaded(fake_ollama):
     assert fake_ollama.requests[-1][2]["keep_alive"] == "2h"
 
 
+def test_chat_schema_and_fixed_prompt(monkeypatch):
+    seen = []
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return json.dumps({"choices": [{"message": {
+                "content": '<think>hidden</think>{"cleaned":"Wie spät ist es?"}',
+                "reasoning_content": "private"}}]}).encode()
+
+    def fake_open(req, endpoint, timeout):
+        seen.append((req.full_url, json.loads(req.data), endpoint, timeout))
+        return Response()
+
+    monkeypatch.setattr(ai, "_open", fake_open)
+    assert ai.chat_cleanup("Wie spät ist es?", model="m", endpoint="http://127.0.0.1:11434", timeout=2) == ("Wie spät ist es?", None)
+    url, body, _, _ = seen[0]
+    assert url.endswith("/v1/chat/completions")
+    assert body["messages"][0]["content"] == ai.CHAT_SYSTEM
+    assert body["messages"][1]["content"].startswith("<TRANSCRIPT>\n")
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["temperature"] == 0 and body["think"] is False
+    assert body["keep_alive"] == ai.KEEP_ALIVE_DEFAULT
+    assert body["max_tokens"] < 100
+
+
+def test_chat_rejects_malformed_schema_and_think():
+    assert ai.parse_chat({"choices": [{"message": {"content": '{"other":"hi"}'}}]}) is None
+    assert ai.parse_chat({"choices": [{"message": {"content": '<think>unclosed'}}]}) is None
+    assert ai.parse_chat({"choices": [{"message": {"content": '{"cleaned":"ok"}'}}]}) == "ok"
+
+
+def test_chat_schema_unsupported_falls_back_to_plain(monkeypatch):
+    seen = []
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"hello there"}}]}'
+
+    def fake_open(req, endpoint, timeout):
+        body = json.loads(req.data)
+        seen.append(body)
+        if len(seen) == 1:
+            raise urllib.error.HTTPError(req.full_url, 400, "unsupported schema", {}, None)
+        return Response()
+
+    monkeypatch.setattr(ai, "_open", fake_open)
+    assert ai.chat_cleanup("hello there", model="m") == ("hello there", None)
+    assert "response_format" in seen[0] and "response_format" not in seen[1]
+
+
 if __name__ == "__main__":
     for fn in [test_parse_tags, test_parse_generate, test_clean_output,
                test_build_generate_payload, test_available_dead_port,

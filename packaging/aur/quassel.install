@@ -1,0 +1,16 @@
+post_install() {
+  cat <<'MSG'
+Quassel (quassel-type) is installed.
+
+  1. Add yourself to the "input" group, then log out and in again:
+       sudo usermod -aG input "$USER"
+  2. Open "Quassel" from your launcher, switch it on, and pick a speech model
+     in the control center; it is downloaded on the first choice.
+  3. The speech server shipped here is CPU-only. For a GPU, build whisper.cpp
+     with Vulkan or CUDA and set SERVER_BIN=<path> in ~/.config/quassel/server.env.
+MSG
+}
+
+post_upgrade() {
+  udevadm control --reload-rules 2>/dev/null || true
+}

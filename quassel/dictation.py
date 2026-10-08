@@ -24,12 +24,14 @@ Thread-Garantien (gelten für jede Plattform):
 """
 import glob
 import os
+import sys
 import queue
 import threading
 import time
 
-from . import (aimodes, beep, config, dictprompt, i18n, progmode, stats, textproc,
-               textreplace, vad, wakeword, whisperclient)
+from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18n,
+               profiles, progmode, stats, textproc, textreplace, vad, wakeword,
+               whisperclient)
 from .audio import LevelPump, RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
@@ -80,6 +82,8 @@ PUMP_POLL = 0.02       # s: Takt des Ereignis-Threads (Doppeltipp-Fenster, Einf�
 # Eigene Rohdatei für den Wake-Listener (getrennt vom Tastatur-Pfad); seine
 # WAV ist eine Zwischendatei dieses Prozesses (scratch_wav("wake")).
 WAKE_RAW = os.path.join(os.path.dirname(WAV), "wake.raw")
+# Terminal-Schutz im Streaming: Umbruch -> Leerzeichen, Zeichen für Zeichen.
+_NO_ENTER = str.maketrans({"\n": " ", "\r": " "})
 
 
 def postprocess_transcript(raw_text, cfg, language=None, pcm=None):
@@ -233,7 +237,12 @@ class PartialLoop(threading.Thread):
                 data = self.rec.raw_bytes()
                 if len(data) < RATE * SAMPLE_BYTES // 2:   # < 0,5 s
                     continue
-                data = data[-(RATE * SAMPLE_BYTES * PARTIAL_WINDOW):]
+                streamer = self.owner.streamer
+                end_byte = len(data)
+                max_bytes = RATE * SAMPLE_BYTES * PARTIAL_WINDOW
+                start_byte = (streamer.audio_window(end_byte, max_bytes)
+                              if streamer is not None else max(0, end_byte - max_bytes))
+                data = data[start_byte:end_byte]
                 try:
                     self.owner._wav_from_raw(data, wav_path)
                 except OSError:
@@ -247,10 +256,18 @@ class PartialLoop(threading.Thread):
                     return
                 self.inflight_since = time.monotonic()
                 try:
-                    result = whisperclient.transcribe_result(wav_path, self.cfg, timeout=20)
+                    prompt = streamer.prompt_context() if streamer is not None else None
+                    try:
+                        if prompt:
+                            result = whisperclient.transcribe_result(
+                                wav_path, self.cfg, timeout=20, prompt_extra=prompt)
+                        else:
+                            result = whisperclient.transcribe_result(wav_path, self.cfg, timeout=20)
+                    except (OSError, TimeoutError):
+                        continue  # server failure: keep confirmed text, retry later
                 finally:
                     self.inflight_since = None
-                raw = result.text
+                raw = result.text if result is not None else None
                 # Ehrlich bleiben: die HTTP-Anfrage selbst lässt sich
                 # clientseitig nicht abbrechen, sie läuft am Server so oder so
                 # durch, und das Finale wartet trotzdem dahinter. Hier wird
@@ -264,10 +281,11 @@ class PartialLoop(threading.Thread):
                 streamer = self.owner.streamer
                 show = self.cfg.pill_preview
                 if streamer is not None:
-                    streamer.update(text)
+                    streamer.update(text, audio_start=start_byte, audio_end=end_byte)
                     # Blase zeigt nur den noch nicht getippten Rest (oder nichts)
                     self.owner._state("recording",
-                                      text[len(streamer.typed):].strip() if show else "")
+                                      streamer.prev_partial[len(streamer.typed):].strip()
+                                      if show else "")
                 else:
                     self.owner._state("recording", text if show else "")
             finally:
@@ -454,6 +472,9 @@ class DictationCore:
             return False
         if self.cfg.beep:
             beep.start()                 # aufsteigender Ton: jetzt sprechen
+        if sys.platform.startswith("linux"):
+            from . import platform_linux
+            platform_linux.prepare_clipboard()
         self._bt = self._mic_is_bluetooth()
         self._vad = self._server_vad()
         self.ducker.apply(self.cfg.mute_mode)
@@ -469,11 +490,21 @@ class DictationCore:
         """Beim Wechsel in den Freihand-Modus: Streaming starten, falls
         eingeschaltet. (Im Halten-Modus technisch unmöglich -> nie hier.)"""
         self._handsfree = True
-        if self.streamer is not None or not self.cfg.streaming:
+        if (self.streamer is not None or not self.cfg.streaming
+                or self._cleanup_active() or self.cfg.ai_enabled):
             return
+        # Per-App-Profil vor dem ersten getippten Zeichen: Streaming tippt
+        # Tasten, ein Zeilenumbruch wäre im Terminal sofort ein Enter.
+        type_chunk = self._type_chunk
+        if not profiles.allow_enter(self._profile_cfg()):
+            type_chunk = self._type_chunk_no_enter
         self._clip_backup = self._streaming_begin()
         self.streamer = StreamTyper(self.cfg.streaming_mode,
-                                    self._type_chunk, self._send_backspaces)
+                                    type_chunk, self._send_backspaces)
+
+    def _type_chunk_no_enter(self, chunk):
+        """Umbrüche als Leerzeichen tippen, Länge bleibt (Backspace-Abgleich)."""
+        self._type_chunk(chunk.translate(_NO_ENTER))
 
     def cancel_recording(self, reason_key):
         # Wie finish(): läuft synchron auf dem Ereignis-Thread und zählt
@@ -651,6 +682,15 @@ class DictationCore:
             self._after_audio_released()
 
     def _transcribe_and_insert(self, streamer, clip_backup, data, panic):
+        # Per-App-Profil der Anwendung, in die gleich eingefügt wird. Gilt nur
+        # für dieses Diktat und nur auf diesem Thread; self.cfg bleibt, wie es ist.
+        cfg = self._run.cfg = self._profile_cfg()
+        try:
+            return self._transcribe_and_insert_with(cfg, streamer, clip_backup, data, panic)
+        finally:
+            self._run.cfg = None
+
+    def _transcribe_and_insert_with(self, cfg, streamer, clip_backup, data, panic):
         # Beim Kaltstart lädt der Server erst das Modell; eine kurze Frist wäre
         # dort gleichbedeutend mit einem weggeworfenen Diktat.
         deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
@@ -660,7 +700,7 @@ class DictationCore:
         wav = scratch_wav("rec")
         try:
             self._wav_from_raw(data, wav)
-            result = whisperclient.transcribe_result(wav, self.cfg)
+            result = whisperclient.transcribe_result(wav, cfg)
         finally:
             discard(wav)
         raw_text = result.text
@@ -675,8 +715,8 @@ class DictationCore:
             self._state("idle")
             return
         kind, value = postprocess_transcript(
-            raw_text, self.cfg,
-            result.language or getattr(self.cfg, "language", "auto"), data)
+            raw_text, cfg,
+            result.language or getattr(cfg, "language", "auto"), data)
         if kind is None:
             if streamer is not None:
                 self._streaming_restore(clip_backup)
@@ -689,6 +729,13 @@ class DictationCore:
             live_typed = len(streamer.typed) if streamer is not None else 0
             if streamer is not None:
                 self._streaming_restore(clip_backup)
+            if action == "enter" and not profiles.allow_enter(cfg):
+                # Terminal-Schutz: ein gesprochenes Enter führte den Befehl aus.
+                if live_typed:
+                    self._send_backspaces(live_typed)
+                self._log("profile: enter blocked")
+                self._state("error", tr("enter_blocked"))
+                return
             if action == "enter":
                 if live_typed:
                     self._send_backspaces(live_typed)
@@ -705,30 +752,43 @@ class DictationCore:
             else:
                 self._state("error", tr("nothing"))
             return
-        mech = self._refine_mechanical(value)
+        mechanical_failed = False
+        try:
+            mech = self._finish_text(self._refine_mechanical(value), cfg)
+        except Exception:
+            if not self._cleanup_active():
+                raise
+            mech = value
+            mechanical_failed = True
         inserted = True             # Streaming tippt selbst, ohne Rückmeldung
-        if streamer is not None:
-            # Streaming: KI auf den Endtext, dann Zielfenster exakt darauf bringen.
-            final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
+        if self._cleanup_active() and streamer is None:
+            # B19: Bereinigung und Prüfung ganz fertig, dann EINMAL einfügen.
+            final = (value if mechanical_failed
+                     else self._finish_text(self._cleanup_refine(value, mech), cfg))
+            if panic.is_set():
+                self._state("idle")
+                return
+            inserted = self._insert(final)
+            self.last_paste_len = len(final) if inserted else 0
+            value = final
+        elif streamer is not None:
+            # Streaming hat das Zielfenster schon berührt: keine spätere
+            # Modellantwort, die nach einem Fokuswechsel ersetzen könnte.
+            final = mech
             typed = streamer.finish(final)
             self.last_paste_len = len(typed)
             self._streaming_restore(clip_backup)
             value = final
-        elif self.cfg.ai_enabled:
-            # Lokale KI braucht Sekunden. ERST den Rohtext einfügen (solange der
-            # Fokus sicher im Zielfeld ist), DANN durch die KI-Fassung ersetzen —
-            # sonst landet bei langsamen Modellen nichts mehr im Fenster.
-            inserted = self._insert(mech)
-            self.last_paste_len = len(mech) if inserted else 0
+        elif cfg.ai_enabled:
+            # B19: keine Backspaces nach dem Modellaufruf in ein inzwischen
+            # anderes Zielfenster. Erst fertig berechnen, dann einmal einfügen.
             self._state("transcribing")
-            final = self._ai_refine(mech)
-            if final != mech and inserted:
-                self._send_backspaces(len(mech))
-                inserted = self._insert(final)
-                self.last_paste_len = len(final) if inserted else 0
-                self._log("ai: replaced %d -> %d chars" % (len(mech), len(final)))
-            elif final != mech:
-                inserted = self._insert(final)  # nichts zu ersetzen: Endfassung ablegen
+            final = self._finish_text(self._ai_refine(mech), cfg)
+            if panic.is_set():
+                self._state("idle")
+                return
+            inserted = self._insert(final)
+            self.last_paste_len = len(final) if inserted else 0
             value = final
         else:
             inserted = self._insert(mech)
@@ -804,11 +864,37 @@ class DictationCore:
                 pass
 
     # ------------------------------------------------------ Nachbearbeitung
+    # Cfg mit Per-App-Profil des laufenden Diktats, je Thread: Aktions- und
+    # Wake-Thread können gleichzeitig arbeiten und haben je ihr eigenes Profil.
+    _run = threading.local()
+
+    def _cfg_now(self):
+        return getattr(self._run, "cfg", None) or self.cfg
+
+    def _profile_cfg(self):
+        """self.cfg mit dem Per-App-Profil der aktiven Anwendung (Audit G102).
+        Ohne profiles.ini ist es self.cfg selbst, die Anwendung wird dann gar
+        nicht erst abgefragt."""
+        return profiles.for_active_app(self.cfg, log=self._log)
+
+    @staticmethod
+    def _finish_text(text, cfg):
+        """Terminal-Schutz: verbietet das Profil Enter, kein Umbruch am Ende."""
+        if profiles.allow_enter(cfg):
+            return text
+        return profiles.strip_trailing_enter(text)
+
     def _refine_mechanical(self, text):
         """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
-        if self.cfg.programmer_mode:
-            text = progmode.apply_if_addressed(text)
-        if self.cfg.text_replace:
+        cfg = self._cfg_now()
+        if cfg.programmer_mode:
+            addressed = progmode.apply_if_addressed(text)
+            # Global braucht Code die Anrede „Code:“ (Audit 105). Ein Profil mit
+            # ausdrücklich programmer_mode = on (Terminal, IDE) formt jedes Diktat.
+            if addressed == text and profiles.programmer_mode_explicit(cfg):
+                addressed = progmode.apply(text)
+            text = addressed
+        if cfg.text_replace:
             rules = config.replacement_rules()
             if rules:
                 text = textreplace.apply_rules(text, rules)
@@ -816,28 +902,58 @@ class DictationCore:
 
     def _refine(self, text):
         """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
+        cfg = self._cfg_now()
+        raw = text
+        if self._cleanup_active():
+            try:
+                text = self._refine_mechanical(text)
+            except Exception:
+                return raw
+            return self._finish_text(self._cleanup_refine(raw, text), cfg)
         text = self._refine_mechanical(text)
-        if self.cfg.ai_enabled:
+        if cfg.ai_enabled:
             text = self._ai_refine(text)
-        return text
+        return self._finish_text(text, cfg)
+
+    def _cleanup_active(self):
+        cfg = self._cfg_now()
+        return (getattr(cfg, "cleanup_enabled", False)
+                and getattr(cfg, "cleanup_level", "aus") != "aus")
+
+    def _cleanup_refine(self, raw, mechanical):
+        """Keep addressed AI modes; otherwise validate cleanup before insert."""
+        try:
+            cfg = self._cfg_now()
+            if cfg.ai_enabled and cfg.ai_voice_modes:
+                mode, _ = aimodes.detect_voice_mode(mechanical)
+                if mode is None:
+                    mode, _ = self._detect_custom_voice(mechanical)
+                if mode is not None:
+                    transformed = self._ai_refine(mechanical)
+                    return raw if transformed == mechanical else transformed
+            result = cleanup_module.cleanup(mechanical, cfg.cleanup_level, cfg)
+            return raw if result.fallback_reason else result.text
+        except Exception:
+            return raw
 
     def _ai_refine(self, text):
         """Lokale KI-Nachbearbeitung (Ollama): Sprach-Modus ('als E-Mail', …) hat
         Vorrang, sonst optional ein Auto-Modus auf jedes Diktat. Schlägt etwas fehl
         oder läuft Ollama nicht, bleibt der Rohtext (KI darf nie Worte verlieren)."""
+        cfg = self._cfg_now()
         self.cfg.ai_modes_text = config.ai_modes_text()
         mode, remaining = None, text
-        if self.cfg.ai_voice_modes:
+        if cfg.ai_voice_modes:
             m, rest = aimodes.detect_voice_mode(text)
             if m is None:
                 m, rest = self._detect_custom_voice(text)
             if m:
                 mode, remaining = m, rest
-        if mode is None and self.cfg.ai_post_process:
-            mode = self.cfg.ai_post_mode
+        if mode is None and cfg.ai_post_process:
+            mode = cfg.ai_post_mode
         if mode is None or not remaining.strip():
             return text
-        return aimodes.transform(remaining, mode, self.cfg)
+        return aimodes.transform(remaining, mode, cfg)
 
     def _detect_custom_voice(self, text):
         """Eigenen Modusnamen als Eröffnungsphrase erkennen ('tweet: …')."""
@@ -925,7 +1041,14 @@ class DictationCore:
                                self._wav_from_raw, self._log)
 
     def _wake_insert(self, raw_text):
-        kind, value = postprocess_transcript(raw_text, self.cfg)
+        cfg = self._run.cfg = self._profile_cfg()
+        try:
+            self._wake_insert_with(cfg, raw_text)
+        finally:
+            self._run.cfg = None
+
+    def _wake_insert_with(self, cfg, raw_text):
+        kind, value = postprocess_transcript(raw_text, cfg)
         if kind != "text" or not value.strip():
             return
         value = self._refine(value)

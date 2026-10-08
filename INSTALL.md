@@ -36,9 +36,22 @@ in the unpacked folder.
 The script does everything: installs distro packages (asks for your `sudo`
 password), sets up keyboard permissions, builds whisper.cpp, downloads a
 speech model, and installs the app. It is safe to re-run; finished steps are
-skipped.
+skipped. whisper.cpp is built at a fixed version (currently v1.9.5, the same
+for everybody), not the newest source; the first build takes a few minutes.
+When that version changes in a later Quassel release, the next run rebuilds it.
 
-Optional: choose the speech model yourself. The automatic choice uses
+Instead of cloning, the small online installer from the
+[releases page](https://github.com/Skryx-L-A/quassel/releases/latest)
+(`quassel-install.sh`) fetches the latest release and runs the same script. If
+that release carries a prebuilt engine package (`quassel-engine-linux-*.tar.gz`)
+it is downloaded, checked against its checksum and used instead of building;
+otherwise the installer says so and builds from source. `./install.sh --prebuilt`
+does the same check from a clone. The big offline all-in-one package exists only
+for the older v2.2.0.
+
+Optional: choose the speech model yourself — also on an existing installation,
+where it switches to that model (a model you picked earlier stays when you run
+the script without `--model`). The automatic choice uses
 `large-v3-turbo` or `medium` with NVIDIA, `large-v3-turbo-q5_0` on Apple
 Silicon, `small-q5_1` on CPUs with four or more cores, and `base-q5_1` on
 smaller CPUs:
@@ -122,7 +135,12 @@ cd quassel
 
 Das Skript erledigt alles (Pakete, Berechtigungen, whisper.cpp-Build,
 Modell-Download, App). Es kann gefahrlos erneut ausgeführt werden.
-Modellwahl optional, zum Beispiel: `./install.sh --model small-q5_1`.
+whisper.cpp wird in einer festen Version gebaut (derzeit v1.9.5); der erste Bau
+dauert einige Minuten. Gibt es zum Release vorgebaute Engine-Pakete, lädt der
+Online-Installer sie nach einer Prüfsummenprüfung, sonst baut er selbst. Das
+große Offline-Komplettpaket gibt es nur für die ältere Version v2.2.0.
+Modellwahl optional, zum Beispiel: `./install.sh --model small-q5_1` — das gilt
+auch für eine bestehende Installation.
 Die vollständige Liste mit quantisierten q5-Modellen steht in der englischen
 Tabelle oben.
 

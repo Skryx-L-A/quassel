@@ -2,12 +2,17 @@
 # Baut whisper-server (CPU-only, portabel) in manylinux_2_28 (glibc 2.28) und
 # sammelt Binary + nicht-System-.so + libgomp nach /out. Läuft IM Container.
 set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/whisper-cpp-pin.sh
+source "$HERE/../whisper-cpp-pin.sh"
 export PATH="/opt/python/cp312-cp312/bin:$PATH"
 pip -q install cmake ninja >/dev/null
 dnf -y install git >/dev/null 2>&1 || true
 cd /tmp
-git clone --depth 1 https://github.com/ggml-org/whisper.cpp wc
+git clone --depth 1 --branch "$WHISPER_CPP_TAG" "$WHISPER_CPP_URL" wc
 cd wc
+[ "$(git rev-parse HEAD)" = "$WHISPER_CPP_COMMIT" ] \
+  || { echo "whisper.cpp $WHISPER_CPP_TAG zeigt nicht auf $WHISPER_CPP_COMMIT"; exit 1; }
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DWHISPER_BUILD_SERVER=ON >/dev/null
 cmake --build build -j"$(nproc)" >/dev/null
 mkdir -p /out/cpu

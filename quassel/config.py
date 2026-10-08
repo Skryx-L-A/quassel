@@ -42,9 +42,11 @@ SERVERENV = os.path.join(CONFDIR, "server.env")
 DICTIONARY = os.path.join(CONFDIR, "dictionary.txt")
 LEARN_COUNTS = os.path.join(CONFDIR, "dictionary-counts.json")
 REPLACEMENTS = os.path.join(CONFDIR, "replacements.txt")
+CLEANUP_CORRECTIONS = os.path.join(CONFDIR, "cleanup-corrections.txt")
 AI_MODES = os.path.join(CONFDIR, "ai_modes.txt")
 HISTORY = os.path.join(DATADIR, "history.jsonl")
 HISTORY_MAX = 50
+CONFIG_VERSION = 1
 WAKEWORD_DEFAULT = "Hey Quassel"
 OLLAMA_DEFAULT = "http://127.0.0.1:11434"
 
@@ -86,6 +88,46 @@ def _read_parser():
     return p
 
 
+def _write_parser(p):
+    buf = io.StringIO()
+    p.write(buf)
+    fsutil.atomic_write(CONFIG, buf.getvalue())
+
+
+def _migration_1(p):
+    """Basisformat markieren; ältere Einstellungen brauchen keine Umformung."""
+
+
+MIGRATIONS = ((1, _migration_1),)
+
+
+def migrate():
+    """Führt jede bekannte config.ini-Migration genau einmal atomar aus.
+
+    Alte Dateien ohne ``[meta] version`` gelten als Version 0. Unbekannte
+    neuere Versionen werden nicht zurückgeschrieben.
+    """
+    p = _read_parser()
+    try:
+        version = p.getint("meta", "version", fallback=0)
+    except ValueError:
+        version = 0
+    if version >= CONFIG_VERSION:
+        return False
+    changed = False
+    for target, callback in MIGRATIONS:
+        if version < target:
+            callback(p)
+            if not p.has_section("meta"):
+                p.add_section("meta")
+            p.set("meta", "version", str(target))
+            version = target
+            changed = True
+    if changed:
+        _write_parser(p)
+    return changed
+
+
 # Die Getter der Einstellungen werfen nie: eine von Hand falsch getippte Zahl
 # ("abc", "0,5 s") oder ein unsinniger Wahrheitswert darf den Daemon nicht am
 # Start hindern (systemd startete ihn sonst in einer Schleife neu).
@@ -101,6 +143,11 @@ def _getint(p, section, key, fallback):
         return p.getint(section, key, fallback=fallback)
     except ValueError:
         return fallback
+
+
+def _getint_range(p, section, key, fallback, lo, hi):
+    value = _getint(p, section, key, fallback)
+    return value if lo <= value <= hi else fallback
 
 
 def _getfloat(p, section, key, fallback, lo, hi, clamp=False):
@@ -129,6 +176,7 @@ class Cfg:
 
     def __init__(self):
         self.mtime = None
+        migrate()
         self.reload(force=True)
 
     def reload(self, force=False):
@@ -161,6 +209,8 @@ class Cfg:
         self.pill_pos_x = _getint(p, "pill", "pos_x", -1)
         self.pill_pos_y = _getint(p, "pill", "pos_y", -1)
         self.history_enabled = _getbool(p, "history", "enabled", True)
+        # 0 ist die ausdrücklich gewählte unbegrenzte Aufbewahrung.
+        self.history_days = _getint_range(p, "history", "history_days", 7, 0, 36500)
         self.ui_language = g("ui", "language", fallback="auto")
         # Streaming-Tippen (nur Freihand-Modus; Standard aus = heutiges Verhalten)
         self.streaming = _getbool(p, "streaming", "enabled", False)
@@ -203,19 +253,38 @@ class Cfg:
         # großzügiger Default: größere Modelle brauchen beim ersten Aufruf
         # (Kaltstart/Laden in den Speicher) gut 20-30 s.
         self.ai_timeout = _getfloat(p, "ai", "timeout", 60.0, 1.0, 3600.0)
+        # Separate, opt-in dictation cleanup; legacy AI modes stay unchanged.
+        self.cleanup_enabled = _getbool(p, "cleanup", "enabled", False)
+        self.cleanup_level = g("cleanup", "level", fallback="aus").strip().lower()
+        if self.cleanup_level not in ("aus", "leicht", "mittel", "stark"):
+            self.cleanup_level = "aus"
         return True
+
+    @property
+    def cleanup_terms(self):
+        """Current ASR dictionary words are protected during cleanup."""
+        return dictionary_words()
+
+    @property
+    def cleanup_replacements(self):
+        """Current explicit correction list, read only when cleanup is used."""
+        return cleanup_corrections()
 
 
 def save(values):
-    """values: dict {(section, key): value} — schreibt config.ini komplett neu."""
+    """Ändert nur die übergebenen Schlüssel gegen den frisch gelesenen Stand.
+
+    Damit bleibt eine zwischen Laden und Speichern erfolgte Änderung eines
+    anderen Schreibers erhalten, sofern der Aufrufer nur seinen geänderten
+    Schlüssel übergibt.
+    """
+    migrate()
     p = _read_parser()
     for (sec, key), val in values.items():
         if not p.has_section(sec):
             p.add_section(sec)
         p.set(sec, key, str(val))
-    buf = io.StringIO()
-    p.write(buf)
-    fsutil.atomic_write(CONFIG, buf.getvalue())
+    _write_parser(p)
 
 
 def reset_defaults():
@@ -288,6 +357,23 @@ def dictionary_save(text):
     _dictionary_cache["key"] = None
 
 
+def cleanup_corrections():
+    """Read literal spoken=written pairs; never expand snippet placeholders."""
+    try:
+        with open(CLEANUP_CORRECTIONS, encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return {}
+    corrections = {}
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        spoken, written = (part.strip() for part in line.split("=", 1))
+        if spoken and written and len(spoken) <= 100 and len(written) <= 100:
+            corrections[spoken] = written
+    return corrections
+
+
 _dictionary_lock = threading.Lock()
 
 
@@ -346,28 +432,55 @@ def ai_modes_save(text):
 
 
 # ----------------------------------------------------------------- Verlauf
-def history_append(text):
-    entries = history_read()
-    entries.append({"text": text, "ts": __import__("time").time()})
-    entries = entries[-HISTORY_MAX:]
-    # 0600: die letzten Diktate sind oft Privates und sollen nur der Nutzer lesen.
-    # Eine bestehende, weiter geöffnete Datei zieht beim nächsten Diktat nach.
+def _history_days(days):
+    if days is None:
+        days = Cfg().history_days
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        return 7
+    return days if 0 <= days <= 36500 else 7
+
+
+def _write_history(entries):
     fsutil.atomic_write(
         HISTORY, "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
         mode=0o600)
 
 
-def history_read():
+def history_append(text, *, history_days=None):
+    entries = history_read(history_days=history_days)
+    entries.append({"text": text, "ts": __import__("time").time()})
+    entries = entries[-HISTORY_MAX:]
+    # 0600: die letzten Diktate sind oft Privates und sollen nur der Nutzer lesen.
+    # Eine bestehende, weiter geöffnete Datei zieht beim nächsten Diktat nach.
+    _write_history(entries)
+
+
+def history_read(*, history_days=None):
+    """Liest den Verlauf und entfernt abgelaufene Einträge atomar."""
     out = []
+    changed = False
+    days = _history_days(history_days)
+    cutoff = __import__("time").time() - days * 86400 if days else None
     try:
         with open(HISTORY, encoding="utf-8") as f:
             for line in f:
                 try:
-                    out.append(json.loads(line))
+                    entry = json.loads(line)
+                    ts = entry.get("ts") if isinstance(entry, dict) else None
+                    if not isinstance(ts, (int, float)):
+                        changed = True
+                    elif cutoff is not None and ts < cutoff:
+                        changed = True
+                    else:
+                        out.append(entry)
                 except ValueError:
-                    pass
+                    changed = True
     except OSError:
         pass
+    if changed:
+        _write_history(out)
     return out
 
 

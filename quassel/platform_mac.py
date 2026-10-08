@@ -12,11 +12,13 @@ import threading
 import time
 
 try:
-    from AppKit import NSPasteboard, NSStringPboardType
+    from AppKit import NSPasteboard, NSPasteboardItem, NSStringPboardType
+    from Foundation import NSData
     from Quartz import (
         CGEventCreateKeyboardEvent,
         CGEventPost,
         CGEventSetFlags,
+        CGEventKeyboardSetUnicodeString,
         kCGHIDEventTap,
         kCGEventFlagMaskCommand,
     )
@@ -52,6 +54,57 @@ _clip_lock = threading.Lock()
 _restore_timer = None      # anstehender threading.Timer (None = keiner)
 _saved_original = None     # Nutzer-Original ("" möglich); None = Slot leer
 _last_written = None       # zuletzt selbst geschriebener Text
+UNSAFE = object()
+
+
+def clip_snapshot():
+    """Keep every item and every type; refuse a format whose bytes are unreadable."""
+    if not _HAS_OBJC:
+        return ""
+    pb = NSPasteboard.generalPasteboard()
+    saved = []
+    for item in pb.pasteboardItems() or []:
+        formats = []
+        for typ in item.types():
+            data = item.dataForType_(typ)
+            if data is None:
+                return UNSAFE
+            formats.append((typ, bytes(data)))
+        saved.append(formats)
+    return ("items", saved)
+
+
+def clip_restore(snapshot):
+    if isinstance(snapshot, tuple) and snapshot[0] == "items":
+        if not _HAS_OBJC:
+            return
+        pb = NSPasteboard.generalPasteboard()
+        items = []
+        for formats in snapshot[1]:
+            item = NSPasteboardItem.alloc().init()
+            for typ, data in formats:
+                item.setData_forType_(NSData.dataWithBytes_length_(data, len(data)), typ)
+            items.append(item)
+        pb.clearContents()
+        if items:
+            pb.writeObjects_(items)
+    elif snapshot:
+        clip_copy(snapshot)
+    else:
+        clip_clear()
+
+
+def _type_unicode(text):
+    """Use Quartz Unicode events without replacing an unsafe pasteboard."""
+    if not _HAS_OBJC:
+        return False
+    for part in (text[i:i + 32] for i in range(0, len(text), 32)):
+        for down in (True, False):
+            event = CGEventCreateKeyboardEvent(None, 0, down)
+            CGEventSetFlags(event, 0)
+            CGEventKeyboardSetUnicodeString(event, len(part), part)
+            CGEventPost(kCGHIDEventTap, event)
+    return True
 
 
 def clip_read():
@@ -96,7 +149,7 @@ def _save_original_locked():
     global _saved_original
     if _saved_original is not None:
         return
-    current = clip_read()
+    current = clip_snapshot()
     if _last_written is not None and current == _last_written:
         current = ""
     _saved_original = current
@@ -123,10 +176,8 @@ def _restore_now():
             _last_written = None
             return
         _last_written = None
-        if original:
-            clip_copy(original)
-        else:
-            clip_clear()
+        if original is not UNSAFE:
+            clip_restore(original)
 
 
 def _send_cmd_v():
@@ -145,6 +196,8 @@ def paste(text):
     with _clip_lock:
         _cancel_restore_locked()
         _save_original_locked()
+        if _saved_original is UNSAFE:
+            return _type_unicode(text)
         clip_copy(text, concealed=True)
         _last_written = text
         _schedule_restore_locked(RESTORE_DELAY)
@@ -161,6 +214,8 @@ def type_chunk(text):
     with _clip_lock:
         _cancel_restore_locked()
         _save_original_locked()
+        if _saved_original is UNSAFE:
+            return _type_unicode(text)
         clip_copy(text, concealed=True)
         _last_written = text
     time.sleep(0.12)
