@@ -105,6 +105,8 @@ STRINGS = {
     "err_recorder_missing": ("The recording program is missing: {tool}.",
                              "Das Aufnahmeprogramm fehlt: {tool}."),
     # Einfügen gescheitert, Text liegt aber in der Zwischenablage (D57)
+    "daemon_crashed": ("Dictation service stopped (exit {code}). Turn it on to retry.",
+                       "Diktierdienst beendet (Code {code}). Zum erneuten Versuch einschalten."),
     "paste_clipboard_only": ("Text is on the clipboard – press Ctrl+V",
                              "Text liegt in der Zwischenablage – Strg+V drücken"),
     "err_paste_blocked": ("The text couldn't be inserted. On macOS, allow Quassel in System Settings → Privacy & Security → Accessibility. The text is on the clipboard.",

@@ -78,8 +78,10 @@ def test_toggle_on_restarts_daemon_and_syncs_ui():
     mac.tray = MagicMock()
     mac.pill = MagicMock()
     daemon = MagicMock()
-    with patch.object(subprocess, "Popen", return_value=daemon) as popen:
+    with patch.object(subprocess, "Popen", return_value=daemon) as popen, \
+            patch.object(mac_app.server_mac, "start") as srv_start:
         mac.toggle()
+    srv_start.assert_called_once_with()          # E80: eigener Server wieder an
     assert popen.call_args.args[0] == mac_app.daemon_command()
     assert popen.call_args.kwargs["start_new_session"] is True
     assert mac.daemon is daemon

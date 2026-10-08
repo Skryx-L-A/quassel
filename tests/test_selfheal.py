@@ -49,7 +49,8 @@ def test_recovery_restarts_once_and_probes_again():
 
 def test_daemon_crash_is_visible_and_persisted(monkeypatch):
     from types import SimpleNamespace
-    from quassel import state
+    from quassel import i18n, state
+    monkeypatch.setattr(i18n, "current", lambda: "en")
     calls = []
     monkeypatch.setattr(state, "state_set", lambda *args: calls.append(("state", args)))
     tray = SimpleNamespace(set_mode=lambda *args: calls.append(("tray", args)),
@@ -62,3 +63,14 @@ def test_daemon_crash_is_visible_and_persisted(monkeypatch):
     assert "exit 1" in app.crash_text
     assert [name for name, _ in calls] == ["state", "tray", "notice", "pill"]
     assert calls[0][1][0] == "error"
+
+
+def test_clean_exit_or_sigterm_is_not_reported_as_crash(monkeypatch):
+    from types import SimpleNamespace
+    from quassel import state
+    calls = []
+    monkeypatch.setattr(state, "state_set", lambda *args: calls.append(args))
+    app = SimpleNamespace(tray=None, pill=None)
+    for code in (0, -15, -2):
+        selfheal.report_daemon_crash(app, code)
+    assert calls == [] and not hasattr(app, "crash_text")

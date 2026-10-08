@@ -65,10 +65,18 @@ def recover(probe=functional_probe, restart=restart_owned):
     return bool(restart() and probe())
 
 
+# Ein sauberes Ende (0) oder ein Beenden von außen (SIGTERM/SIGINT) ist kein
+# Absturz: dann keine Fehlermeldung, nur „aus" wie bisher.
+NOT_A_CRASH = (0, -15, -2)
+
+
 def report_daemon_crash(app, code):
     """Persist an error and show it even after supervision disabled the pill."""
+    if code in NOT_A_CRASH:
+        return
+    from .i18n import tr
     from .state import state_set
-    message = "Dictation service stopped (exit %s). Turn it on to retry." % code
+    message = tr("daemon_crashed", code=code)
     app.crash_text = message
     state_set("error", message)
     if app.tray is not None:
