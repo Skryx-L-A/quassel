@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, i18n, stats,
-               transcribe_file, updatecheck, vad, wakeword, whisperclient)
+from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, i18n, profiles,
+               stats, transcribe_file, updatecheck, vad, wakeword, whisperclient)
 from .dictation import failure_text, mac_mic_permission
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
@@ -342,6 +342,11 @@ class Center(QMainWindow):
         """Mausrad-Schutz + sauberer Fokus für Dropdowns/Slider."""
         w.setFocusPolicy(Qt.StrongFocus)
         w.installEventFilter(self.nowheel)
+        if isinstance(w, QComboBox):
+            # Lange Einträge dürfen die Seite nicht breiter als das Fenster
+            # machen (sonst waagerechter Rollbalken); Text wird gekürzt.
+            w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            w.setMinimumContentsLength(12)
         return w
 
     def group(self, title, parent_layout):
@@ -642,6 +647,22 @@ class Center(QMainWindow):
         self.labeled_row(tr("streaming_mode"), self.stream_mode, g)
         self._sync_streaming_enabled(self.cfg.streaming)
 
+
+        # --- Per-App-Profile (eigene Datei, profiles.py) ---
+        g = self.group(tr("sec_profiles"), lay)
+        self.desc(tr("profiles_hint"), g)
+        prow = QHBoxLayout()
+        self.profiles_btn = QPushButton(tr("profiles_open"))
+        self.profiles_btn.clicked.connect(self.on_profiles_open)
+        prow.addWidget(self.profiles_btn)
+        prow.addStretch(1)
+        g.addLayout(prow)
+        self.profiles_status = QLabel()
+        self.profiles_status.setObjectName("desc")
+        self.profiles_status.setWordWrap(True)
+        self.profiles_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        g.addWidget(self.profiles_status)
+
         lay.addStretch(1)
         return scroll
 
@@ -805,6 +826,19 @@ class Center(QMainWindow):
 
         lay.addStretch(1)
         return scroll
+
+    def on_profiles_open(self):
+        """Profil-Datei mit den Vorgaben anlegen, falls es sie nicht gibt, und
+        im Standard-Editor öffnen. Eine vorhandene Datei bleibt unangetastet."""
+        path = profiles.PROFILES
+        try:
+            created = profiles.write_defaults(path)
+        except OSError:
+            self.profiles_status.setText("✕ " + tr("profiles_failed"))
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+        self.profiles_status.setText(tr("profiles_created" if created else "profiles_opened",
+                                        path=path))
 
     def _file_row(self, label, edit, button, layout):
         """Beschriftung, Pfadfeld und „Wählen…" in einer Zeile."""

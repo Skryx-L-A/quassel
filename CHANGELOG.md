@@ -15,6 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Per-app profiles: the "While dictating" page has a button that creates the
+  profiles file with the default profiles (terminal, mail, editor and so on) if
+  it does not exist yet and opens it. An existing file is never overwritten.
+  Long entries no longer make a settings page wider than the window.
 - Beta features page: the pre-roll (0 to 2000 ms of audio kept from before
   the hotkey, Linux and macOS) can be set in the Control Center instead of only
   through an environment variable. The page says that the microphone stays

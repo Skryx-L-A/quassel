@@ -26,7 +26,8 @@ def qapp():
 def c(tmp_path, monkeypatch, qapp):
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
-    config.save({("ui", "language"): "en"})
+    # onboarded: sonst öffnete processEvents() den modalen Willkommensdialog
+    config.save({("ui", "language"): "en", ("system", "onboarded"): "true"})
     win = center.Center()
     yield win
     win.close()
@@ -122,6 +123,7 @@ def test_mac_microphone_indicator_hint(tmp_path, monkeypatch, qapp, mac):
     monkeypatch.setattr(center, "autostart_enabled", lambda: False)
     monkeypatch.setattr(center, "daemon_active", lambda: True)
     monkeypatch.setattr(center.beep, "list_outputs", lambda: [], raising=False)
+    config.save({("system", "onboarded"): "true"})
     win = center.Center(controller=SimpleNamespace(enabled=True))
     try:
         assert (win.preroll_mac_note is not None) is mac
@@ -184,3 +186,52 @@ def test_cancel_button_sets_the_event(c):
 def test_file_formats_offered(c):
     assert [c.file_format.itemData(i) for i in range(c.file_format.count())] == \
         ["text", "srt", "vtt"]
+
+
+# ------------------------------------------------------- (e) Per-App-Profile
+def test_profiles_button_creates_once_and_opens(c, tmp_path, monkeypatch):
+    from quassel import profiles
+    path = tmp_path / "profiles.ini"
+    monkeypatch.setattr(profiles, "PROFILES", str(path))
+    opened = []
+    monkeypatch.setattr(center.QDesktopServices, "openUrl",
+                        lambda url: opened.append(url.toLocalFile()))
+    c.profiles_btn.click()
+    assert path.read_text(encoding="utf-8") == profiles.DEFAULTS
+    assert opened == [str(path)]
+    assert c.profiles_status.text().startswith("Created")
+    path.write_text("[profile:Mine]\nmatch = x\n", encoding="utf-8")
+    c.profiles_btn.click()                          # vorhandene Datei bleibt
+    assert "Mine" in path.read_text(encoding="utf-8")
+    assert c.profiles_status.text().startswith("Opened")
+    page = c.stack.widget(c._page_keys.index("nav_dictating"))
+    assert page.isAncestorOf(c.profiles_btn)
+
+
+def test_profiles_failure_is_reported(c, monkeypatch):
+    from quassel import profiles
+
+    def boom(path=None):
+        raise OSError("read-only")
+    monkeypatch.setattr(profiles, "write_defaults", boom)
+    opened = []
+    monkeypatch.setattr(center.QDesktopServices, "openUrl", opened.append)
+    c.profiles_btn.click()
+    assert opened == [] and c.profiles_status.text().startswith("✕")
+
+
+def test_no_page_needs_horizontal_scrolling(c, qapp):
+    """Lange Einträge (Dropdowns, Pfade) dürfen keine Seite breiter als das
+    Fenster machen. Offscreen-Plattform: kein sichtbares Fenster."""
+    c.resize(760, 900)
+    c.show()
+    try:
+        too_wide = []
+        for i, key in enumerate(c._page_keys):
+            c.sidebar.setCurrentRow(i)
+            qapp.processEvents()
+            if c.stack.widget(i).horizontalScrollBar().maximum() > 0:
+                too_wide.append(key)
+        assert too_wide == []
+    finally:
+        c.hide()
