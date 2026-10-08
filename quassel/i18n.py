@@ -314,6 +314,9 @@ STRINGS = {
     "file_no_ffmpeg": ("ffmpeg is required to read this file type.",
                        "Für diesen Dateityp wird ffmpeg benötigt."),
     "copy": ("Copy", "Kopieren"),
+    "file_save": ("Save as…", "Speichern unter…"),
+    "file_saved": ("Saved as {name}.", "Gespeichert als {name}."),
+    "file_save_failed": ("Couldn't save the file.", "Die Datei ließ sich nicht speichern."),
     # --- Onboarding (#27) ---
     "ob_title": ("Welcome to Quassel", "Willkommen bei Quassel"),
     "ob_body": ("Quassel turns your voice into text wherever your cursor is — fully offline.\n\nHold {chord}, speak, release. That's it.\n\nThere's nothing you must configure: you can just close this and start dictating. Everything below is optional.",

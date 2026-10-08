@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Transcribe file: "Save as…" writes the result as a text, SRT or WebVTT file.
+  The suggested name is the source file's name with the matching extension.
 - "Raw text back" without a new global shortcut: the macOS menu bar menu can
   offer it as an entry, and on Linux `quassel-type-cli raw-last` asks the
   running dictation service to put the unedited text of the last dictation on

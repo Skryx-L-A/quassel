@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, i18n, profiles,
-               stats, transcribe_file, updatecheck, vad, wakeword, whisperclient)
+from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, fsutil, i18n,
+               profiles, stats, transcribe_file, updatecheck, vad, wakeword, whisperclient)
 from .dictation import failure_text, mac_mic_permission
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
@@ -42,6 +42,7 @@ else:
     from .audio import list_mics, record_command
     from .platform_linux import clip_copy
 
+FILE_EXT = {"text": ".txt", "srt": ".srt", "vtt": ".vtt"}
 UNITS_START = ["quasseld", "quassel-server", "quassel-pill"]
 UNITS_STOP = ["quasseld", "quassel-server", "quassel-ydotoold"]
 ICON_PATHS = [
@@ -965,10 +966,19 @@ class Center(QMainWindow):
         self.file_result.setReadOnly(True)
         self.file_result.setAccessibleName(tr("sec_file"))
         g.addWidget(self.file_result)
+        out_row = QHBoxLayout()
         self.file_copy = QPushButton(tr("copy"))
         self.file_copy.clicked.connect(self.on_file_copy)
-        g.addWidget(self.file_copy)
+        out_row.addWidget(self.file_copy)
+        self.file_save = QPushButton(tr("file_save"))
+        self.file_save.setEnabled(False)
+        self.file_save.clicked.connect(self.on_file_save)
+        out_row.addWidget(self.file_save)
+        out_row.addStretch(1)
+        g.addLayout(out_row)
         self._file_cancel_event = None
+        self._file_source = ""          # Quelle und Format des Ergebnisses im Feld
+        self._file_result_fmt = "text"
         return scroll
 
     # --------------------------------------------------------- Seite: KI (Ollama)
@@ -1660,6 +1670,8 @@ class Center(QMainWindow):
         cancel = self._file_cancel_event = threading.Event()
         self.file_status.setText(tr("file_running", name=os.path.basename(path)))
         self.file_result.setPlainText("")
+        self.file_save.setEnabled(False)
+        self._file_source, self._file_result_fmt = path, fmt
         self.file_bar.setValue(0)
         self.file_bar.setVisible(True)
         self.file_pick.setEnabled(False)
@@ -1703,6 +1715,29 @@ class Center(QMainWindow):
         self._file_cancel_event = None
         if text:
             self.file_result.setPlainText(text)
+        self.file_save.setEnabled(bool(text))
+
+    def on_file_save(self):
+        """Ergebnis als Datei speichern; Endung nach dem Format, in dem es
+        transkribiert wurde (nicht nach der jetzigen Auswahl im Menü)."""
+        text = self.file_result.toPlainText()
+        if not text:
+            return
+        ext = FILE_EXT.get(self._file_result_fmt, ".txt")
+        stem = os.path.splitext(os.path.basename(self._file_source))[0] or "transcript"
+        folder = os.path.dirname(self._file_source) or os.path.expanduser("~")
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("file_save"), os.path.join(folder, stem + ext),
+            "%s (*%s)" % (tr("file_format_" + self._file_result_fmt), ext))
+        if not path:
+            return
+        try:
+            # Atomar: eine vorhandene Datei ist danach ganz alt oder ganz neu.
+            fsutil.atomic_write(path, text if text.endswith("\n") else text + "\n")
+        except OSError:
+            self.file_status.setText("✕ " + tr("file_save_failed"))
+            return
+        self.file_status.setText("✓ " + tr("file_saved", name=os.path.basename(path)))
 
     def on_file_copy(self):
         text = self.file_result.toPlainText()
