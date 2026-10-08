@@ -201,7 +201,12 @@ class PartialLoop(threading.Thread):
                 data = self.rec.raw_bytes()
                 if len(data) < RATE * SAMPLE_BYTES // 2:   # < 0,5 s
                     continue
-                data = data[-(RATE * SAMPLE_BYTES * PARTIAL_WINDOW):]
+                streamer = self.owner.streamer
+                end_byte = len(data)
+                max_bytes = RATE * SAMPLE_BYTES * PARTIAL_WINDOW
+                start_byte = (streamer.audio_window(end_byte, max_bytes)
+                              if streamer is not None else max(0, end_byte - max_bytes))
+                data = data[start_byte:end_byte]
                 try:
                     self.owner._wav_from_raw(data, wav_path)
                 except OSError:
@@ -215,10 +220,18 @@ class PartialLoop(threading.Thread):
                     return
                 self.inflight_since = time.monotonic()
                 try:
-                    result = whisperclient.transcribe_result(wav_path, self.cfg, timeout=20)
+                    prompt = streamer.prompt_context() if streamer is not None else None
+                    try:
+                        if prompt:
+                            result = whisperclient.transcribe_result(
+                                wav_path, self.cfg, timeout=20, prompt_extra=prompt)
+                        else:
+                            result = whisperclient.transcribe_result(wav_path, self.cfg, timeout=20)
+                    except (OSError, TimeoutError):
+                        continue  # server failure: keep confirmed text, retry later
                 finally:
                     self.inflight_since = None
-                raw = result.text
+                raw = result.text if result is not None else None
                 # Ehrlich bleiben: die HTTP-Anfrage selbst lässt sich
                 # clientseitig nicht abbrechen, sie läuft am Server so oder so
                 # durch, und das Finale wartet trotzdem dahinter. Hier wird
@@ -232,10 +245,11 @@ class PartialLoop(threading.Thread):
                 streamer = self.owner.streamer
                 show = self.cfg.pill_preview
                 if streamer is not None:
-                    streamer.update(text)
+                    streamer.update(text, audio_start=start_byte, audio_end=end_byte)
                     # Blase zeigt nur den noch nicht getippten Rest (oder nichts)
                     self.owner._state("recording",
-                                      text[len(streamer.typed):].strip() if show else "")
+                                      streamer.prev_partial[len(streamer.typed):].strip()
+                                      if show else "")
                 else:
                     self.owner._state("recording", text if show else "")
             finally:
