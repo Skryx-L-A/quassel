@@ -14,6 +14,7 @@ from quassel.itn import normalize
     ("three o'clock", "3:00"),
     ("fünf Euro", "5 €"),
     ("five dollars", "$5"),
+    ("five pounds", "5 pounds"),
     ("fünfter Mai", "5. Mai"),
     ("May fifth", "May 5"),
     ("eins nach dem anderen", "eins nach dem anderen"),

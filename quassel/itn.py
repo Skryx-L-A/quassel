@@ -59,7 +59,7 @@ def _number(word: str) -> int | None:
 
 
 _NUMBER_WORD = r"[A-Za-zÄÖÜäöüß]+(?:-[A-Za-z]+)?"
-_UNIT = re.compile(rf"(?<![\w@./-])(?P<n>{_NUMBER_WORD})\s+(?P<unit>Prozent|percent|Euro|euros?|Dollar|dollars?|Pfund|pounds?)(?!\w)", re.I)
+_UNIT = re.compile(rf"(?<![\w@./-])(?P<n>{_NUMBER_WORD})\s+(?P<unit>Prozent|percent|Euro|euros?|Dollar|dollars?)(?!\w)", re.I)
 _TIME_DE = re.compile(rf"(?<!\w)(?P<h>{_NUMBER_WORD})\s+Uhr(?:\s+(?P<m>{_NUMBER_WORD}))?(?!\w)", re.I)
 _TIME_EN = re.compile(rf"(?<!\w)(?P<h>{_NUMBER_WORD})\s+o'clock(?!\w)", re.I)
 _DATE_DE = re.compile(rf"(?<!\w)(?P<day>{_NUMBER_WORD})\s+(?P<month>{'|'.join(_MONTH_DE)})(?!\w)", re.I)
@@ -95,9 +95,7 @@ def _normalize_plain(text: str) -> str:
             return f"{n} %"
         if u.startswith("euro"):
             return f"{n} €"
-        if u.startswith("dollar"):
-            return f"${n}"
-        return f"£{n}"
+        return f"${n}"
 
     out = _DATE_DE.sub(de_date, text)
     out = _DATE_EN.sub(en_date, out)
