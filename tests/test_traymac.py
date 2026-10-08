@@ -15,7 +15,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PySide6 = pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication   # noqa: E402
 
-from quassel import traymac                   # noqa: E402
+from quassel import i18n, traymac             # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def german():
+    """Die Tests unten prüfen die deutschen Menütexte; die Sprache wird fest
+    gesetzt, damit sie nicht von der Systemsprache des Testrechners abhängen."""
+    i18n.set_language("de")
+    yield
+    i18n.set_language(None)
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +71,7 @@ def test_menu_actions_fire_callbacks(tray):
     actions = {a.text(): a for a in tray.menu.actions() if a.text()}
     actions["Kontrollzentrum öffnen"].trigger()
     assert tray.calls["open"] == 1
-    actions["Beenden"].trigger()
+    actions["Quassel beenden"].trigger()
     assert tray.calls["quit"] == 1
 
 
@@ -130,5 +139,51 @@ def test_toggle_action_fires_and_label_follows_mode(qapp):
         assert t.toggle_action.text() == "Ausschalten"
         t.set_mode("recording")             # an bleibt an
         assert t.toggle_action.text() == "Ausschalten"
+    finally:
+        t.hide()
+
+
+# ------------------------------------------------------- I123 zweisprachig
+def test_menu_is_english_when_app_language_is_english(qapp):
+    i18n.set_language("en")
+    t = traymac.start_tray(qapp, lambda: None, lambda: None,
+                           on_toggle=lambda: None, on_panic=lambda: None)
+    try:
+        labels = [a.text() for a in t.menu.actions() if a.text()]
+        assert labels == ["Ready", "Turn off", "Stop dictation now",
+                          "Open Control Center", "Quit Quassel"]
+        t.set_mode("recording")
+        assert t.status_action.text() == "Recording"
+        t.set_mode("off")
+        assert t.toggle_action.text() == "Turn on"
+    finally:
+        t.hide()
+
+
+def test_no_german_left_in_english_menu(qapp):
+    i18n.set_language("en")
+    t = traymac.start_tray(qapp, lambda: None, lambda: None,
+                           on_toggle=lambda: None, on_panic=lambda: None)
+    try:
+        for mode in ("ready", "recording", "transcribing", "done", "error", "off"):
+            t.set_mode(mode)
+            for a in t.menu.actions():
+                assert not any(w in a.text() for w in
+                               ("Bereit", "Aufnahme", "Beenden", "Aus", "Fehler"))
+    finally:
+        t.hide()
+
+
+def test_retranslate_switches_menu_language(qapp):
+    t = traymac.start_tray(qapp, lambda: None, lambda: None,
+                           on_toggle=lambda: None, on_panic=lambda: None)
+    try:
+        t.set_mode("off")
+        assert t.status_action.text() == "Aus"
+        i18n.set_language("en")
+        t.retranslate()
+        labels = [a.text() for a in t.menu.actions() if a.text()]
+        assert labels == ["Off", "Turn on", "Stop dictation now",
+                          "Open Control Center", "Quit Quassel"]
     finally:
         t.hide()

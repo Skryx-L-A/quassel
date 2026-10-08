@@ -28,6 +28,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- The macOS menu bar menu is now in English or German, following the app
+  language, and switches right away when you change the language in the
+  Control Center. It used to be German only ("Bereit", "Ausschalten",
+  "Beenden"). The last item is now called "Quit Quassel".
 - On macOS, Quassel now follows the language you picked in System Settings when
   the app language is set to "Automatic". Started from the Finder or at login,
   it used to fall back to English even on a German system, because only the
