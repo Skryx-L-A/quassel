@@ -15,6 +15,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- A command-line client can show Quassel's local status, manage the dictionary
+  and installed speech-model selection, transcribe an existing file, and safely
+  request the Linux service toggle or emergency stop. It never starts a
+  microphone recording or downloads a model unless `--download` is explicit.
+- Quassel can now be used as a local stdio MCP server for file transcription,
+  dictionary management, and status. Dictation history is not exposed unless
+  it is explicitly enabled in the MCP configuration.
+- File transcription now returns source-relative timestamped segments when the
+  local speech server provides them. The command line can write SRT or WebVTT,
+  including for long files split into processing chunks, and file-processing
+  callers can show progress or cancel safely.
 - macOS: when Secure Input is on (a password field, or Secure Keyboard Entry
   in Terminal), the system hides every key from Quassel and the hotkey does
   nothing. The pill now says so for a few seconds when it starts, and the menu

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Quassel command line client; unlike quassel-type it opens no GUI.
+set -eu
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY="$($HERE/bin/quassel-python "$HERE/.venv/bin/python3" python3.13 python3.12 python3.11 python3.10 python3)"
+cd "$HERE"
+exec "$PY" -m quassel "$@"
