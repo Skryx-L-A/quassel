@@ -15,6 +15,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Control Center, AI page: a "Clean up dictation" section. It is off by
+  default; the levels are Off, Light (fillers and repeats, no AI), Medium and
+  Strong (with the local AI). It explains that Quassel inserts your dictation as
+  spoken whenever the cleanup fails or would change numbers, names, links or
+  the meaning. "Raw text back" puts the unedited text of your last dictation on
+  the clipboard; Quassel keeps that text only in memory, never on disk, and
+  never types it into a window on its own.
 - The first-start window now walks you through setup in five short steps you
   can skip at any time: the hotkey, the permissions Quassel needs (on macOS
   with what is still missing and a button to the right System Settings page),

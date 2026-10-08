@@ -23,8 +23,8 @@ from PySide6.QtWidgets import (
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import (__version__, ai, aimodes, beep, config, dictprompt, i18n, stats, transcribe_file,
-               updatecheck, whisperclient)
+from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, i18n, stats,
+               transcribe_file, updatecheck, whisperclient)
 from .dictation import failure_text, mac_mic_permission
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
@@ -892,6 +892,31 @@ class Center(QMainWindow):
         self.ai_test_lbl.setWordWrap(True)
         g.addWidget(self.ai_test_lbl)
 
+        g = self.group(tr("sec_cleanup"), lay)
+        self.cleanup_on = QCheckBox(tr("cleanup_enable"))
+        self.cleanup_on.setChecked(self.cfg.cleanup_enabled)
+        self.cleanup_on.toggled.connect(self._on_cleanup_toggled)
+        g.addWidget(self.cleanup_on)
+        self.cleanup_level = self.guard(QComboBox())
+        for level in cleanup.LEVELS:
+            self.cleanup_level.addItem(tr("cleanup_level_" + level), level)
+        self.select_data(self.cleanup_level, self.cfg.cleanup_level)
+        self.cleanup_level.currentIndexChanged.connect(self.save_settings)
+        self.labeled_row(tr("cleanup_level"), self.cleanup_level, g)
+        self.cleanup_level.setEnabled(self.cfg.cleanup_enabled)
+        self.desc(tr("cleanup_hint"), g)
+        rrow = QHBoxLayout()
+        self.raw_back_btn = QPushButton(tr("raw_back"))
+        self.raw_back_btn.clicked.connect(self.on_raw_back)
+        rrow.addWidget(self.raw_back_btn)
+        rrow.addStretch(1)
+        g.addLayout(rrow)
+        self.desc(tr("raw_back_hint"), g)
+        self.raw_back_status = QLabel()
+        self.raw_back_status.setObjectName("desc")
+        self.raw_back_status.setWordWrap(True)
+        g.addWidget(self.raw_back_status)
+
         g = self.group(tr("sec_ai_modes"), lay)
         self.desc(tr("ai_modes_hint"), g)
         self.ai_modes_edit = QPlainTextEdit(config.ai_modes_text())
@@ -905,6 +930,29 @@ class Center(QMainWindow):
         if self.cfg.ai_enabled:
             QTimer.singleShot(200, self.on_ai_refresh)
         return scroll
+
+    def _on_cleanup_toggled(self, on):
+        """Einschalten mit Stufe „Aus" bewirkte nichts: dann „Leicht" wählen
+        (ohne KI, nur Füllwörter und Wiederholungen)."""
+        self.cleanup_level.setEnabled(on)
+        if on and self.cleanup_level.currentData() == "aus":
+            self.cleanup_level.blockSignals(True)
+            self.select_data(self.cleanup_level, "leicht")
+            self.cleanup_level.blockSignals(False)
+        self.save_settings()
+
+    def on_raw_back(self):
+        """Den Rohtext des letzten Diktats anfordern. Er liegt nur im Speicher
+        des Diktat-Dienstes: Windows/macOS über die App im selben Prozess,
+        Linux per SIGHUP an quasseld."""
+        if self.controller is not None and hasattr(self.controller, "raw_back"):
+            ok = self.controller.raw_back()
+        elif not (IS_WINDOWS or IS_MAC):
+            ok = sysctl("kill", "-s", "HUP", "quasseld").returncode == 0
+        else:
+            ok = False
+        self.raw_back_status.setText(tr("raw_back_sent") if ok
+                                     else tr("raw_back_unavailable"))
 
     def _save_ai_modes(self):
         config.ai_modes_save(self.ai_modes_edit.toPlainText())
@@ -1146,6 +1194,8 @@ class Center(QMainWindow):
             ("ai", "post_process"): str(self.ai_post.isChecked()).lower(),
             ("ai", "post_mode"): self.ai_mode.currentData() or "cleanup",
             ("ai", "voice_modes"): str(self.ai_voice.isChecked()).lower(),
+            ("cleanup", "enabled"): str(self.cleanup_on.isChecked()).lower(),
+            ("cleanup", "level"): self.cleanup_level.currentData() or "aus",
             ("ui", "language"): self.uilang.currentData(),
         }
         # Nur schreiben, wo es das Auswahlfeld überhaupt gibt. Auf Linux und
