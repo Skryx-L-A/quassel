@@ -15,6 +15,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- The optional text-cleanup benchmark can save case IDs and safety outcomes
+  without saving dictated or generated text, and now reports how often the
+  cleanup model was called.
 - A command-line client can show Quassel's local status, manage the dictionary
   and installed speech-model selection, transcribe an existing file, and safely
   request the Linux service toggle or emergency stop. It never starts a

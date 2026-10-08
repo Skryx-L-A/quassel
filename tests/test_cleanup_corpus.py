@@ -14,6 +14,7 @@ CASES = Path(__file__).parent / "data" / "cleanup_cases.jsonl"
 
 def test_cleanup_corpus(monkeypatch):
     cases = [json.loads(line) for line in CASES.read_text(encoding="utf-8").splitlines()]
+    assert [case["id"] for case in cases] == [f"C{i:03d}" for i in range(1, len(cases) + 1)]
     counts = Counter(case["language"] for case in cases)
     assert counts["de"] >= 100 and counts["en"] >= 100
     assert len({(case["language"], case["raw"]) for case in cases}) == len(cases)
