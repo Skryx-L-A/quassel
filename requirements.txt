@@ -11,3 +11,7 @@ winrt-Windows.Media.Control==3.2.1 ; sys_platform == "win32"
 # silero_vad.onnx model file, which Quassel does not ship or download; without either,
 # the built-in loudness threshold is used. Install by hand: pip install onnxruntime==1.22.0
 # onnxruntime==1.22.0
+# Optional, not installed by default: transcribe.cpp Python binding for the
+# experimental TranscribeCppPythonBackend (quassel/backends/transcribe_cpp_py.py).
+# transcribe-cpp==0.3.1
+# transcribe-cpp-native==0.3.1

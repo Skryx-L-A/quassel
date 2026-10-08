@@ -22,9 +22,15 @@ class TranscriptionOptions:
 
 @dataclass(frozen=True)
 class SpeechResult:
+    """``error`` ist eine kurze Fehlerklasse (nie Rohtext); bei Teilergebnissen
+    steht trotzdem ``text``. ``notes`` erklärt stille Anpassungen wie einen
+    Sprachrückfall. ``words`` trägt Wortzeiten, wenn das Backend sie liefert."""
     text: Optional[str]
     segments: Tuple[Any, ...] = ()
     language: Optional[str] = None
+    error: Optional[str] = None
+    notes: Tuple[str, ...] = ()
+    words: Tuple[Any, ...] = ()
 
 
 class SpeechBackend(Protocol):

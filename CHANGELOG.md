@@ -68,6 +68,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Quassel does not ship such a model: train or download one, then set `spotter_model`
   (and optionally `spotter_threshold`, `verify`) under `[wakeword]` in `config.ini`;
   `onnxruntime` must be installed. Without a model, the wake word works as before.
+- For measurements only (the app still uses its whisper server): the benchmark
+  script can run other speech models through transcribe.cpp, such as Cohere
+  Transcribe, Qwen3-ASR, Canary and Parakeet, and its report names the model
+  file, model family and quantisation. A build script and the pinned model
+  downloads with checksums are in `scripts/tcpp/`.
 
 ### Changed
 - AI-enhanced dictation now finishes processing before inserting text once.
