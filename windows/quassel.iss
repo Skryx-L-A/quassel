@@ -17,7 +17,7 @@ AppPublisherURL={#MyAppURL}
 DefaultDirName={autopf}\Quassel
 DefaultGroupName=Quassel
 DisableProgramGroupPage=yes
-OutputBaseFilename=Quassel-Setup-{#MyAppVersion}
+OutputBaseFilename=Quassel-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -130,4 +130,5 @@ begin
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
     if MsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO) = IDYES then
       DelTree(ExpandConstant('{localappdata}\Quassel'), True, True, True);
+      DelTree(ExpandConstant('{userappdata}\Quassel'), True, True, True);
 end;
