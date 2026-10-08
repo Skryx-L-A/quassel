@@ -65,7 +65,7 @@ STRINGS = {
                        "Nur im Freihand-Modus (Doppeltipp). Solange der Hotkey gehalten wird, kann das System getippten Text nicht sicher empfangen — gehaltenes Diktat fügt daher immer am Ende ein. Zeilenumbrüche kommen erst beim Beenden."),
     "streaming_mode": ("Mode", "Modus"),
     "streaming_stable": ("Stable words only (no corrections)", "Nur stabile Wörter (keine Korrekturen)"),
-    "streaming_aggressive": ("Type immediately, correct as needed", "Sofort tippen, bei Bedarf korrigieren"),
+    "streaming_aggressive": ("Confirmed words, shortest delay", "Bestätigte Wörter, kürzeste Verzögerung"),
     "sec_speech": ("Speech recognition", "Spracherkennung"),
     "language": ("Spoken language", "Gesprochene Sprache"),
     "lang_auto": ("Detect automatically", "Automatisch erkennen"),
@@ -180,8 +180,8 @@ STRINGS = {
     # --- Kommandos / Daemon ---
     "pressed_enter": ("Pressed Enter", "Eingabetaste gedrückt"),
     # --- Streaming-Modus "word" ---
-    "streaming_word": ("Word by word (corrects as needed)",
-                       "Wort für Wort (korrigiert bei Bedarf)"),
+    "streaming_word": ("Word by word (confirmed words only)",
+                       "Wort für Wort (nur bestätigte Wörter)"),
     # --- Wake-Word ---
     "nav_wakeword": ("Wake word", "Wake-Word"),
     "sec_wakeword": ("Wake word - hands-free (Beta)", "Wake-Word - Freisprechen (Beta)"),
