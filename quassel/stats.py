@@ -80,7 +80,7 @@ def _save(data):
     fsutil.atomic_write(_stats_path(), json.dumps(data, ensure_ascii=False, indent=2))
 
 
-def record(text, *, seconds=0.0, typing_wpm=40):
+def record(text, *, seconds=0.0, typing_wpm=None):
     """Verbucht ein abgeschlossenes Diktat.
 
     sessions += 1, words += Wortanzahl, chars += len(text).
@@ -89,6 +89,9 @@ def record(text, *, seconds=0.0, typing_wpm=40):
     Sprechdauer, sofern bekannt). Zudem wird ein Tagesbucket der LOKALEN
     Zeitzone fortgeschrieben. first_ts einmalig, last_ts immer.
     """
+    if typing_wpm is None:
+        typing_wpm = config._getint_range(config._read_parser(), "stats", "typing_wpm",
+                                           40, 10, 200)
     words = len(text.split())
     data = _load()
     now = time.time()

@@ -18,14 +18,14 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QObject, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QObject, QRectF, Qt, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter
 from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from .. import config, dictation, i18n, pill_qt, profile, whisperclient
+from .. import config, dictation, i18n, pill_qt, power, profile, selfheal, whisperclient
 from ..audio import wav_from_raw
 from ..mediacontrol import AudioDucker
 from ..i18n import tr
@@ -310,7 +310,7 @@ class WinDictation(dictation.DictationCore):
     def __init__(self, owner):
         self.owner = owner              # WinApp: Signal, enabled, Pumpe
         self.cfg = owner.cfg
-        self.rec = Recorder()
+        self.rec = Recorder(preroll_ms=getattr(self.cfg, "preroll_ms", 0))
         self.partial = None
         self.last_paste_len = 0
         self.streamer = None
@@ -391,6 +391,8 @@ class WinApp(QObject):
         self.cfg = config.Cfg()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
         whisperclient.STARTER = server.start          # Server-Start = Windows-Variante
+        original_recover = selfheal.recover
+        selfheal.recover = lambda: original_recover(restart=server.restart_owned)
         self.enabled = True
         self.core = WinDictation(self)
 
@@ -409,6 +411,9 @@ class WinApp(QObject):
             self.cfg.hold_min, self.cfg.double_window,
             is_enabled=lambda: self.enabled, log=dlog)
         self.pump.start()
+        self.power_events = power.PowerEvents(self._on_sleep, self._on_wake)
+        self.power_filter = _PowerMessageFilter(self.power_events)
+        app.installNativeEventFilter(self.power_filter)
 
         self.tray = QSystemTrayIcon(app_icon())
         self.tray.setToolTip("Quassel")
@@ -548,11 +553,23 @@ class WinApp(QObject):
                          name="quassel-panic").start()
 
     def quit(self):
+        self.app.removeNativeEventFilter(self.power_filter)
         self.pump.stop()
         self.runner.stop()
         self.hook.stop()
         server.stop()
         self.app.quit()
+
+    def _on_sleep(self):
+        self.pump.force_reset()
+        if self.core._busy():
+            threading.Thread(target=self.core.panic_stop, daemon=True,
+                             name="quassel-sleep-stop").start()
+
+    def _on_wake(self):
+        threading.Thread(target=selfheal.recover, daemon=True,
+                         name="quassel-wake-check").start()
+
 
     # --------------------------------------------------------------- Hotkey
     def reload_chord(self):
@@ -569,6 +586,21 @@ class WinApp(QObject):
         if state in ("done", "error"):
             QTimer.singleShot(3000, lambda: self.pill.set_mode(
                 "ready" if self.enabled else "off"))
+
+
+class _PowerMessageFilter(QAbstractNativeEventFilter):
+    """Forward WM_POWERBROADCAST from Qt's existing Windows message loop."""
+
+    def __init__(self, events):
+        super().__init__()
+        self.events = events
+
+    def nativeEventFilter(self, event_type, message):
+        if event_type == b"windows_generic_MSG":
+            from ctypes import wintypes
+            msg = wintypes.MSG.from_address(int(message))
+            self.events.windows_message(msg.message, msg.wParam)
+        return False, 0
 
 
 def _session_id():

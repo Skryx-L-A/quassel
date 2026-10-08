@@ -1536,6 +1536,7 @@ class _PermQuartz:
 def _perm_setup(monkeypatch, fake):
     notes = []
     panes = []
+    monkeypatch.setitem(hotkey_mac.tr.__globals__, "_lang", "de")
     monkeypatch.setitem(sys.modules, "Quartz", fake)
     monkeypatch.setattr(hotkey_mac, "_notify_mac", lambda text, title="Quassel": notes.append(text))
     monkeypatch.setattr(hotkey_mac, "_open_privacy_pane", lambda anchor="": panes.append(anchor))
@@ -1566,6 +1567,15 @@ def test_c2_both_missing_notifies_per_grant(monkeypatch):
     assert len(notes) == 2
     assert "Eingabeüberwachung" in notes[0] and "Bedienungshilfen" in notes[1]
     assert panes == ["Privacy_ListenEvent"]
+
+
+def test_permission_notice_uses_selected_chord_and_language(monkeypatch):
+    fake = _PermQuartz(listen=False, post=False)
+    notes, _ = _perm_setup(monkeypatch, fake)
+    monkeypatch.setattr(hotkey_mac, "tr", lambda key, **kw: key + str(kw))
+    check_permissions(chord_name="alt+meta")
+    assert "chord_alt_meta_mac" in notes[0]
+    assert notes[1] == "perm_accessibility{}"
 
 
 def test_c2_no_request_skips_prompts(monkeypatch):

@@ -7,6 +7,7 @@ WAV-Verpacken aus quassel.audio unverändert.
 import os
 import threading
 import time
+from collections import deque
 
 import sounddevice as sd
 
@@ -15,15 +16,40 @@ from ..state import RAW, RUNDIR
 
 
 def list_mics():
-    """[(geräte-index-str, beschreibung)] der Eingabegeräte."""
+    """[(stabiler Gerätename, Beschreibung)] der WASAPI-Eingabegeräte."""
     out = []
     try:
+        hosts = sd.query_hostapis()
+        seen = set()
         for i, dev in enumerate(sd.query_devices()):
-            if dev.get("max_input_channels", 0) > 0:
-                out.append((str(i), dev["name"]))
+            host = hosts[dev["hostapi"]]["name"]
+            if (host == "Windows WASAPI" and dev.get("max_input_channels", 0) > 0
+                    and dev["name"] not in seen):
+                out.append((dev["name"], dev["name"]))
+                seen.add(dev["name"])
     except Exception:  # noqa: BLE001 — Audio-Backend kaputt -> leere Liste
         pass
     return out
+
+
+def resolve_mic(mic):
+    """Resolve a saved name against the current device table at each start."""
+    if not mic or mic == "default":
+        try:
+            index = sd.default.device[0]
+            return index if index is not None and index >= 0 else None
+        except (AttributeError, IndexError, TypeError):
+            return None
+    devices = sd.query_devices()
+    if str(mic).isdigit():  # existing configurations saved an index
+        index = int(mic)
+        return index if index < len(devices) and devices[index].get("max_input_channels", 0) else None
+    hosts = sd.query_hostapis()
+    for index, dev in enumerate(devices):
+        if (dev.get("max_input_channels", 0) > 0 and dev["name"] == mic
+                and hosts[dev["hostapi"]]["name"] == "Windows WASAPI"):
+            return index
+    raise ValueError("configured microphone is unavailable")
 
 
 class Recorder:
@@ -37,7 +63,7 @@ class Recorder:
 
     stream_abandoned = False     # nur macOS kennt aufgegebene Streams
 
-    def __init__(self, raw_path=None):
+    def __init__(self, raw_path=None, preroll_ms=0, preroll_keep_s=3.0):
         raw_path = raw_path or RAW
         self._paths = [raw_path, RAW_B] if raw_path == RAW else [raw_path]
         self._slot = -1          # erster start() nimmt wieder die vorderste
@@ -47,6 +73,15 @@ class Recorder:
         self.stream = None
         self.outfile = None
         self.started = 0.0
+        self.preroll_ms = max(0, min(2000, int(preroll_ms or 0)))
+        self.preroll_keep_s = max(0.1, float(preroll_keep_s))
+        self._max_ring_bytes = RATE * SAMPLE_BYTES * self.preroll_ms // 1000
+        self._ring = deque()
+        self._ring_bytes = 0
+        self._device = None
+        self._capture_token = None
+        self._warm_timer = None
+        self._warm_generation = 0
         # Schützt nur den Besitzwechsel von Stream und Datei: der Not-Aus
         # kann aus einem anderen Thread in ein laufendes stop() fallen.
         self._lock = threading.Lock()
@@ -54,42 +89,107 @@ class Recorder:
     @property
     def active(self):
         stream = self.stream
-        return stream is not None and stream.active
+        return self.running_path is not None and stream is not None and stream.active
+
+    def _close_warm(self, generation=None):
+        with self._lock:
+            if generation is not None and generation != self._warm_generation:
+                return
+            if self.outfile is not None:
+                return
+            stream, self.stream = self.stream, None
+            self._capture_token = None
+            self._warm_timer = None
+            self._ring.clear()
+            self._ring_bytes = 0
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     def start(self, mic="default"):
         os.makedirs(RUNDIR, exist_ok=True)
         # Ein Vorgänger, den niemand beendet hat, wird zuerst abgeräumt: er
         # hielte sonst das Mikrofon und schriebe still weiter.
-        if self.stream is not None:
+        if self.running_path is not None:
             self.stop()
+        try:
+            device = resolve_mic(mic)
+        except Exception:  # noqa: BLE001 — verschwundenes oder defektes Gerät
+            return False
+        with self._lock:
+            timer, self._warm_timer = self._warm_timer, None
+            self._warm_generation += 1
+        if timer is not None:
+            timer.cancel()
+        if self.stream is not None and (not self.preroll_ms or device != self._device
+                                        or not self.stream.active):
+            self._close_warm()
         self._slot = (self._slot + 1) % len(self._paths)
         self.raw_path = self._paths[self._slot]
-        outfile = open(self.raw_path, "wb")
-        device = None
-        if mic and mic != "default":
-            try:
-                device = int(mic)
-            except ValueError:
-                device = mic
+        try:
+            outfile = open(self.raw_path, "wb")
+        except OSError:
+            return False
 
-        # Der Callback schreibt in SEINE Datei (lokale Referenz), nie in die
-        # einer späteren Aufnahme.
+        if self.stream is not None:
+            with self._lock:
+                for chunk in self._ring:
+                    outfile.write(chunk)
+                self._ring.clear()
+                self._ring_bytes = 0
+                self.outfile = outfile
+                self.running_path = self.raw_path
+                self.started = time.monotonic()
+            return True
+
+        token = object()
+        self._capture_token = token
+        # A retired stream cannot write into a later dictation.
         def callback(indata, _frames, _time, _status):
-            if not outfile.closed:
-                outfile.write(bytes(indata))
+            chunk = bytes(indata)
+            with self._lock:
+                if token is not self._capture_token:
+                    return
+                if self.outfile is not None:
+                    self.outfile.write(chunk)
+                elif self._max_ring_bytes:
+                    self._ring.append(chunk)
+                    self._ring_bytes += len(chunk)
+                    while self._ring_bytes > self._max_ring_bytes:
+                        first = self._ring.popleft()
+                        excess = self._ring_bytes - self._max_ring_bytes
+                        if len(first) > excess:
+                            self._ring.appendleft(first[excess:])
+                            self._ring_bytes -= excess
+                        else:
+                            self._ring_bytes -= len(first)
 
         try:
+            with self._lock:
+                self.outfile = outfile
+                self.running_path = self.raw_path
             stream = sd.RawInputStream(
                 samplerate=RATE, channels=1, dtype="int16",
                 device=device, callback=callback)
             stream.start()
         except Exception:  # noqa: BLE001 — z.B. kein Mikrofon
+            if "stream" in locals():
+                try:
+                    stream.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            with self._lock:
+                self.outfile = None
+                self.running_path = None
+                self._capture_token = None
             outfile.close()
             return False
         with self._lock:
-            self.outfile = outfile
             self.stream = stream
-            self.running_path = self.raw_path
+            self._device = device
             self.started = time.monotonic()
         return True
 
@@ -99,12 +199,9 @@ class Recorder:
         finish() die Bytes SEINES Diktats."""
         path = path or self.raw_path
         try:
-            outfile = self.outfile
-            if outfile is not None and path == self.running_path:
-                try:
-                    outfile.flush()
-                except ValueError:    # eben geschlossen
-                    pass
+            with self._lock:
+                if self.outfile is not None and path == self.running_path:
+                    self.outfile.flush()
             with open(path, "rb") as f:
                 data = f.read()
             return data[:len(data) - (len(data) % SAMPLE_BYTES)]
@@ -117,14 +214,18 @@ class Recorder:
         with self._lock:
             path = self.last_path = self.running_path or self.raw_path
             self.running_path = None
-            stream, self.stream = self.stream, None
             outfile, self.outfile = self.outfile, None
-        if stream is not None:
-            try:
-                stream.stop()
-                stream.close()
-            except Exception:  # noqa: BLE001
-                pass
+            keep_warm = self.preroll_ms > 0 and self.stream is not None
         if outfile is not None:
             outfile.close()
+        if keep_warm:
+            with self._lock:
+                self._warm_generation += 1
+                timer = threading.Timer(self.preroll_keep_s, self._close_warm,
+                                        args=(self._warm_generation,))
+                timer.daemon = True
+                self._warm_timer = timer
+            timer.start()
+        else:
+            self._close_warm()
         return path

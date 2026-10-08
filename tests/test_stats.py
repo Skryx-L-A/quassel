@@ -14,6 +14,18 @@ os.environ["QUASSEL_STATS_PATH"] = _TMP
 from quassel import stats
 
 
+def test_typing_rate_from_config_with_bounds(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.ini"
+    stats_file = tmp_path / "stats.json"
+    monkeypatch.setattr(stats.config, "CONFIG", str(config_file))
+    monkeypatch.setenv("QUASSEL_STATS_PATH", str(stats_file))
+    for value, expected in (("80", 80), ("9", 40), ("201", 40), ("oops", 40)):
+        config_file.write_text("[stats]\ntyping_wpm = " + value + "\n")
+        stats.record("one two")
+        assert stats.summary()["seconds_saved"] == 2 / expected * 60
+        stats.reset()
+
+
 def test_empty_summary_is_zero():
     assert not os.path.exists(_TMP)
     s = stats.summary()

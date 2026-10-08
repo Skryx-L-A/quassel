@@ -19,6 +19,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spoken when text cleanup or number formatting would change them.
 
 ### Added
+- Windows now supports the optional pre-roll setting: it keeps up to two seconds of recent microphone audio for the next dictation and closes the input after the short warm period.
 - Per-app profiles: the "While dictating" page has a button that creates the
   profiles file with the default profiles (terminal, mail, editor and so on) if
   it does not exist yet and opens it. An existing file is never overwritten.
@@ -159,6 +160,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- When a speech server responds but cannot transcribe, Quassel can restart its own profile server once and retry the recording. The macOS app accepts restart requests from its own dictation process.
+- Windows now stops dictation on sleep and checks the speech server after wake. Linux clears held shortcut keys after sleep so the next shortcut works.
+- Windows microphone choices now follow the selected WASAPI device by name when device indexes change.
+- macOS permission guidance now follows the app language and names the selected dictation shortcut. The microphone permission description is readable in English and German.
+- Typing time estimates use the optional `[stats] typing_wpm` setting (10–200 words per minute; default 40).
 - Turning off dictation on macOS now unloads Quassel's own speech server;
   turning it back on starts the server before dictation resumes.
 - Linux Bluetooth output gets a short silence lead-in before the recording

@@ -14,10 +14,13 @@ bleiben die Plattform-Anbindung für Linux und macOS und die beiden
 Hotkey-Schleifen.
 """
 import faulthandler
+import json
 import os
+import secrets
 import select
 import signal
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -25,7 +28,7 @@ import time
 from . import __version__
 # textproc und whisperclient nutzt dictation.py; hier mit importiert, damit
 # Tests sie über dieses Modul ersetzen können.
-from . import beep, config, dictation, i18n, profiles, textproc, whisperclient  # noqa: F401
+from . import beep, config, dictation, fsutil, i18n, profile, profiles, selfheal, textproc, whisperclient  # noqa: F401
 from .dictation import (  # noqa: F401 — Namen bleiben hier ansprechbar
     LEAD_TRIM_MS, LEAD_TRIM_NOVAD_BT_MS, PARTIAL_EVERY, PARTIAL_MAX_WAIT,
     PARTIAL_WINDOW, RESCUE_GLOB, RESCUE_KEEP, RESCUE_NAME, SERVER_WAIT_COLD,
@@ -61,6 +64,8 @@ DEAD_STALL = 30.0      # s: danach ist der Prozess verloren -> Selbstneustart
 # Beendigungscode für den Selbstneustart. Die Aufsicht in mac_app.py startet den
 # Daemon danach neu; 0 wäre ein normales Ende, 1 ein Fehler.
 RESTART_EXIT = 3
+SERVER_RESTART_REQUEST = os.path.join(RUNDIR, "server-restart.request")
+SERVER_RESTART_ACK = os.path.join(RUNDIR, "server-restart.ack")
 # Nachlauf; hier statt nur in dictation.py, damit Tests ihn abschalten können.
 TAIL_PAD_MS = dictation.TAIL_PAD_MS
 
@@ -77,6 +82,69 @@ def clip_copy(text):
     import importlib
     from . import platform as platform_mod
     return importlib.import_module(platform_mod._backend_module_name()).clip_copy(text)
+
+
+def _restart_linux_server():
+    """Restart only an active user unit bound to this process's profile."""
+    name = profile.name()
+    service = "quassel-server@%s.service" % name if name else "quassel-server.service"
+    try:
+        shown = subprocess.run(
+            ["systemctl", "--user", "show", "-p", "ActiveState", "-p", "Environment",
+             service], capture_output=True, text=True, timeout=3, check=False)
+        if shown.returncode != 0:
+            return False
+        values = dict(line.split("=", 1) for line in shown.stdout.splitlines() if "=" in line)
+        if values.get("ActiveState") != "active":
+            return False
+        assigned = [part.split("=", 1)[1] for part in values.get("Environment", "").split()
+                    if part.startswith("QUASSEL_PROFILE=")]
+        if (assigned[0] if assigned else "") != name:
+            return False
+        restarted = subprocess.run(["systemctl", "--user", "restart", service],
+                                   capture_output=True, timeout=8, check=False)
+        return restarted.returncode == 0 and _wait_functional_server()
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return False
+
+
+def _wait_functional_server(timeout=30):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if selfheal.functional_probe(timeout=2):
+            return True
+        time.sleep(1)
+    return False
+
+
+def _request_mac_server_restart(timeout=45):
+    """Ask the owning App process to restart its child, via this profile's run dir."""
+    os.makedirs(RUNDIR, exist_ok=True)
+    token = secrets.token_hex(16)
+    request = {"token": token, "daemon_pid": os.getpid(), "app_pid": os.getppid(),
+               "profile": profile.name(), "created": time.time()}
+    try:
+        fsutil.atomic_write(SERVER_RESTART_REQUEST, json.dumps(request), mode=0o600)
+    except OSError:
+        return False
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with open(SERVER_RESTART_ACK, encoding="utf-8") as source:
+                ack = json.load(source)
+            if ack.get("token") == token:
+                return ack.get("started") is True and _wait_functional_server()
+        except (OSError, ValueError):
+            pass
+        time.sleep(0.1)
+    return False
+
+
+def _install_server_recovery():
+    """Bind the shared one-retry path to this platform's owned server."""
+    original = selfheal.recover
+    restart = _request_mac_server_restart if sys.platform == "darwin" else _restart_linux_server
+    selfheal.recover = lambda: original(restart=restart)
 
 
 class Daemon(dictation.DictationCore):
@@ -101,6 +169,7 @@ class Daemon(dictation.DictationCore):
         self.wake = None             # WakeListener-Thread (nur wenn Wake-Word an)
         self._bt = False             # ist die aktive Aufnahmequelle Bluetooth?
         self._vad = False            # läuft serverseitig VAD? (dann Vorlauf nicht doppelt trimmen)
+        self._linux_reset = threading.Event()
         profiles.prewarm()           # Per-App-Profile: AppKit nicht erst im ersten Diktat laden
 
     # ------------------------------------------------- Plattform-Anbindung
@@ -188,6 +257,22 @@ class Daemon(dictation.DictationCore):
     def _reset_hotkey(self):
         if self._listener is not None:
             self._listener.force_reset()
+        elif hasattr(self, "_linux_reset"):
+            self._linux_reset.set()
+
+    def panic_stop(self, *_args):
+        # Sleep can arrive with keys held but no active recording. Reset the
+        # Linux key table even when the shared panic path has nothing to stop.
+        if sys.platform.startswith("linux"):
+            self._linux_reset.set()
+        return super().panic_stop(*_args)
+
+    def _consume_linux_reset(self, pressed):
+        if not self._linux_reset.is_set():
+            return False
+        self._linux_reset.clear()
+        pressed.clear()
+        return True
 
     def _action_running(self):
         if self._listener is not None and self._listener.current_action is not None:
@@ -248,7 +333,7 @@ class Daemon(dictation.DictationCore):
         from .hotkey_mac import MacHotkeyListener, check_permissions
         # Prüft Lesen (Eingabeüberwachung) UND Senden (Bedienungshilfen);
         # benachrichtigt je fehlender Freigabe, degradiert nur, stürzt nie ab.
-        missing = check_permissions()
+        missing = check_permissions(chord_name=self.cfg.chord)
         if missing:
             log("mac: fehlende TCC-Freigaben: " + ", ".join(missing))
         state_set("idle")
@@ -426,6 +511,9 @@ class Daemon(dictation.DictationCore):
 
         while True:
             now = time.monotonic()
+            if self._consume_linux_reset(pressed):
+                st = "idle"
+                pending = False
             if now - last_scan > RESCAN_EVERY:
                 gone = []
                 scan_devices(fds, on_close=gone.append)
@@ -626,6 +714,7 @@ def install_diagnostics():
 
 def main():
     install_diagnostics()
+    _install_server_recovery()
     log("quassel-daemon %s gestartet (%s, pid=%d)"
         % (__version__, time.strftime("%Y-%m-%d %H:%M:%S"), os.getpid()))
     try:
