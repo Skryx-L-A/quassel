@@ -33,6 +33,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- The text bubble above the pill (live preview, results, hints) now has its
+  dark background behind the text again and stays readable when the pill
+  itself is set almost transparent. The background was drawn as a small piece
+  in a corner, so the text stood on whatever was on your screen.
+- The pill is easier to read without relying on color or motion: each state
+  has its own shape (off, ready, transcribing, done, error), screen readers get
+  its name and current state, and with "Reduce motion" turned on in the system
+  settings the pill stops animating and shows the level as a calm bar.
 - On macOS the dictation service log (`~/Library/Logs/Quassel/daemon.log`) no
   longer grows without limit. From about 1 MB on it moves to `daemon.log.1`,
   the one before to `daemon.log.2`; older logs are dropped, so it takes up

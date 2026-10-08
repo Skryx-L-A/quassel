@@ -151,14 +151,24 @@ class LevelMeter:
         return max(0.0, min(1.0, (dbfs - cls.FLOOR_DB) / cls.RANGE_DB))
 
     REST = (0.30, 0.46, 0.38, 0.52, 0.34)
+    # Jeder Zustand hat eine eigene Form, nicht nur eine eigene Farbe (H117):
+    # aus = flache Punkte, bereit = ruhige Welle, Transkription = gleichmäßige
+    # Reihe, fertig = Anstieg, Fehler = ein einzelner hoher Balken („!").
+    SHAPES = {
+        "off": (0.18, 0.18, 0.18, 0.18, 0.18),
+        "ready": REST,
+        "transcribing": (0.5, 0.5, 0.5, 0.5, 0.5),
+        "done": (0.22, 0.36, 0.5, 0.64, 0.78),
+        "error": (0.18, 0.18, 0.9, 0.18, 0.18),
+    }
 
-    def wave_fracs(self, recording, now=None, calm=False):
-        """Balkenhöhen 0..1 für die Pille. Ruhend außerhalb der Aufnahme;
-        bei Aufnahme der echte Pegel, sobald er ankommt, eine flache Null bei
-        Stille; ohne Pegelquelle (älterer Daemon) die frühere Animation, bei
-        calm ruhend."""
-        if not recording:
-            return list(self.REST)
+    def wave_fracs(self, mode, now=None, calm=False):
+        """Balkenhöhen 0..1 für die Pille. Außerhalb der Aufnahme die Form des
+        Zustands; bei Aufnahme der echte Pegel, sobald er ankommt, eine flache
+        Null bei Stille; ohne Pegelquelle (älterer Daemon) die frühere
+        Animation, bei calm (reduzierte Bewegung) ruhend."""
+        if mode != "recording":
+            return list(self.SHAPES.get(mode, self.REST))
         if self.seen:
             if self.silent(now):
                 return [0.0] * self.BARS

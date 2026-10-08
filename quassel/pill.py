@@ -51,12 +51,18 @@ CSS_TEMPLATE = """
 }}
 .quassel-pill label {{ color: #E7F0EB; font-size: {font}px; }}
 .quassel-text {{
-    background-color: rgba(17, 32, 26, {op});
+    background-color: rgba(17, 32, 26, {op_text});
     border-radius: 12px;
     padding: 6px 14px;
 }}
 .quassel-text label {{ color: #BAC8C0; font-size: {font_small}px; }}
 """
+
+# Die Textblase bleibt lesbar, auch bei fast durchsichtiger Pille (Regler-Minimum 0,15).
+BUBBLE_MIN_ALPHA = 0.85
+STATUS_KEYS = {"off": "tray_off", "ready": "tray_ready",
+               "recording": "tray_recording", "transcribing": "tray_transcribing",
+               "done": "tray_done", "error": "tray_error"}
 
 # Direction B (Lokal): Pine als Akzent, gedämpftes Grau für "aus", Bernstein für Fehler.
 WAVE_PINE = (0.20, 0.76, 0.55)   # #34C18C
@@ -253,7 +259,8 @@ class Pill(Gtk.Application):
     def apply_style(self):
         s = max(0.6, min(2.0, self.cfg.pill_scale))
         op = max(0.15, min(1.0, self.cfg.pill_opacity))
-        css = CSS_TEMPLATE.format(op=op, pad_v=int(5 * s), pad_h=int(12 * s),
+        css = CSS_TEMPLATE.format(op=op, op_text=max(BUBBLE_MIN_ALPHA, op),
+                                  pad_v=int(5 * s), pad_h=int(12 * s),
                                   font=int(12 * s), font_small=int(11 * s))
         self.css.load_from_data(css.encode())
         if self.wave:
@@ -271,9 +278,31 @@ class Pill(Gtk.Application):
     def mic_silent(self):
         return self.mode == "recording" and self.meter.silent()
 
+    @staticmethod
+    def reduced_motion():
+        """GTK folgt der Desktop-Einstellung „Animationen" (GNOME
+        enable-animations, KDE-Animationsgeschwindigkeit)."""
+        settings = Gtk.Settings.get_default()
+        try:
+            return not settings.get_property("gtk-enable-animations")
+        except (AttributeError, TypeError):
+            return False
+
+    def update_accessible(self, extra=""):
+        """Zustand als Text für Bildschirmleser (sonst nur Farbe/Form)."""
+        if not self.win:
+            return
+        label = tr("app_name") + ": " + tr(STATUS_KEYS.get(self.mode, "tray_ready"))
+        if extra:
+            label += ": " + extra
+        try:
+            self.win.update_property([Gtk.AccessibleProperty.LABEL], [label])
+        except (AttributeError, TypeError):
+            pass
+
     def wave_state(self):
         """(Balkenhöhen, Farbe, flache Linie?) für die Wellenform."""
-        fracs = self.meter.wave_fracs(self.mode == "recording")
+        fracs = self.meter.wave_fracs(self.mode, calm=self.reduced_motion())
         if self.mic_silent():
             return fracs, WAVE_AMBER, True
         if self.mode == "off":
@@ -288,6 +317,7 @@ class Pill(Gtk.Application):
             self._hint_shown = False
         self.mode = mode
         self.text = text
+        self.update_accessible(text if mode in ("done", "error") else "")
         if mode in ("off", "ready"):
             self.textbox.set_visible(False)
         elif mode == "recording":
@@ -335,8 +365,10 @@ class Pill(Gtk.Application):
                 self._hint_shown = silent
                 if silent:
                     self.show_text(tr("mic_silent"), force=True)
+                    self.update_accessible(tr("mic_silent"))
                 else:
                     self.show_text(self.text, italic=True)
+                    self.update_accessible()
             self.wave.queue_draw()
         if self.mode in ("done", "error") and now > self.result_until:
             self.set_mode("ready" if self.on else "off")

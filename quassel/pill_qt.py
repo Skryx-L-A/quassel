@@ -70,6 +70,47 @@ WAVE_AMBER = QColor("#E9A93A")
 PILL_BG = QColor(17, 32, 26)
 C_LABEL = QColor("#E7F0EB")
 C_TEXT = QColor("#BAC8C0")
+# Die Textblase bleibt lesbar, auch wenn der Transparenz-Regler die Pille
+# selbst fast durchsichtig macht (Regler-Minimum 0,15).
+BUBBLE_MIN_ALPHA = 0.85
+# „Bewegung reduzieren" ändert sich selten; die Abfrage startet unter Linux
+# einen Prozess und wird deshalb zwischengespeichert.
+REDUCED_MOTION_CACHE_S = 30.0
+_reduced_motion_cache = {"ts": float("-inf"), "val": False}
+STATUS_KEYS = {"off": "tray_off", "ready": "tray_ready",
+               "recording": "tray_recording", "transcribing": "tray_transcribing",
+               "done": "tray_done", "error": "tray_error"}
+
+
+def _query_reduced_motion():
+    """Systemeinstellung „Bewegung reduzieren" (macOS), „Animationen
+    anzeigen" aus (Windows) bzw. GNOME enable-animations=false (Linux)."""
+    if sys.platform == "darwin":
+        from AppKit import NSWorkspace
+        return bool(NSWorkspace.sharedWorkspace()
+                    .accessibilityDisplayShouldReduceMotion())
+    if os.name == "nt":
+        import ctypes
+        on = ctypes.c_int(1)
+        SPI_GETCLIENTAREAANIMATION = 0x1042
+        ctypes.windll.user32.SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION, 0, ctypes.byref(on), 0)
+        return not on.value
+    out = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface",
+                          "enable-animations"], capture_output=True, text=True,
+                         timeout=2, check=False).stdout
+    return out.strip() == "false"
+
+
+def reduced_motion():
+    now = time.monotonic()
+    if now - _reduced_motion_cache["ts"] >= REDUCED_MOTION_CACHE_S:
+        try:
+            val = _query_reduced_motion()
+        except Exception:  # noqa: BLE001 — unbekannt heißt: normale Bewegung
+            val = False
+        _reduced_motion_cache.update(ts=now, val=val)
+    return _reduced_motion_cache["val"]
 
 
 def daemon_active():
@@ -132,6 +173,7 @@ class Pill(QWidget):
         self._fs_watcher = QFileSystemWatcher(self)
         self._fs_watcher.directoryChanged.connect(lambda _path: self.tick())
         self._watch_state_dir()
+        self._update_accessible()
         self.resize_to_cfg()
         self._update_cursor()
         self.setVisible(self.cfg.pill_enabled)
@@ -261,6 +303,7 @@ class Pill(QWidget):
             self.meter.reset()       # neue Aufnahme: Pegelquelle erst abwarten
         self.mode = mode
         self.text = text
+        self._update_accessible()
         if mode in ("done", "error"):
             self.result_until = time.monotonic() + RESULT_SHOW_S
         self._apply_tick_interval()
@@ -286,6 +329,9 @@ class Pill(QWidget):
         self._apply_tick_interval()
         if self.mode == "recording":
             self.meter.feed(level_read(st))
+            desc = self.accessible_status()
+            if desc != self.accessibleDescription():    # nur bei Änderung melden
+                self.setAccessibleDescription(desc)
             self.update()   # Pegel bzw. Atmungs-Animation
 
     # ----------------------------------------------------------- Zeichnen
@@ -332,7 +378,20 @@ class Pill(QWidget):
 
     def wave_fracs(self):
         """Höhen der fünf Balken (0..1), siehe LevelMeter.wave_fracs."""
-        return self.meter.wave_fracs(self.mode == "recording")
+        return self.meter.wave_fracs(self.mode, calm=reduced_motion())
+
+    def accessible_status(self):
+        """Zustand als Text für Bildschirmleser — die Pille vermittelt ihn
+        sonst nur über Farbe, Form und Bewegung."""
+        parts = [tr(STATUS_KEYS.get(self.mode, "tray_ready"))]
+        hint = self.bubble_text()
+        if hint:
+            parts.append(hint)
+        return ": ".join(parts)
+
+    def _update_accessible(self):
+        self.setAccessibleName(tr("app_name"))
+        self.setAccessibleDescription(self.accessible_status())
 
     def _draw_wave(self, p, x, cy, w, h):
         """Fünf Balken — bewegen sich nur bei Aufnahme, sonst ruhend."""
@@ -361,13 +420,18 @@ class Pill(QWidget):
         avail = QRectF(margin, int(6 * s), self.width() - 2 * margin,
                        self.height() - pill.height() - int(16 * s))
         flags = int(Qt.AlignHCenter | Qt.AlignBottom | Qt.TextWordWrap)
+        # Stift VOR boundingRect setzen: mit Qt.NoPen (von den Balken) liefert
+        # Qt ein leeres Rechteck, und die Blase landete links oben statt
+        # hinter dem Text — der Text stand dann ohne Grund auf dem Desktop.
+        p.setPen(C_TEXT)
         br = p.boundingRect(avail, flags, txt)
         pad = int(6 * s)
         box = br.adjusted(-2 * pad, -pad, 2 * pad, pad)
         path = QPainterPath()
         path.addRoundedRect(box, 10, 10)
-        p.fillPath(path, self._bg_color())
-        p.setPen(C_TEXT)
+        bg = QColor(PILL_BG)
+        bg.setAlphaF(max(BUBBLE_MIN_ALPHA, self._op()))
+        p.fillPath(path, bg)
         p.drawText(avail, flags, txt)
 
     # -------------------------------------------------------------- Klicks

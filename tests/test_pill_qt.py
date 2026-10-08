@@ -54,6 +54,14 @@ def isolated_cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "PARTWAV", str(run / "partial.wav"))
 
 
+@pytest.fixture(autouse=True)
+def normal_motion(monkeypatch):
+    """Systemeinstellung „Bewegung reduzieren" nie echt abfragen."""
+    monkeypatch.setattr(pill_qt, "_query_reduced_motion", lambda: False)
+    monkeypatch.setattr(pill_qt, "_reduced_motion_cache",
+                        {"ts": float("-inf"), "val": False})
+
+
 @pytest.fixture
 def pill(qapp, isolated_cfg):
     p = pill_qt.Pill()
@@ -605,3 +613,94 @@ def test_offscreen_render_silent_pill_is_amber_with_text(pill):
     pill.meter.quiet_since = time.monotonic()
     talking = pill.grab().toImage()
     assert _amber_pixels(talking) == 0
+
+
+
+# ------------------------------------------- H117 Barrierefreiheit Pille
+def test_every_state_has_its_own_shape(pill):
+    """Der Zustand darf nicht nur an der Farbe hängen (Farbsehschwäche)."""
+    shapes = {}
+    for mode in ("off", "ready", "transcribing", "done", "error"):
+        pill.set_mode(mode, "x")
+        shapes[mode] = tuple(pill.wave_fracs())
+    assert len(set(shapes.values())) == len(shapes)
+
+
+def test_pill_has_accessible_name_and_status(pill):
+    from quassel import i18n
+    i18n.set_language("en")
+    try:
+        pill.set_mode("ready")
+        assert pill.accessibleName() == "Quassel"
+        assert pill.accessibleDescription() == "Ready"
+        pill.set_mode("error", "Server not reachable")
+        assert pill.accessibleDescription() == "Error: Server not reachable"
+        pill.cfg.pill_preview = False
+        _recording(pill, level=0.0)
+        pill.meter.quiet_since -= 2.0
+        pill.tick()
+        assert pill.accessibleDescription().startswith("Recording: No sound")
+    finally:
+        i18n.set_language(None)
+
+
+def test_reduced_motion_stops_the_fallback_animation(pill, monkeypatch):
+    monkeypatch.setattr(pill_qt, "reduced_motion", lambda: True)
+    _recording(pill)                     # keine Pegelquelle: früher Sinus
+    first = pill.wave_fracs()
+    time.sleep(0.03)
+    assert pill.wave_fracs() == first == list(state.LevelMeter.REST)
+
+
+def test_reduced_motion_shows_a_calm_level(pill, monkeypatch):
+    monkeypatch.setattr(pill_qt, "reduced_motion", lambda: True)
+    _recording(pill, level=0.3)
+    fr = pill.wave_fracs()
+    assert fr[2] == max(fr) and fr[0] == fr[4]     # ruhiges, symmetrisches Profil
+
+
+def test_reduced_motion_query_is_cached(monkeypatch):
+    calls = []
+    monkeypatch.setattr(pill_qt, "_query_reduced_motion",
+                        lambda: calls.append(1) or True)
+    assert pill_qt.reduced_motion() is True
+    assert pill_qt.reduced_motion() is True
+    assert len(calls) == 1
+
+
+def test_reduced_motion_query_failure_means_normal_motion(monkeypatch):
+    def broken():
+        raise OSError("kein gsettings")
+    monkeypatch.setattr(pill_qt, "_query_reduced_motion", broken)
+    assert pill_qt.reduced_motion() is False
+
+
+def _bubble_box_rect(img, pill):
+    """Bereich der Textblase: dunkle Pillenfarbe oberhalb der Pille."""
+    bg = pill_qt.PILL_BG
+    xs, ys = [], []
+    for y in range(int(img.height() * 0.6)):
+        for x in range(img.width()):
+            c = img.pixelColor(x, y)
+            if c.alpha() > 150 and abs(c.red() - bg.red()) < 10 \
+                    and abs(c.green() - bg.green()) < 10 and abs(c.blue() - bg.blue()) < 10:
+                xs.append(x)
+                ys.append(y)
+    return (min(xs), min(ys), max(xs), max(ys)) if xs else None
+
+
+def test_offscreen_bubble_sits_behind_the_text_and_stays_opaque(pill):
+    """Früher lieferte boundingRect mit Qt.NoPen ein leeres Rechteck: die
+    Blase lag als Eckstück links oben, der Text stand ohne Grund auf dem
+    Desktop. Bei Transparenz 0,15 muss sie trotzdem deckend sein."""
+    config.save({("pill", "opacity"): 0.15, ("pill", "show_preview"): "true"})
+    pill.reload_cfg()
+    pill.set_mode("done", "Hallo Welt")
+    img = pill.grab().toImage()
+    box = _bubble_box_rect(img, pill)
+    assert box is not None
+    x0, y0, x1, y1 = box
+    assert x0 > 10 and x1 < img.width() - 10           # mittig, nicht in der Ecke
+    assert y0 > 10
+    alpha = img.pixelColor((x0 + x1) // 2, y0 + 2).alphaF()
+    assert alpha >= pill_qt.BUBBLE_MIN_ALPHA - 0.02
