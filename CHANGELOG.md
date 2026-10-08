@@ -15,6 +15,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Short hold-to-talk dictations get their text sooner. The live preview used
+  to send its first request after two seconds, and the speech engine works on
+  one request at a time: if you let go while that preview was being worked on,
+  the final transcription waited behind it, on a CPU for seconds. When you hold
+  the hotkey, the preview now starts only after four seconds; hands-free
+  dictation keeps it from the start.
 - Programmer dictation no longer rewrites ordinary prose. With the mode on, "Punkt gleich
   wichtig" became ".= wichtig" and "at" became "@" in every sentence. Code is now only
   formatted when you start the dictation with "Code:". If you relied on the mode being
@@ -28,6 +34,39 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Windows now runs the same dictation flow as Linux and macOS instead of its own
+  copy, which had drifted apart. Three Windows problems go away with it: a failed
+  dictation (speech engine not reachable or transcription error) is saved as a
+  WAV file and the message names it, as already promised for all platforms; the
+  wake word no longer records into the same file as a keyboard dictation, so a
+  dictation with the wake word switched on cannot come out mixed or empty; and a
+  new dictation started right after releasing the hotkey no longer stops itself
+  and transcribes the wrong audio. Windows also gets the start-tone trim of the
+  other platforms (160 ms instead of 120 ms) and a tray entry "Stop dictation
+  now" that ends a hanging dictation and drops its text.
+- Windows: with fast user switching or Remote Desktop, a second user's Quassel
+  no longer quits right after starting because it found the first user's
+  instance. The single-instance channel is now per user and session, and only
+  your own user account can use it to open the settings.
+- Your last dictation no longer stays on disk. On macOS and Windows the raw
+  recording, the WAV sent to the speech engine, the preview audio and the last
+  dictated text sat in Application Support or LOCALAPPDATA until the next
+  dictation, and with that in backups. The audio is now deleted as soon as the
+  text is inserted (or the dictation is canceled or too short), the wake-word
+  audio right after it is checked, and the text in the status file is blanked
+  a few seconds after the pill has shown it. A recording that had to be rescued
+  keeps only its rescue file; if even the rescue fails, the raw recording stays
+  as the last copy.
+- Linux: if your keyboard disappears while you hold the hotkey (a Bluetooth
+  keyboard falls asleep, a hub disconnects), the dictation now ends as if you
+  had let go, instead of recording forever. Keys that were held on the vanished
+  keyboard no longer count as pressed, so the hotkey works again right away.
+  Hold-to-talk recordings also stop after five minutes, like hands-free ones.
+- Linux: a dictation that hangs (the clipboard owner does not answer, the speech
+  engine stalls) no longer freezes Quassel for good. After a minute the log
+  says so and records where it is stuck, and the emergency stop now exists on
+  Linux too: `systemctl --user kill -s USR2 quasseld` ends the dictation, drops
+  its text and makes the hotkey usable again.
 - macOS can again copy history and file-transcription results without relying
   on the Linux-only `xclip` command.
 - Known Whisper subtitle and “for watching” silence artifacts are discarded;

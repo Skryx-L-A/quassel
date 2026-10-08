@@ -24,12 +24,35 @@ PARTWAV = os.path.join(RUNDIR, "partial.wav")
 STATE = os.path.join(RUNDIR, "state.json")
 
 
-def state_set(state, text=""):
+def _write(state, text, ts):
     os.makedirs(RUNDIR, exist_ok=True)
     tmp = STATE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"state": state, "text": text, "ts": time.time()}, f)
+        json.dump({"state": state, "text": text, "ts": ts}, f)
     os.replace(tmp, STATE)
+
+
+def state_set(state, text=""):
+    """Zustand schreiben. Rückgabe: der Zeitstempel als Kennung dieser
+    Meldung (für state_clear_text)."""
+    ts = time.time()
+    _write(state, text, ts)
+    return ts
+
+
+def state_clear_text(ts):
+    """Den Text einer angezeigten Meldung aus state.json entfernen (Audit A6:
+    das letzte Diktat bleibt sonst als Klartext auf der Platte und in Backups).
+    Nur, wenn seither nichts Neues gemeldet wurde; Zustand und Zeitstempel
+    bleiben, damit die Pille nichts neu zeichnet. True = geleert."""
+    st = state_read()
+    if st.get("ts") != ts or not st.get("text"):
+        return False
+    try:
+        _write(st.get("state", "idle"), "", ts)
+    except OSError:
+        return False
+    return True
 
 
 def state_read():
