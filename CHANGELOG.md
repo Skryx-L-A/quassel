@@ -46,6 +46,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- On macOS and Linux, a detected sleep event now cancels an active dictation;
+  waking checks the microphone selection and local speech server again.
 - macOS now shows a notification and a pill error if its dictation service
   crashes unexpectedly, with an option to turn dictation back on.
 - A failed transcription now checks whether the local speech server can

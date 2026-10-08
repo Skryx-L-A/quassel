@@ -29,7 +29,7 @@ import threading
 import time
 
 from . import (aimodes, beep, config, dictprompt, i18n, progmode, stats, textproc,
-               textreplace, vad, wakeword, whisperclient, selfheal)
+               textreplace, vad, wakeword, whisperclient, selfheal, power)
 from .audio import RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
@@ -392,6 +392,7 @@ class DictationCore:
         if not self.rec.start(self.cfg.mic):
             self._report_mic_missing()
             return False
+        power.install(self)
         if self.cfg.beep:
             beep.start()                 # aufsteigender Ton: jetzt sprechen
         self._bt = self._mic_is_bluetooth()
