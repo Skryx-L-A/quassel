@@ -37,8 +37,8 @@ timestamped segments returned by the local speech server. When an older server
 does not provide segment timestamps, Quassel emits plain text and warns on
 stderr instead of inventing timings. Long files are split into twelve-second
 chunks; segment times are normalized to the source file. The underlying API
-also accepts a progress callback and cancellation event. Missing speech server,
-ffmpeg, or unsupported file exits 1. Invalid commands exit 2; unavailable
+also accepts a progress callback and cancellation event. A missing speech server, a missing
+`ffmpeg` for a file that is not 16-bit WAV, or an unsupported file exits 1. Invalid commands exit 2; unavailable
 optional functions exit 5. Command results go to stdout; diagnostics go to
 stderr.
 

@@ -181,8 +181,8 @@ transcribed.
 
 Without this file nothing changes, and Quassel does not even look up which
 application is in front. Create it with the shipped examples using
-`quassel profiles init` (see [cli.md](cli.md)); `quassel profiles list` shows
-what was parsed and `quassel profiles path` prints the location.
+`profiles init` of the command-line client (see [cli.md](cli.md)); `profiles list`
+shows what was parsed and `profiles path` prints the location.
 
 Each profile is a section named `[profile:<name>]`. The first profile whose
 `match` fits the active application wins. A profile only changes what it names

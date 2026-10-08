@@ -57,7 +57,7 @@ Everything else stays on the machine:
 
 - The speech server listens only on `127.0.0.1`. Quassel talks to it without
   using a system proxy, so a corporate proxy never sees your audio.
-- Transcribing a file with `quassel transcribe` or the MCP tool sends the audio
+- Transcribing a file with the command-line client or the MCP tool sends the audio
   to that local server only. Non-WAV files are converted by a local `ffmpeg`;
   the temporary WAV is removed afterwards.
 - The MCP server speaks only over standard input and output with the program
