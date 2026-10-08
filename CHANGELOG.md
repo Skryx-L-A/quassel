@@ -14,6 +14,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Dictated questions and instruction-override examples now stay exactly as
+  spoken when text cleanup or number formatting would change them.
+
 ### Added
 - The optional text-cleanup benchmark can save case IDs and safety outcomes
   without saving dictated or generated text, and now reports how often the
