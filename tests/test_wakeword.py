@@ -86,6 +86,41 @@ def test_match_tolerant_spacing_and_case():
     assert rem == "mach mal", rem
 
 
+def test_match_sound_alikes_of_the_made_up_word():
+    # Audit G97: das Kunstwort wird so geschrieben, wie es klingt.
+    for heard in ("Hey Kassel", "Hey Castle", "He Quassel", "Hey Kwassel",
+                  "Hey, Quasel", "Hey Quassl"):
+        assert match_wake(heard + ", mach das", "Hey Quassel") == (True, "mach das"), heard
+
+
+def test_match_joined_and_split_words():
+    assert match_wake("Heykassel mach das", "Hey Quassel") == (True, "mach das")
+    assert match_wake("Hey Quas sel mach das", "Hey Quassel") == (True, "mach das")
+
+
+def test_match_allows_one_filler_word_in_front():
+    assert match_wake("Ok, hey Quassel, schreib das", "Hey Quassel") == (True, "schreib das")
+    assert match_wake("Ähm Hey Quassel", "Hey Quassel") == (True, "")
+    # ein inhaltliches Wort davor ist kein Fuellwort
+    assert match_wake("Schreibe hey Quassel", "Hey Quassel")[0] is False
+
+
+def test_match_rejects_other_words_that_only_share_letters():
+    for heard in ("Hey Russel mach das", "Kassel", "hey",
+                  "heyquasselfoo bar", "Hey Mustermann"):
+        assert match_wake(heard, "Hey Quassel")[0] is False, heard
+
+
+def test_match_short_phrases_are_stricter():
+    assert match_wake("Max, mach das", "Max") == (True, "mach das")
+    assert match_wake("Mach das", "Max")[0] is False
+
+
+def test_match_remainder_keeps_the_original_text_after_a_joined_word():
+    assert match_wake("Heykassel: Mach DAS, bitte.", "Hey Quassel") \
+        == (True, "Mach DAS, bitte.")
+
+
 # ----------------------------------------------------------------- run_once
 def test_run_once_disabled_no_insert():
     cfg = FakeCfg(enabled=False)
@@ -169,6 +204,12 @@ if __name__ == "__main__":
         test_match_no_match,
         test_match_fuzzy_mishearing,
         test_match_tolerant_spacing_and_case,
+        test_match_sound_alikes_of_the_made_up_word,
+        test_match_joined_and_split_words,
+        test_match_allows_one_filler_word_in_front,
+        test_match_rejects_other_words_that_only_share_letters,
+        test_match_short_phrases_are_stricter,
+        test_match_remainder_keeps_the_original_text_after_a_joined_word,
         test_run_once_disabled_no_insert,
         test_run_once_busy_no_insert,
         test_run_once_one_shot,

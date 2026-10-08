@@ -49,15 +49,64 @@ def _similar(a, b):
     return difflib.SequenceMatcher(None, a, b).ratio()
 
 
+# Lautform fuer den Vergleich: Whisper schreibt das Kunstwort, wie es klingt
+# ("Quassel" -> "Kassel", "Castle", "Kwassel", "Quasel"). Beide Seiten werden auf
+# eine grobe deutsch/englische Lautschrift gebracht, damit solche Schreibweisen
+# naeher beieinander liegen als ihre Buchstaben.
+_SOUND_SUBS = (
+    ("ß", "ss"), ("ä", "e"), ("ö", "o"), ("ü", "u"), ("sch", "s"), ("ph", "f"),
+    ("qu", "kw"), ("q", "k"), ("ck", "k"), ("ch", "k"), ("c", "k"), ("v", "f"),
+    ("z", "ts"), ("x", "ks"), ("ey", "ai"), ("ay", "ai"), ("ei", "ai"),
+    ("ai", "ai"), ("y", "i"), ("w", "v"),
+)
+_DOUBLES = re.compile(r"(.)\1+")
+
+
+def _sound(text):
+    t = text
+    for a, b in _SOUND_SUBS:
+        t = t.replace(a, b)
+    return _DOUBLES.sub(r"\1", t)
+
+
+def _score(heard, phrase):
+    """Aehnlichkeit (0..1) zweier normalisierter Texte.
+
+    Gleich viele Woerter: das Beste aus Schreibweise und Lautform, aber das
+    kennzeichnende (laengste) Phrasenwort muss fuer sich noch passen -- ein
+    kurzes, genau getroffenes Wort ("hey") darf kein anderes tragen.
+    Anderes Wortzahl (zusammengezogen "heykassel" fuer "hey kassel", oder
+    auseinandergezogen): Lautform ohne Leerzeichen, nur bei gleicher Laenge +-1,
+    sonst wuerde "heyquasselfoo" die Phrase "hey quassel" treffen."""
+    hw, pw = heard.split(" "), phrase.split(" ")
+    snd_h, snd_p = _sound(heard), _sound(phrase)
+    if len(hw) == len(pw):
+        key = max(range(len(pw)), key=lambda i: len(pw[i]))
+        if _similar(_sound(hw[key]), _sound(pw[key])) < 0.6:
+            return 0.0
+        return max(_similar(heard, phrase), _similar(snd_h, snd_p))
+    jh, jp = snd_h.replace(" ", ""), snd_p.replace(" ", "")
+    if abs(len(jh) - len(jp)) <= 1:
+        return _similar(jh, jp)
+    return 0.0
+
+
+# Vorsilben, die Whisper vor die Phrase setzt, ohne dass der Sprecher sie meinte.
+_FILLERS = frozenset(("ok", "okay", "ja", "äh", "ähm", "also", "und", "so", "hm",
+                      "hmm", "eh", "uh", "um", "na", "oh", "naja"))
+
+
 def match_wake(transcript, phrase, fuzzy=WAKE_FUZZY):
     """Prueft, ob ``transcript`` mit ``phrase`` beginnt (exakt ODER aehnlich).
 
     Rueckgabe ``(matched, remainder)``:
       * ``matched`` ist True, wenn die ersten Woerter des Transkripts die Phrase
-        sind -- entweder exakt als Wortfolge, oder unscharf (Aehnlichkeit
-        >= ``fuzzy``), damit Whisper-Verhoerer des Kunstworts ("Hey Kassel" statt
-        "Hey Quassel") trotzdem ausloesen. "hey quassel" passt auf
-        "Hey Quassel, schreib das", aber nicht auf "heyquasselfoo".
+        sind -- exakt als Wortfolge oder unscharf (Aehnlichkeit >= ``fuzzy``),
+        damit Whisper-Verhoerer des Kunstworts ("Hey Kassel", "Hey Castle",
+        "Heykassel") trotzdem ausloesen. Verglichen wird auch in Lautform; ein
+        einzelnes Fuellwort davor ("Ok, hey Quassel") ist erlaubt. "hey quassel"
+        passt auf "Hey Quassel, schreib das", aber nicht auf "heyquasselfoo".
+        Sehr kurze Phrasen (bis 6 Zeichen) verlangen mindestens 0,9.
       * ``remainder`` ist der nachgestellte Teil des URSPRUENGLICHEN Transkripts
         nach den Phrasen-Woertern, von fuehrenden Satzzeichen/Leerraum befreit.
         Ist der Transkript nur die Phrase, ist ``remainder`` == "".
@@ -70,23 +119,33 @@ def match_wake(transcript, phrase, fuzzy=WAKE_FUZZY):
     norm_tr = normalize(transcript)
     if not norm_phrase or not norm_tr:
         return (False, "")
+    if len(norm_phrase) <= 6:
+        fuzzy = max(fuzzy, 0.9)
 
-    phrase_words = norm_phrase.split(" ")
+    n = len(norm_phrase.split(" "))
     tr_words = norm_tr.split(" ")
-    n = len(phrase_words)
+    offsets = (0, 1) if tr_words[0] in _FILLERS and len(tr_words) > 1 else (0,)
 
-    if len(tr_words) < n:
+    # Kandidaten: so viele Woerter wie die Phrase, eines weniger (zusammengezogen)
+    # oder eines mehr (auseinandergezogen); Gleichstand gewinnt der frueheste.
+    best, best_words = 0.0, None
+    for off in offsets:
+        for k in (n, n - 1, n + 1):
+            if k < 1 or off + k > len(tr_words):
+                continue
+            head = " ".join(tr_words[off:off + k])
+            score = 1.0 if head == norm_phrase else _score(head, norm_phrase)
+            if score > best:
+                best, best_words = score, off + k
+    if best_words is None and len(tr_words) < n:
         # Kuerzer als die Phrase: ganzer Transkript vs. Phrase unscharf.
-        if _similar(" ".join(tr_words), norm_phrase) >= fuzzy:
+        if _score(norm_tr, norm_phrase) >= fuzzy:
             return (True, "")
         return (False, "")
-
-    head = " ".join(tr_words[:n])
-    if tr_words[:n] == phrase_words or _similar(head, norm_phrase) >= fuzzy:
+    if best_words is not None and best >= fuzzy:
         # Treffer. Rest aus dem ORIGINAL-Transkript schneiden, damit echte
         # Schreibweise/Interpunktion erhalten bleibt.
-        remainder = _original_remainder(transcript, n)
-        return (True, remainder)
+        return (True, _original_remainder(transcript, best_words))
     return (False, "")
 
 

@@ -129,6 +129,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   user is speaking"; now they do not, and a click during the pause after a sentence no
   longer keeps the recording open. The loudness threshold follows the room's background
   noise and works the same on Linux, macOS and Windows.
+- The wake word is recognised more reliably when the speech engine writes the made-up word
+  as it sounds. "Hey Castle", "He Quassel", "Heykassel" or "Ok, hey Quassel" now
+  count, while similar-looking but different words ("Hey Russel") and very short
+  phrases are held to a stricter match.
 
 ### Security
 - The dictation history file (`history.jsonl`) is now readable by you only.
