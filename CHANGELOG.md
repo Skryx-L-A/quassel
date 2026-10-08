@@ -40,6 +40,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- The Control Center works better with screen readers and the keyboard: every
+  field has a name, labels are linked to their fields (clicking a label moves
+  the focus there), the keyboard focus is visible in the sidebar and on the
+  main button, and the grey help texts and the amber beta warning now have
+  enough contrast in light and dark mode. The beta warning used to reach only
+  about 2:1 on a light background.
 - Moving the pill size or transparency slider now saves once when you let go
   (or after a short pause when you use the arrow keys), and typing an AI model
   name saves after you stop typing. Each step used to rewrite the settings file

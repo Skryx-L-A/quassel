@@ -163,3 +163,70 @@ def test_remote_ai_endpoint_is_confirmed_once(qapp, isolated_cfg, saves, monkeyp
         assert len(saves) == 3
     finally:
         c.close()
+
+
+# ------------------------------------------- H116 Barrierefreiheit Zentrum
+def test_every_input_has_an_accessible_name(qapp, isolated_cfg):
+    from PySide6.QtWidgets import (QComboBox, QLineEdit, QListWidget,
+                                   QPlainTextEdit, QSlider)
+    c = center.Center()
+    try:
+        unnamed = []
+        for cls in (QComboBox, QSlider, QLineEdit, QPlainTextEdit, QListWidget):
+            for w in c.findChildren(cls):
+                if isinstance(w, QLineEdit) and isinstance(w.parent(), QComboBox):
+                    continue                 # Editierfeld innerhalb eines Dropdowns
+                if not w.accessibleName():
+                    unnamed.append((cls.__name__, w.objectName()))
+        assert unnamed == []
+    finally:
+        c.close()
+
+
+def test_labeled_rows_link_label_and_field(qapp, isolated_cfg):
+    from PySide6.QtWidgets import QLabel
+    c = center.Center()
+    try:
+        buddies = {lbl.buddy() for lbl in c.findChildren(QLabel) if lbl.buddy()}
+        for w in (c.pill_size, c.pill_opacity, c.mute_combo, c.lang, c.uilang):
+            assert w in buddies
+    finally:
+        c.close()
+
+
+def test_readable_reaches_aa_contrast():
+    from PySide6.QtGui import QColor
+    amber = QColor("#E9A93A")
+    assert center.contrast_ratio(amber, "#FFFFFF") < 2.5          # Ausgangslage
+    for bg in ("#FFFFFF", "#ECECEC", "#1E1E1E", "#2B2B2B"):
+        assert center.contrast_ratio(center.readable(amber, bg), bg) >= 4.5
+    # ausreichend kontrastreich: Farbe bleibt unverändert
+    assert center.readable(QColor("#000000"), "#FFFFFF").name() == "#000000"
+
+
+@pytest.mark.parametrize("window,text", [("#ECECEC", "#000000"), ("#1E1E1E", "#FFFFFF")])
+def test_descriptions_and_beta_warning_meet_contrast(qapp, isolated_cfg, window, text):
+    from PySide6.QtGui import QColor, QPalette
+    old = qapp.palette()
+    pal = QPalette(old)
+    pal.setColor(QPalette.Window, QColor(window))
+    pal.setColor(QPalette.WindowText, QColor(text))
+    qapp.setPalette(pal)
+    try:
+        c = center.Center()
+        try:
+            assert center.contrast_ratio(c._muted, window) >= 4.5
+            assert center.contrast_ratio(c._warn, window) >= 4.5
+            assert f"color: {c._muted}" in c.styleSheet()
+        finally:
+            c.close()
+    finally:
+        qapp.setPalette(old)
+
+
+def test_primary_button_shows_keyboard_focus(qapp, isolated_cfg):
+    c = center.Center()
+    try:
+        assert "QPushButton:focus" in c.toggle_btn.styleSheet()
+    finally:
+        c.close()

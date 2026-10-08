@@ -137,6 +137,7 @@ STRINGS = {
                        "ffmpeg fehlt, ohne ffmpeg keine Aufnahme.\nInstallieren: brew install ffmpeg"),
     "settings": ("Settings", "Einstellungen"),
     "quit": ("Quit Quassel", "Quassel beenden"),
+    "nav_sections": ("Sections", "Bereiche"),
     "nav_general": ("General", "Allgemein"),
     "nav_speech": ("Speech", "Spracherkennung"),
     "nav_dict": ("Dictionary", "Wörterbuch"),

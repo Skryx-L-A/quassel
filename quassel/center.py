@@ -92,8 +92,45 @@ QListWidget#sidebar::item:selected {{
     background: {accent};
     color: {accent_text};
 }}
-QLabel#desc {{ color: palette(placeholder-text); }}
+QListWidget#sidebar::item:selected:focus {{
+    border: 2px solid {focus};
+}}
+QLabel#desc {{ color: {muted}; }}
 """
+
+# Mindestkontrast für Text (WCAG 2.1 AA, normaler Text).
+MIN_CONTRAST = 4.5
+
+
+def _luminance(c):
+    def lin(v):
+        v /= 255.0
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    return 0.2126 * lin(c.red()) + 0.7152 * lin(c.green()) + 0.0722 * lin(c.blue())
+
+
+def contrast_ratio(a, b):
+    la, lb = sorted((_luminance(QColor(a)), _luminance(QColor(b))), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _mix(a, b, t):
+    a, b = QColor(a), QColor(b)
+    return QColor(round(a.red() + (b.red() - a.red()) * t),
+                  round(a.green() + (b.green() - a.green()) * t),
+                  round(a.blue() + (b.blue() - a.blue()) * t))
+
+
+def readable(fg, bg, min_ratio=MIN_CONTRAST):
+    """fg so weit Richtung Schwarz bzw. Weiß schieben (je nachdem, was auf bg
+    mehr Kontrast gibt), bis der Mindestkontrast erreicht ist. Hält Farbton
+    und Zurückhaltung, wo es geht, statt pauschal auf Schwarz zu gehen."""
+    end = QColor("#000000") if _luminance(QColor(bg)) > 0.18 else QColor("#FFFFFF")
+    for i in range(21):
+        c = _mix(fg, end, i / 20)
+        if contrast_ratio(c, bg) >= min_ratio:
+            return c
+    return end
 
 
 IS_WINDOWS = os.name == "nt"
@@ -314,10 +351,16 @@ class Center(QMainWindow):
         return lbl
 
     def labeled_row(self, label, widget, layout):
+        """Beschriftung und Feld verknüpfen: Bildschirmleser nennen den Text,
+        ein Klick auf die Beschriftung setzt den Fokus ins Feld."""
         row = QHBoxLayout()
-        row.addWidget(QLabel(label))
+        lbl = QLabel(label)
+        lbl.setBuddy(widget)
+        widget.setAccessibleName(label)
+        row.addWidget(lbl)
         row.addWidget(widget, 1)
         layout.addLayout(row)
+        return lbl
 
     def save_soon(self, *_a):
         """Speichern nach kurzer Pause — gedrückt gehaltene Pfeiltasten oder
@@ -372,9 +415,16 @@ class Center(QMainWindow):
             self._accent_text = "#FFFFFF"
             self._accent_hover = "#0B5238"
             accent_soft = "rgba(15,107,79,0.12)"
+        # Beschreibungstexte und die Beta-Warnung (Bernstein #E9A93A) erreichen
+        # auf hellem Grund nur ~2:1; beide werden je Thema auf >= 4,5:1 gebracht.
+        window = self.palette().color(QPalette.Window)
+        text = self.palette().color(QPalette.WindowText)
+        self._muted = readable(_mix(text, window, 0.4), window).name()
+        self._warn = readable(QColor("#E9A93A"), window).name()
+        self._focus = text.name()
         self.setStyleSheet(STYLE.format(
             accent=self._accent, accent_text=self._accent_text,
-            accent_soft=accent_soft))
+            accent_soft=accent_soft, muted=self._muted, focus=self._focus))
 
         root = QWidget()
         outer = QHBoxLayout(root)
@@ -404,6 +454,7 @@ class Center(QMainWindow):
 
         self.sidebar = QListWidget()
         self.sidebar.setObjectName("sidebar")
+        self.sidebar.setAccessibleName(tr("nav_sections"))
         self.stack = QStackedWidget()
         lv.addWidget(self.sidebar, 1)
         outer.addWidget(left)
@@ -442,7 +493,8 @@ class Center(QMainWindow):
         self.toggle_btn.setStyleSheet(
             f"QPushButton{{background:{self._accent};color:{self._accent_text};"
             f"font-weight:600;padding:7px 26px;border:none;border-radius:9px;}}"
-            f"QPushButton:hover{{background:{self._accent_hover};}}")
+            f"QPushButton:hover{{background:{self._accent_hover};}}"
+            f"QPushButton:focus{{border:2px solid {self._focus};}}")
         self.toggle_btn.clicked.connect(self.on_toggle)
         if (IS_WINDOWS or IS_MAC) and self.controller is None:
             self.toggle_btn.hide()      # ohne Tray-/Menüleisten-App nichts zu schalten
@@ -490,6 +542,7 @@ class Center(QMainWindow):
             self.chord.addItem(tr(config.CHORD_LABEL_KEYS[key]), key)
         self.chord.setCurrentIndex(list(config.CHORDS).index(self.cfg.chord))
         self.chord.currentIndexChanged.connect(self.save_settings)
+        self.chord.setAccessibleName(tr("sec_hotkey"))
         g.addWidget(self.chord)
 
         g = self.group(tr("sec_dictating"), lay)
@@ -585,6 +638,7 @@ class Center(QMainWindow):
             self.model.addItem(m, m)
         self.model.setCurrentIndex(MODELS.index(current))
         self.model.currentIndexChanged.connect(self.on_model)
+        self.model.setAccessibleName(tr("model"))
         g.addWidget(self.model)
         self.progress = QProgressBar()
         self.progress.setVisible(False)
@@ -598,6 +652,7 @@ class Center(QMainWindow):
             if name == self.cfg.mic:
                 self.mic.setCurrentIndex(self.mic.count() - 1)
         self.mic.currentIndexChanged.connect(self.save_settings)
+        self.mic.setAccessibleName(tr("sec_mic"))
         g.addWidget(self.mic)
         test = QPushButton(tr("mic_test"))
         test.clicked.connect(self.on_mictest)
@@ -609,7 +664,7 @@ class Center(QMainWindow):
         # --- Wake-Word (Freisprechen, opt-in, BETA) — Beta-Funktionen ganz unten ---
         g = self.group(tr("sec_wakeword"), lay)
         beta = self.desc(tr("wakeword_beta"), g)
-        beta.setStyleSheet("color:#E9A93A;font-weight:600;")   # Bernstein = Beta-Warnung
+        beta.setStyleSheet(f"color:{self._warn};font-weight:600;")   # Bernstein = Beta-Warnung
         self.wake_on = QCheckBox(tr("wakeword_enable"))
         self.wake_on.setChecked(self.cfg.wakeword_enabled)
         self.wake_on.toggled.connect(self.save_settings)
@@ -638,6 +693,7 @@ class Center(QMainWindow):
         self.dict_timer.timeout.connect(
             lambda: config.dictionary_save(self.dict_edit.toPlainText()))
         self.dict_edit.textChanged.connect(self._update_dict_effective)
+        self.dict_edit.setAccessibleName(tr("sec_dict"))
         self.dict_edit.textChanged.connect(lambda: self.dict_timer.start(800))
         g.addWidget(self.dict_edit)
         g.addWidget(self.dict_effective)
@@ -672,6 +728,7 @@ class Center(QMainWindow):
         self.replace_timer.timeout.connect(
             lambda: config.replacement_save(self.replace_edit.toPlainText()))
         self.replace_edit.textChanged.connect(lambda: self.replace_timer.start(800))
+        self.replace_edit.setAccessibleName(tr("sec_replace"))
         g.addWidget(self.replace_edit)
         return scroll
 
@@ -689,6 +746,7 @@ class Center(QMainWindow):
         g.addWidget(self.file_status)
         self.file_result = QPlainTextEdit()
         self.file_result.setReadOnly(True)
+        self.file_result.setAccessibleName(tr("sec_file"))
         g.addWidget(self.file_result)
         copy = QPushButton(tr("copy"))
         copy.clicked.connect(lambda: clip_copy(self.file_result.toPlainText()))
@@ -717,9 +775,12 @@ class Center(QMainWindow):
         self.ai_endpoint.editingFinished.connect(self.save_settings)
         self.labeled_row(tr("ai_endpoint"), self.ai_endpoint, g)
         mrow = QHBoxLayout()
-        mrow.addWidget(QLabel(tr("ai_model")))
+        model_lbl = QLabel(tr("ai_model"))
+        mrow.addWidget(model_lbl)
         self.ai_model = self.guard(QComboBox())
         self.ai_model.setEditable(True)
+        model_lbl.setBuddy(self.ai_model)
+        self.ai_model.setAccessibleName(tr("ai_model"))
         if self.cfg.ai_model:
             self.ai_model.addItem(self.cfg.ai_model, self.cfg.ai_model)
         self.ai_model.currentTextChanged.connect(self.save_soon)
@@ -764,6 +825,7 @@ class Center(QMainWindow):
         self.ai_modes_timer.setSingleShot(True)
         self.ai_modes_timer.timeout.connect(self._save_ai_modes)
         self.ai_modes_edit.textChanged.connect(lambda: self.ai_modes_timer.start(800))
+        self.ai_modes_edit.setAccessibleName(tr("sec_ai_modes"))
         g.addWidget(self.ai_modes_edit)
         lay.addStretch(1)
         if self.cfg.ai_enabled:
@@ -861,6 +923,7 @@ class Center(QMainWindow):
         self.desc(tr("history_copy"), g)
         self.hist = QListWidget()
         self.hist.itemClicked.connect(self.on_hist_click)
+        self.hist.setAccessibleName(tr("sec_history"))
         g.addWidget(self.hist)
         self.hist_msg = QLabel()
         self.hist_msg.setObjectName("desc")
@@ -1078,6 +1141,7 @@ class Center(QMainWindow):
 
         g2 = self.group(tr("stats_chart"), lay)
         self.stats_chart = _StatsChart(self._accent)
+        self.stats_chart.setAccessibleName(tr("stats_chart"))
         g2.addWidget(self.stats_chart)
         self.stats_empty = self.desc(tr("stats_chart_empty"), g2)
         self.stats_saved_lbl = QLabel()
