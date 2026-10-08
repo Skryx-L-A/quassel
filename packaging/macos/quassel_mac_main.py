@@ -51,6 +51,8 @@ def _handle_server_restart(app):
         try:
             server_mac.stop()
             started = bool(server_mac.start())
+            started = (started and server_mac._proc is not None
+                       and server_mac._proc.poll() is None)
         except (OSError, ValueError):
             started = False
     fsutil.atomic_write(ack_path, json.dumps({"token": request["token"],
