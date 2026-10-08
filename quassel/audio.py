@@ -95,7 +95,8 @@ def list_mics():
     out = []
     try:
         r = subprocess.run(["pactl", "list", "sources"], capture_output=True,
-                           text=True, timeout=5, check=False)
+                           text=True, timeout=5, check=False,
+                           env={**os.environ, "LC_ALL": "C"})
         name = desc = None
         for line in r.stdout.splitlines():
             line = line.strip()

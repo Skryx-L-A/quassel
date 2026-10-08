@@ -99,6 +99,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Linux microphone choices are listed consistently when the system language
+  is not English.
 - On GNOME Wayland without layer-shell, the pill uses XWayland when available
   and reports when it may be hidden behind other windows.
 - macOS music ducking also checks Podcasts and VLC and resumes only players
