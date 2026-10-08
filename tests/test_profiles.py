@@ -439,7 +439,7 @@ def test_daemon_prewarms_at_start(monkeypatch):
     monkeypatch.setattr(daemon.config, "Cfg", lambda: SimpleNamespace(
         ui_language="auto", beep_output="system"))
     monkeypatch.setattr(daemon.beep, "set_output", lambda n: None)
-    monkeypatch.setattr(daemon, "Recorder", lambda: None)
+    monkeypatch.setattr(daemon, "Recorder", lambda **kw: None)
     monkeypatch.setattr(daemon, "AudioDucker", lambda: None)
     daemon.Daemon()
     assert calls == [1]

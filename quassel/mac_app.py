@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 
-from . import audio, config, i18n, profile, server_mac
+from . import audio, config, i18n, profile, server_mac, selfheal
 from .i18n import tr
 from .state import state_read
 
@@ -164,6 +164,7 @@ class MacApp:
             self.daemon = subprocess.Popen(daemon_command(), cwd=self._repo,
                                            start_new_session=True,
                                            stdout=log_f, stderr=log_f)
+        self.crash_text = None
         self.enabled = True
 
     def _stop_daemon(self):
@@ -206,6 +207,7 @@ class MacApp:
                   file=sys.stderr, flush=True)
             self.enabled = False
             self._sync_ui()
+            selfheal.report_daemon_crash(self, code)
             return
         now = now if now is not None else time.monotonic()
         self._restarts = [t for t in self._restarts if now - t < RESTART_WINDOW]
@@ -279,6 +281,9 @@ class MacApp:
     def sync_tray(self):
         """Tray-Statuszeile aus state.json nachführen (Daemon -> UI)."""
         if self.tray is None:
+            return
+        if not self.enabled and getattr(self, "crash_text", None):
+            self.tray.set_mode("error", self.crash_text)
             return
         if not self.enabled:
             self.tray.set_mode("off")

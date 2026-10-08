@@ -30,8 +30,8 @@ import threading
 import time
 
 from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18n,
-               profiles, progmode, stats, textproc, textreplace, vad, wakeword,
-               whisperclient)
+               power, profiles, progmode, selfheal, stats, textproc, textreplace, vad,
+               wakeword, whisperclient)
 from .audio import LevelPump, RATE, SAMPLE_BYTES
 from .i18n import tr
 from .state import RUNDIR, WAV
@@ -320,6 +320,7 @@ class DictationCore:
     # verändert hat — nur im Speicher, nie auf Platte oder im Log; für
     # „Rohtext zurück" aus dem Kontrollzentrum.
     _last_raw = None
+    _autostop = None            # vad.AutoStop im Freihand-Modus (Schalter [vad] autostop)
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -427,7 +428,7 @@ class DictationCore:
         return runner is not None and runner.current_action is not None
 
     def _wake_busy(self):
-        return self.rec.active
+        return self._busy()
 
     def _tell(self, key):
         """Kurzer Hinweis ohne Fehlercharakter (Einzeltipp, zu kurz): die
@@ -474,6 +475,7 @@ class DictationCore:
         if not self.rec.start(self.cfg.mic):
             self._report_mic_missing()
             return False
+        power.install(self)
         if self.cfg.beep:
             beep.start()                 # aufsteigender Ton: jetzt sprechen
         if sys.platform.startswith("linux"):
@@ -484,6 +486,7 @@ class DictationCore:
         self.ducker.apply(self.cfg.mute_mode)
         self.streamer = None
         self._handsfree = False
+        self._autostop = None
         self.partial = self._new_partial()
         self.partial.start()
         self._state("recording")
@@ -494,6 +497,7 @@ class DictationCore:
         """Beim Wechsel in den Freihand-Modus: Streaming starten, falls
         eingeschaltet. (Im Halten-Modus technisch unmöglich -> nie hier.)"""
         self._handsfree = True
+        self._arm_autostop()
         if (self.streamer is not None or not self.cfg.streaming
                 or self._cleanup_active() or self.cfg.ai_enabled):
             return
@@ -509,6 +513,45 @@ class DictationCore:
     def _type_chunk_no_enter(self, chunk):
         """Umbrüche als Leerzeichen tippen, Länge bleibt (Backspace-Abgleich)."""
         self._type_chunk(chunk.translate(_NO_ENTER))
+
+    def _arm_autostop(self):
+        """Auto-Stopp nach Stille im Freihand-Modus scharf stellen -- nur wenn
+        der Schalter an ist ([vad] autostop, Vorgabe aus). Ein Fehler hier darf
+        den Wechsel in den Freihand-Modus nie stoeren."""
+        try:
+            self._autostop = vad.make_autostop(self.cfg, self._autostop_read, log=self._log)
+        except Exception as exc:    # noqa: BLE001
+            self._autostop = None
+            self._log("dict: auto-stop not armed: %r" % exc)
+
+    def _autostop_read(self, offset):
+        """Neue Rohdaten der laufenden Aufnahme ab Byte offset (nur der Rest,
+        nicht die ganze Datei: Freihand-Aufnahmen werden lang)."""
+        path = getattr(self.rec, "running_path", None) or self.rec.raw_path
+        try:
+            with open(path, "rb") as f:
+                f.seek(offset)
+                return f.read()
+        except OSError:
+            return b""
+
+    def autostop_due(self):
+        """True, wenn das Freihand-Diktat nach erkannter Sprache lange genug still
+        ist. Die Plattform fragt das regelmaessig auf dem Thread, der auch den
+        Chord-Druck zum Beenden verarbeitet, und beendet dann wie bei einem
+        zweiten Druck. Ohne Schalter oder ausserhalb des Freihand-Modus immer False."""
+        stop = self._autostop
+        if stop is None or not self._handsfree or not self.rec.active:
+            return False
+        if not stop.due():
+            if stop.error is not None and not getattr(stop, "logged", False):
+                stop.logged = True
+                self._log("dict: auto-stop off for this dictation: %r" % stop.error)
+            return False
+        if not getattr(stop, "logged", False):
+            stop.logged = True
+            self._log("dict: auto-stop after %.1fs of silence" % stop.detector.silence_sec)
+        return True
 
     def cancel_recording(self, reason_key):
         # Wie finish(): läuft synchron auf dem Ereignis-Thread und zählt
@@ -705,6 +748,8 @@ class DictationCore:
         try:
             self._wav_from_raw(data, wav)
             result = whisperclient.transcribe_result(wav, cfg)
+            if result.text is None and selfheal.recover():
+                result = whisperclient.transcribe_result(wav, cfg)
         finally:
             discard(wav)
         raw_text = result.text
@@ -837,7 +882,8 @@ class DictationCore:
         dass der Tastendruck nicht ankam und der Text nur in der
         Zwischenablage liegt (Linux ohne laufendes ydotoold, Audit D57).
         Plattformen ohne Rückmeldung (None) gelten als erfolgreich."""
-        return self._paste(text) is not False
+        with wakeword.INSERT_GATE.dictation():
+            return self._paste(text) is not False
 
     def _report_clipboard_only(self):
         """Die Pille sagte sonst „fertig", obwohl im Fenster nichts ankam."""
@@ -1014,57 +1060,36 @@ class DictationCore:
         if self.cfg.wakeword_enabled and self.wake is None:
             self.wake = wakeword.WakeListener(
                 self.cfg, self._wake_record_utterance, self._wake_transcribe,
-                self._wake_insert, is_busy=self._wake_busy)
+                self._wake_insert, is_busy=self._wake_busy,
+                record_followup=self._wake_record_followup,
+                trust_capture=bool(wakeword.wake_settings(self.cfg).spotter_model))
             self.wake.start()
         elif not self.cfg.wakeword_enabled and self.wake is not None:
             self.wake.stop()
             self.wake = None
 
-    def _wake_record_utterance(self):
-        """Eine Äußerung über VAD aufnehmen (für den Wake-Listener). Eigener
-        Recorder + eigene Rohdatei, damit der Tastatur-Pfad und die Pille
-        ungestört bleiben. Schwelle wird am Grundrauschen kalibriert."""
+    def _wake_record_utterance(self, spot=True):
+        """Eine Äußerung für den Wake-Listener aufnehmen
+        (wakeword.capture_utterance). Eigener Recorder + eigene Rohdatei, damit
+        der Tastatur-Pfad und die Pille ungestört bleiben. Die Schwelle folgt dem
+        Grundrauschen und ist auf jeder Plattform dieselbe (vad.RmsClassifier);
+        mit Silero-Modell entscheidet stattdessen das. Ist ein Keyword-Modell
+        eingetragen ([wakeword] spotter_model), hört zuerst nur dieses mit und
+        gibt die Aufnahme erst nach einem Treffer an Whisper weiter."""
         rec = self._new_recorder(WAKE_RAW)
-        if not rec.start(self.cfg.mic):
-            return None
-        prev = 0
-        det = None
-        peak = 0.0
-        base_samples = []
-        deadline = time.monotonic() + 12
+        spotter = wakeword.load_spotter(self.cfg, log=self._log) if spot else None
         try:
-            while time.monotonic() < deadline and self.wake is not None:
-                time.sleep(0.1)
-                data = rec.raw_bytes()
-                new = data[prev:]
-                prev = len(data)
-                if not new:
-                    continue
-                lvl = vad.frame_rms(new)
-                peak = max(peak, lvl)
-                if det is None:
-                    # erste ~0.4 s: Grundrauschen messen, dann Schwelle setzen
-                    base_samples.append(lvl)
-                    if len(base_samples) >= 4:
-                        noise = sorted(base_samples)[len(base_samples) // 2]
-                        thr = max(220.0, noise * 2.2)
-                        det = vad.SilenceDetector(silence_rms=thr,
-                                                  min_speech_sec=0.25, hang_sec=1.0)
-                        det.feed(new)   # Kalibrier-Frames nur als Rauschwert genutzt
-                else:
-                    det.feed(new)
-                    if det.stopped:
-                        break
+            return wakeword.capture_utterance(
+                rec, self.cfg.mic, vad.make_classifier(self.cfg, log=self._log),
+                spotter=spotter, log=self._log, window=30.0 if spotter else 12.0,
+                min_bytes=MIN_AUDIO_BYTES, active=lambda: self.wake is not None)
         finally:
-            rec.stop()
-        data = rec.raw_bytes()
-        # Der Wake-Listener hört alles im Raum: die Rohdatei nicht liegen lassen.
-        discard(rec.raw_path)
-        started = det.speech_started if det is not None else False
-        self._log("wake: rec %d bytes, peak_rms=%.0f, speech=%s" % (len(data), peak, started))
-        if not started or len(data) < MIN_AUDIO_BYTES:
-            return None
-        return data
+            # Der Wake-Listener hört alles im Raum: die Rohdatei nicht liegen lassen.
+            discard(rec.raw_path)
+
+    def _wake_record_followup(self):
+        """Die Äußerung nach der reinen Phrase: ohne Spotter, der hat sie gehört."""
+        return self._wake_record_utterance(spot=False)
 
     def _wake_transcribe(self, pcm):
         return wake_transcribe(self.cfg, pcm, scratch_wav("wake"),
@@ -1269,6 +1294,9 @@ class ChordPump(threading.Thread):
             if item is not None and self.is_enabled():
                 vk, pressed = item
                 self.machine.key(vk, pressed, now)
+            due = getattr(self.core, "autostop_due", None)
+            if due is not None and due():
+                self._autostop_finish()
             self.machine.poll(now)
             pending, self._pending = self._pending, []
         for name, cb in pending:
@@ -1276,6 +1304,14 @@ class ChordPump(threading.Thread):
             if callable(rest):
                 self.runner.submit(name, rest)
         self.last_event_tick = time.monotonic()
+
+    def _autostop_finish(self):
+        """Wie der zweite Druck im Freihand-Modus: die Maschine geht in Ruhe und
+        meldet das Beenden beim naechsten Poll-Tick. Der Aufrufer haelt das Lock."""
+        m = self.machine
+        if m.state in ("toggle", "toggle_armed"):
+            m.state = "idle"
+            m.pending_finish = True
 
     def _run_sync(self, name, cb):
         self.current_sync = name

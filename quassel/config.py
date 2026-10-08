@@ -211,6 +211,9 @@ class Cfg:
         self.history_enabled = _getbool(p, "history", "enabled", True)
         # 0 ist die ausdrücklich gewählte unbegrenzte Aufbewahrung.
         self.history_days = _getint_range(p, "history", "history_days", 7, 0, 36500)
+        # Vorlaufpuffer (C47): 0 = aus. Bei > 0 bleibt das Mikrofon nach einem
+        # Diktat einige Sekunden offen; macOS zeigt dann die Mikrofon-Anzeige.
+        self.preroll_ms = _getint_range(p, "speech", "preroll_ms", 0, 0, 2000)
         self.ui_language = g("ui", "language", fallback="auto")
         # Streaming-Tippen (nur Freihand-Modus; Standard aus = heutiges Verhalten)
         self.streaming = _getbool(p, "streaming", "enabled", False)

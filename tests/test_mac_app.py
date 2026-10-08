@@ -221,7 +221,9 @@ def test_supervise_ignores_other_exit_codes():
     popen.assert_not_called()
     assert mac.enabled is False
     assert mac._restarts == []
-    mac.tray.set_mode.assert_called_once_with("off")
+    # erst „aus", dann (D58, selfheal) der sichtbare Grund in der Statuszeile
+    modes = [c.args[0] for c in mac.tray.set_mode.call_args_list]
+    assert modes[0] == "off" and set(modes) <= {"off", "error"}
 
 
 def test_restart_exit_code_matches_the_daemon():

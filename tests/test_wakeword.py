@@ -6,8 +6,12 @@ aus einer Queue, transcribe() bildet Bytes auf Text ab, insert() haengt an eine
 Liste an. run_once() wird direkt aufgerufen.
 """
 import sys, os
+import threading
+import time
+from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from quassel.wakeword import normalize, match_wake, WakeListener
+from quassel import config
+from quassel.wakeword import normalize, match_wake, WakeListener, InsertGate
 
 
 # ----------------------------------------------------------------- Fakes
@@ -86,6 +90,41 @@ def test_match_tolerant_spacing_and_case():
     assert rem == "mach mal", rem
 
 
+def test_match_sound_alikes_of_the_made_up_word():
+    # Audit G97: das Kunstwort wird so geschrieben, wie es klingt.
+    for heard in ("Hey Kassel", "Hey Castle", "He Quassel", "Hey Kwassel",
+                  "Hey, Quasel", "Hey Quassl"):
+        assert match_wake(heard + ", mach das", "Hey Quassel") == (True, "mach das"), heard
+
+
+def test_match_joined_and_split_words():
+    assert match_wake("Heykassel mach das", "Hey Quassel") == (True, "mach das")
+    assert match_wake("Hey Quas sel mach das", "Hey Quassel") == (True, "mach das")
+
+
+def test_match_allows_one_filler_word_in_front():
+    assert match_wake("Ok, hey Quassel, schreib das", "Hey Quassel") == (True, "schreib das")
+    assert match_wake("Ähm Hey Quassel", "Hey Quassel") == (True, "")
+    # ein inhaltliches Wort davor ist kein Fuellwort
+    assert match_wake("Schreibe hey Quassel", "Hey Quassel")[0] is False
+
+
+def test_match_rejects_other_words_that_only_share_letters():
+    for heard in ("Hey Russel mach das", "Kassel", "hey",
+                  "heyquasselfoo bar", "Hey Mustermann"):
+        assert match_wake(heard, "Hey Quassel")[0] is False, heard
+
+
+def test_match_short_phrases_are_stricter():
+    assert match_wake("Max, mach das", "Max") == (True, "mach das")
+    assert match_wake("Mach das", "Max")[0] is False
+
+
+def test_match_remainder_keeps_the_original_text_after_a_joined_word():
+    assert match_wake("Heykassel: Mach DAS, bitte.", "Hey Quassel") \
+        == (True, "Mach DAS, bitte.")
+
+
 # ----------------------------------------------------------------- run_once
 def test_run_once_disabled_no_insert():
     cfg = FakeCfg(enabled=False)
@@ -159,6 +198,117 @@ def test_run_once_injected_exception_is_swallowed():
     assert inserted == []
 
 
+# ----------------------------------------------------------- Einfuege-Sperre (G97)
+def test_wake_insert_is_dropped_when_dictation_started_after_recording():
+    """is_busy wurde frueher nur VOR der Aufnahme geprueft: ein inzwischen
+    gestartetes Tastatur-Diktat bekam das Wake-Einfuegen dazwischen."""
+    state = {"busy": False}
+    inserted = []
+    listener = WakeListener(
+        FakeCfg(), lambda: b"a", lambda pcm: "Hey Quassel mach das",
+        inserted.append, is_busy=lambda: state["busy"], gate=InsertGate())
+    real_transcribe = listener._transcribe
+
+    def transcribe(pcm):
+        text = real_transcribe(pcm)
+        state["busy"] = True           # Hotkey gedrueckt, waehrend Whisper rechnete
+        return text
+
+    listener._transcribe = transcribe
+    assert listener.run_once() is None
+    assert inserted == []
+
+
+def test_gate_refuses_a_second_wake_insert_and_a_wake_insert_during_dictation():
+    gate = InsertGate()
+    assert gate.enter_wake() is True
+    assert gate.wake_inserting
+    other = []
+    t = threading.Thread(target=lambda: other.append(gate.enter_wake()))
+    t.start()
+    t.join()
+    assert other == [False]
+    gate.exit_wake()
+    assert not gate.wake_inserting
+    with gate.dictation():
+        assert gate.enter_wake() is False
+    assert gate.enter_wake() is True
+
+
+def test_dictation_waits_for_a_running_wake_insert_then_goes_on():
+    gate = InsertGate()
+    assert gate.enter_wake()
+    order = []
+
+    def keyboard():
+        with gate.dictation(timeout=2.0):
+            order.append("dictation")
+
+    t = threading.Thread(target=keyboard)
+    t.start()
+    time.sleep(0.1)
+    assert order == []                    # wartet auf das Wake-Einfuegen
+    order.append("wake done")
+    gate.exit_wake()
+    t.join(2)
+    assert order == ["wake done", "dictation"]
+
+
+def test_dictation_never_blocks_for_good():
+    gate = InsertGate()
+    assert gate.enter_wake()
+    done = []
+
+    def keyboard():
+        with gate.dictation(timeout=0.05):
+            done.append(1)
+
+    t = threading.Thread(target=keyboard)
+    t.start()
+    t.join(2)
+    assert done == [1]
+
+
+def test_wake_thread_may_pass_through_dictation():
+    """Wake und Tastatur teilen dictation._insert: der Wake-Thread darf durch."""
+    gate = InsertGate()
+    assert gate.enter_wake()
+    with gate.dictation(timeout=0.05):
+        pass
+    gate.exit_wake()
+
+
+def test_followup_recording_uses_its_own_callable():
+    calls = []
+    listener = WakeListener(
+        FakeCfg(), lambda: calls.append("first") or b"a",
+        lambda pcm: {b"a": "Hey Quassel", b"b": "naechster Satz"}[pcm],
+        calls.append, record_followup=lambda: calls.append("followup") or b"b",
+        gate=InsertGate())
+    assert listener.run_once() == "naechster Satz"
+    assert calls == ["first", "followup", "naechster Satz"]
+
+
+def test_spotter_capture_is_verified_by_default_and_trusted_when_verify_is_off(
+        tmp_path, monkeypatch):
+    ini = tmp_path / "config.ini"
+    monkeypatch.setattr(config, "CONFIG", str(ini))
+    for verify, expected in (("true", []), ("false", ["schreib das"])):
+        ini.write_text("[wakeword]\nverify = %s\n" % verify, encoding="utf-8")
+        inserted = []
+        listener = WakeListener(
+            FakeCfg(), lambda: b"a", lambda pcm: "schreib das", inserted.append,
+            gate=InsertGate(), trust_capture=True)
+        listener.run_once()
+        assert inserted == expected, (verify, inserted)
+    # ohne Spotter (trust_capture False) gilt immer die Phrasenpruefung
+    ini.write_text("[wakeword]\nverify = false\n", encoding="utf-8")
+    inserted = []
+    WakeListener(FakeCfg(), lambda: b"a", lambda pcm: "schreib das", inserted.append,
+                 gate=InsertGate()).run_once()
+    assert inserted == []
+
+
 if __name__ == "__main__":
     tests = [
         test_normalize_strips_punct_and_case,
@@ -169,6 +319,12 @@ if __name__ == "__main__":
         test_match_no_match,
         test_match_fuzzy_mishearing,
         test_match_tolerant_spacing_and_case,
+        test_match_sound_alikes_of_the_made_up_word,
+        test_match_joined_and_split_words,
+        test_match_allows_one_filler_word_in_front,
+        test_match_rejects_other_words_that_only_share_letters,
+        test_match_short_phrases_are_stricter,
+        test_match_remainder_keeps_the_original_text_after_a_joined_word,
         test_run_once_disabled_no_insert,
         test_run_once_busy_no_insert,
         test_run_once_one_shot,

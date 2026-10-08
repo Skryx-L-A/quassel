@@ -7,3 +7,7 @@ comtypes==1.4.16 ; sys_platform == "win32"
 pycaw==20251023 ; sys_platform == "win32"
 winrt-Windows.Foundation==3.2.1 ; sys_platform == "win32"
 winrt-Windows.Media.Control==3.2.1 ; sys_platform == "win32"
+# Optional, not installed by default: neural voice detection (Silero VAD). Needs the
+# silero_vad.onnx model file, which Quassel does not ship or download; without either,
+# the built-in loudness threshold is used. Install by hand: pip install onnxruntime==1.22.0
+# onnxruntime==1.22.0

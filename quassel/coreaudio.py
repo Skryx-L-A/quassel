@@ -57,6 +57,7 @@ def _fourcc(s):
 # CoreAudio-Selektoren und -Bereiche
 _SYSTEM_OBJECT = 1
 _SEL_DEFAULT_OUTPUT = _fourcc("dOut")
+_SEL_DEFAULT_INPUT = _fourcc("dIn ")
 _SEL_DEVICES = _fourcc("dev#")
 _SEL_NAME = _fourcc("lnam")
 _SEL_STREAMS = _fourcc("stm#")
@@ -184,6 +185,11 @@ def _property_size(obj, selector, scope=_SCOPE_GLOBAL):
 def default_output_device():
     """AudioDeviceID des System-Standard-Ausgabegeräts oder None."""
     return _get_uint32(_SYSTEM_OBJECT, _SEL_DEFAULT_OUTPUT)
+
+
+def default_input_device():
+    """Current system default input, queried from CoreAudio each time."""
+    return _get_uint32(_SYSTEM_OBJECT, _SEL_DEFAULT_INPUT)
 
 
 def device_name(device):

@@ -8,6 +8,7 @@ Linux und Windows füllen die Datei aus einem Aufnahme-Subprozess
 Bytes-Schnittstelle (raw_bytes()) ist in beiden Fällen dieselbe.
 """
 import json
+from collections import deque
 import math
 import os
 import queue
@@ -219,7 +220,11 @@ def _mac_device(mic):
     """Geräte-Index für mic (Name aus list_mics oder Index-String);
     None = Standard-Eingabegerät."""
     if not mic or mic == "default":
-        return None
+        from . import coreaudio
+        device = coreaudio.default_input_device()
+        mic = coreaudio.device_name(device) if device is not None else None
+        if not mic:
+            return None
     try:
         return int(mic)
     except ValueError:
@@ -481,8 +486,185 @@ class _MacStream:
             self.outfile = None
 
 
+class _PrerollCapture:
+    """Opt-in continuously running input with a bounded PCM ring.
+
+    The callback only enqueues bytes. The writer owns the file and ring, so
+    switching between recording and idle cannot mix two dictation files.
+    """
+
+    def __init__(self, mic, preroll_ms):
+        self.mic = mic
+        self.max_bytes = int(RATE * SAMPLE_BYTES * preroll_ms / 1000)
+        self.ring = deque()
+        self.ring_bytes = 0
+        self.lock = threading.Lock()
+        self.outfile = None
+        self.queue = queue.Queue()
+        self.stream = None
+        self.proc = None
+        self.thread = None
+        self.reader = None
+        self.resampler = None
+        self.abandoned = False
+        self.closed = False
+        self.bt_before = {}
+        self.device_id = None
+
+    def open(self):
+        if sys.platform == "darwin" and mac_backend() != "ffmpeg":
+            sd = _sd()
+            if sd is None:
+                return False
+            if not self.mic or self.mic == "default":
+                from . import coreaudio
+                self.device_id = coreaudio.default_input_device()
+            device = _mac_device(self.mic)
+            rate = _mac_device_rate(device) if mac_backend() == "sdnative" else RATE
+            try:
+                self.resampler = _Polyphase(rate, RATE) if rate != RATE else None
+                self.stream = sd.RawInputStream(
+                    samplerate=rate, channels=1, dtype="int16", device=device,
+                    callback=lambda data, _frames, _time, _status:
+                        self.queue.put(bytes(data)) if not self.closed else None)
+                self.stream.start()
+            except Exception:
+                if self.stream is not None:
+                    _close_stream_quiet(self.stream)
+                self.stream = None
+                return False
+        else:
+            cmd = record_command(self.mic)
+            if cmd is None:
+                return False
+            try:
+                self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                             stderr=subprocess.DEVNULL)
+            except OSError:
+                return False
+            self.reader = threading.Thread(target=self._read_pipe, daemon=True,
+                                           name="audio-preroll-reader")
+            self.reader.start()
+            if sys.platform.startswith("linux"):
+                threading.Thread(target=self._profile_snapshot, daemon=True,
+                                 name="audio-profile-snapshot").start()
+        self.thread = threading.Thread(target=self._write, daemon=True,
+                                       name="audio-preroll-writer")
+        self.thread.start()
+        return True
+
+    def device_changed(self):
+        if sys.platform != "darwin" or self.mic not in (None, "default"):
+            return False
+        from . import coreaudio
+        return coreaudio.default_input_device() != self.device_id
+
+    def _profile_snapshot(self):
+        before = _bluez_profiles()
+        with self.lock:
+            if self.proc is not None:
+                self.bt_before = before
+                return
+        if before:
+            _restore_bluez_profiles(before)
+
+    def _read_pipe(self):
+        proc = self.proc
+        try:
+            while proc is not None:
+                data = proc.stdout.read(3200)
+                if not data:
+                    break
+                self.queue.put(data)
+        except OSError:
+            pass
+
+    def _write(self):
+        while True:
+            data = self.queue.get()
+            if data is None:
+                return
+            if isinstance(data, threading.Event):
+                data.set()
+                continue
+            if self.resampler is not None:
+                data = self.resampler.feed(data)
+            if not data:
+                continue
+            with self.lock:
+                if self.outfile is not None:
+                    self.outfile.write(data)
+                    self.outfile.flush()
+                else:
+                    self.ring.append(data)
+                    self.ring_bytes += len(data)
+                    while self.ring_bytes > self.max_bytes and self.ring:
+                        extra = self.ring_bytes - self.max_bytes
+                        first = self.ring.popleft()
+                        if len(first) > extra:
+                            self.ring.appendleft(first[extra:])
+                            self.ring_bytes -= extra
+                        else:
+                            self.ring_bytes -= len(first)
+
+    def begin(self, path):
+        self._flush_pending()
+        try:
+            outfile = open(path, "wb")
+        except OSError:
+            return False
+        with self.lock:
+            for data in self.ring:
+                outfile.write(data)
+            self.ring.clear()
+            self.ring_bytes = 0
+            outfile.flush()
+            self.outfile = outfile
+        return True
+
+    def end(self):
+        self._flush_pending()
+        with self.lock:
+            outfile, self.outfile = self.outfile, None
+            if outfile is not None:
+                outfile.close()
+
+    def _flush_pending(self):
+        if self.thread is not None and self.thread.is_alive():
+            done = threading.Event()
+            self.queue.put(done)
+            done.wait(1)
+
+    def close(self):
+        self.end()
+        self.closed = True
+        stream, self.stream = self.stream, None
+        if stream is not None:
+            closer = threading.Thread(target=_close_stream_quiet, args=(stream,),
+                                      daemon=True, name="mac-preroll-stop")
+            closer.start()
+            closer.join(timeout=MAC_STOP_TIMEOUT)
+            self.abandoned = closer.is_alive()
+        proc, self.proc = self.proc, None
+        if proc is not None:
+            proc.send_signal(2)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=2)
+            proc.stdout.close()
+        if self.reader is not None:
+            self.reader.join(timeout=1)
+        self.queue.put(None)
+        if self.thread is not None:
+            self.thread.join(timeout=5)
+        if self.bt_before:
+            _restore_bluez_profiles(self.bt_before)
+
+
 class Recorder:
-    def __init__(self, raw_path=RAW):
+    def __init__(self, raw_path=RAW, preroll_ms=None, preroll_keep_s=3.0):
         # raw_path: eigene Rohdatei (z.B. für den Wake-Listener), damit zwei
         # Recorder sich nicht dieselbe Datei überschreiben. Der Diktat-Pfad
         # nutzt zwei Dateien im Wechsel (siehe RAW_B), ein eigener Pfad bleibt
@@ -498,6 +680,16 @@ class Recorder:
         self.started = 0.0
         self._bt_before = {}
         self._abandoned = False  # macOS: ein Stream musste aufgegeben werden
+        if preroll_ms is None:
+            preroll_ms = os.environ.get("QUASSEL_PREROLL_MS", "0") if raw_path == RAW else 0
+        try:
+            self.preroll_ms = max(0, min(2000, int(preroll_ms)))
+        except (TypeError, ValueError):
+            self.preroll_ms = 0
+        self.preroll_keep_s = max(0.1, float(preroll_keep_s))
+        self._buffer = None
+        self._warm = None
+        self._warm_timer = None
         # Schützt NUR den Zustandswechsel (wer besitzt Stream/Prozess), nicht das
         # eigentliche Beenden: der Not-Aus kann aus einem anderen Thread in ein
         # laufendes stop() fallen und darf dabei weder warten noch auf ein
@@ -514,6 +706,8 @@ class Recorder:
 
     @property
     def active(self):
+        if self._buffer is not None:
+            return True
         if self.mac is not None:
             return self.mac.active
         return self.proc is not None and self.proc.poll() is None
@@ -523,13 +717,34 @@ class Recorder:
         # Ein Vorgänger, den niemand beendet hat (verlorenes stop(), Not-Aus
         # mitten im Ablauf), wird zuerst abgeräumt: eine fallen gelassene
         # Referenz nähme das Mikrofon mit und schriebe still weiter.
-        if self.mac is not None or self.proc is not None:
+        if self.mac is not None or self.proc is not None or self._buffer is not None:
             _log("audio: vorherige Aufnahme lief noch -> wird zuerst beendet")
             self.stop()
         # Nächste Rohdatei wählen: die vorige gehört noch dem vorherigen Diktat,
         # dessen finish() sie unter Umständen erst noch ausliest.
         self._slot = (self._slot + 1) % len(self._paths)
         self.raw_path = self._paths[self._slot]
+        if self.preroll_ms:
+            with self._lock:
+                capture, self._warm = self._warm, None
+                timer, self._warm_timer = self._warm_timer, None
+            if timer is not None:
+                timer.cancel()
+            if capture is not None and (capture.mic != mic or capture.device_changed()):
+                capture.close()
+                capture = None
+            if capture is None:
+                capture = _PrerollCapture(mic, self.preroll_ms)
+                if not capture.open():
+                    return False
+            if not capture.begin(self.raw_path):
+                capture.close()
+                return False
+            with self._lock:
+                self._buffer = capture
+                self.running_path = self.raw_path
+                self.started = time.monotonic()
+            return True
         if sys.platform == "darwin" and mac_backend() != "ffmpeg":
             mac = _MacStream(self.raw_path, native=mac_backend() == "sdnative")
             if not mac.start(mic):
@@ -542,16 +757,30 @@ class Recorder:
         cmd = record_command(mic)
         if cmd is None:
             return False
-        bt_before = _bluez_profiles()
         outfile = open(self.raw_path, "wb")
-        proc = subprocess.Popen(
-            cmd, stdout=outfile, stderr=subprocess.DEVNULL)
+        try:
+            proc = subprocess.Popen(
+                cmd, stdout=outfile, stderr=subprocess.DEVNULL)
+        except OSError:
+            outfile.close()
+            return False
         with self._lock:
-            self._bt_before = bt_before
             self.outfile = outfile
             self.proc = proc
             self.running_path = self.raw_path
             self.started = time.monotonic()
+        # pactl may take seconds. The capture must already be running while
+        # its Bluetooth profile snapshot is collected.
+        def profile_snapshot():
+            before = _bluez_profiles()
+            with self._lock:
+                if self.proc is proc:
+                    self._bt_before = before
+                    return
+            if before:
+                _restore_bluez_profiles(before)
+        threading.Thread(target=profile_snapshot, name="audio-profile-snapshot",
+                         daemon=True).start()
         return True
 
     def raw_bytes(self, path=None):
@@ -582,10 +811,21 @@ class Recorder:
         with self._lock:
             path = self.last_path = self.running_path or self.raw_path
             self.running_path = None
+            capture, self._buffer = self._buffer, None
             mac, self.mac = self.mac, None
             proc, self.proc = self.proc, None
             outfile, self.outfile = self.outfile, None
             bt_before, self._bt_before = self._bt_before, {}
+        if capture is not None:
+            capture.end()
+            with self._lock:
+                self._warm = capture
+                timer = threading.Timer(self.preroll_keep_s, self._expire_warm,
+                                        args=(capture,))
+                timer.daemon = True
+                self._warm_timer = timer
+                timer.start()
+            return path
         if mac is not None:
             mac.stop()
             if mac._abandoned:
@@ -603,3 +843,13 @@ class Recorder:
         if bt_before:
             _restore_bluez_profiles(bt_before)
         return path
+
+    def _expire_warm(self, capture):
+        with self._lock:
+            if self._warm is not capture:
+                return
+            self._warm = None
+            self._warm_timer = None
+            capture.close()
+            if capture.abandoned:
+                self._abandoned = True

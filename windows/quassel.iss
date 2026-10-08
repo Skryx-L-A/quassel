@@ -17,7 +17,7 @@ AppPublisherURL={#MyAppURL}
 DefaultDirName={autopf}\Quassel
 DefaultGroupName=Quassel
 DisableProgramGroupPage=yes
-OutputBaseFilename=Quassel-Setup-{#MyAppVersion}
+OutputBaseFilename=Quassel-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -43,8 +43,8 @@ english.SetupStatus=Downloading the matching speech engine and one model (GPU au
 german.SetupStatus=Lade die passende Sprach-Engine und ein Modell herunter (GPU-Erkennung)...
 english.SetupStatusAll=Downloading all speech engines and all models (about 4.3 GB)...
 german.SetupStatusAll=Lade alle Sprach-Engines und alle Modelle herunter (ca. 4,3 GB)...
-english.RemoveData=Also delete the downloaded speech engine and models?
-german.RemoveData=Auch die heruntergeladenen Sprach-Engines und Modelle löschen?
+english.RemoveData=Also delete the downloaded speech engine and models, and your Quassel settings, dictionary and history?
+german.RemoveData=Auch die heruntergeladenen Sprach-Engines und Modelle sowie Ihre Quassel-Einstellungen, das Wörterbuch und den Verlauf löschen?
 english.FullOfflineGroup=Offline use:
 german.FullOfflineGroup=Offline-Nutzung:
 english.FullOfflineTask=Download everything now for full offline use (all engines + all 5 models, about 4.3 GB)
@@ -129,5 +129,8 @@ begin
   // Wunsch mitlöschen, bei stiller Deinstallation unangetastet lassen.
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
     if MsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO) = IDYES then
+    begin
       DelTree(ExpandConstant('{localappdata}\Quassel'), True, True, True);
+      DelTree(ExpandConstant('{userappdata}\Quassel'), True, True, True);
+    end;
 end;

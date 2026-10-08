@@ -49,6 +49,7 @@ MAX_RECORD = 300       # s: Sicherheitslimit je Aufnahme (Halten und Freihand)
 # Zustände der Linux-Schleife, in denen eine Aufnahme läuft.
 RECORDING_STATES = ("hold", "toggle_armed", "toggle")
 RESCAN_EVERY = 5       # s: /dev/input auf neue Tastaturen prüfen
+AUTOSTOP_POLL = 0.5     # s: macOS-Wächter, solange ein Freihand-Auto-Stopp scharf ist
 PANIC_EXIT_WAIT = 5.0  # s: so lange wartet der Not-Aus auf das Ende einer Aktion
 # Der Ereignis-Thread führt den synchronen Teil der Aktionen selbst aus, und
 # darin steckt osascript (Benachrichtigung, Ducking) mit je 5 s Frist. Der Wert
@@ -91,7 +92,7 @@ class Daemon(dictation.DictationCore):
         self.cfg = config.Cfg()
         i18n.set_language(None if self.cfg.ui_language == "auto" else self.cfg.ui_language)
         beep.set_output(self.cfg.beep_output)
-        self.rec = Recorder()
+        self.rec = Recorder(preroll_ms=getattr(self.cfg, "preroll_ms", 0))
         self.partial = None
         self.last_paste_len = 0
         self.streamer = None        # aktiv nur im Freihand-Modus mit Streaming
@@ -261,7 +262,8 @@ class Daemon(dictation.DictationCore):
         self._listener = listener       # der Not-Aus setzt darüber zurück
         listener.start()
         while True:
-            time.sleep(RESCAN_EVERY)
+            # Mit scharfem Auto-Stopp (Freihand) öfter hinsehen als alle 5 s.
+            time.sleep(AUTOSTOP_POLL if self._autostop is not None else RESCAN_EVERY)
             if self.cfg.reload():
                 i18n.set_language(None if self.cfg.ui_language == "auto"
                                   else self.cfg.ui_language)
@@ -348,6 +350,8 @@ class Daemon(dictation.DictationCore):
             else:
                 log("mac: MAX_RECORD erreicht, Hotkey antwortet nicht -> Not-Aus")
                 self.panic_stop()
+        elif self.autostop_due() and listener.force_finish():
+            log("mac: Auto-Stopp nach Stille -> Freihand-Aufnahme beendet")
 
     def _mac_check_stall(self, listener, now):
         """Steht der Ereignis-Thread oder läuft eine Aktion zu lange, EINMALIG
@@ -390,6 +394,8 @@ class Daemon(dictation.DictationCore):
         """Sicherheitslimit: eine Aufnahme läuft höchstens MAX_RECORD. Gilt
         auch im Halten-Modus (Audit B35): verschwindet die Tastatur, während
         der Chord gehalten wird, käme sonst nie ein Loslassen."""
+        if st in ("toggle_armed", "toggle") and self.autostop_due():
+            return True       # Freihand-Diktat nach Stille beenden ([vad] autostop)
         return (st in RECORDING_STATES and self.rec.active
                 and now - self.rec.started > MAX_RECORD)
 
@@ -455,7 +461,7 @@ class Daemon(dictation.DictationCore):
                 st = "idle"
             # Sicherheitslimit, auch im Halten-Modus
             if self._record_expired(st, now):
-                log("linux: MAX_RECORD erreicht -> Aufnahme wird beendet")
+                log("linux: Aufnahmelimit oder Auto-Stopp -> Aufnahme wird beendet")
                 st = "idle"
                 pending, pending_since = True, now
 

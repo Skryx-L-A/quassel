@@ -38,6 +38,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local speech server provides them. The command line can write SRT or WebVTT,
   including for long files split into processing chunks, and file-processing
   callers can show progress or cancel safely.
+- Optional pre-roll on Linux and macOS: set `QUASSEL_PREROLL_MS=300` (up to
+  2000 ms) to include a short audio buffer before the next dictation starts.
+  The input stays open for three seconds after a dictation. The default is off.
+  On macOS, the microphone indicator remains visible while the input is open.
 - macOS: when Secure Input is on (a password field, or Secure Keyboard Entry
   in Terminal), the system hides every key from Quassel and the hotkey does
   nothing. The pill now says so for a few seconds when it starts, and the menu
@@ -61,6 +65,21 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   GNOME and KDE keep the normal settings. Window titles are never read.
   kept. The path now runs before a single final insertion when explicitly
   enabled in the configuration file; control center settings are still pending.
+- Optional neural voice detection (Silero VAD) for the wake word and hands-free auto-stop.
+  Quassel does not ship the model and never downloads it: put `silero_vad.onnx` into the
+  models folder (or set `silero_model` under `[vad]` in `config.ini`) and install
+  `onnxruntime` yourself. Without either, the built-in loudness threshold keeps working
+  as before. `backend = rms` under `[vad]` switches the neural detector off.
+- Optional hands-free auto-stop: with `autostop = true` under `[vad]` in `config.ini`,
+  a double-tap dictation ends by itself after a pause (`autostop_silence`, default 1.5
+  seconds), but only after you have actually spoken, so an accidental start never ends
+  an empty recording. Off by default. Works the same on Linux, macOS and Windows.
+- Optional wake-word detector in front of the speech engine. Instead of transcribing
+  every sentence said in the room, Quassel can listen with a small keyword model
+  (openWakeWord format) and only start the speech engine once it hears the wake word.
+  Quassel does not ship such a model: train or download one, then set `spotter_model`
+  (and optionally `spotter_threshold`, `verify`) under `[wakeword]` in `config.ini`;
+  `onnxruntime` must be installed. Without a model, the wake word works as before.
 
 ### Changed
 - The Control Center has shorter pages, each about one thing: General (status
@@ -131,6 +150,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   speech server processes are left alone.
 - macOS and Windows keep bounded speech server diagnostic logs in the profile
   data folder to make startup failures easier to diagnose.
+- On macOS and Linux, a detected sleep event now cancels an active dictation;
+  waking checks the microphone selection and local speech server again.
+- macOS now shows a notification and a pill error if its dictation service
+  crashes unexpectedly, with an option to turn dictation back on.
+- A failed transcription now checks whether the local speech server can
+  process a short silence clip. If Quassel owns a failed server child, it
+  restarts it once and retries the dictation once.
+- macOS: selecting the system default microphone now follows changes made
+  between dictations when the device is already in the audio device list.
+- Linux recording now begins before the Bluetooth card check, avoiding a
+  delay that could cut off the first word.
 - The microphone test in the Control Center now says what went wrong instead
   of "Whisper server unreachable" for everything: missing microphone access on
   macOS (with the place to allow it), a microphone that is busy or unplugged, a
@@ -276,6 +306,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   they are addressed as "Quassel, Enter" or "Quassel, Undo".
 - When German or English is selected for speech, spoken punctuation now uses
   only that language's rules.
+- The wake word's speech detection counts a connected stretch of speech instead of adding
+  up every loud moment. Clicks and bumps spread over a few seconds used to add up to "the
+  user is speaking"; now they do not, and a click during the pause after a sentence no
+  longer keeps the recording open. The loudness threshold follows the room's background
+  noise and works the same on Linux, macOS and Windows.
+- The wake word is recognised more reliably when the speech engine writes the made-up word
+  as it sounds. "Hey Castle", "He Quassel", "Heykassel" or "Ok, hey Quassel" now
+  count, while similar-looking but different words ("Hey Russel") and very short
+  phrases are held to a stricter match.
+- A wake-word dictation is no longer typed into a window while you have started a keyboard
+  dictation in the meantime. The check now happens right before typing, not only before
+  listening, and the two ways of typing take turns.
 
 ### Security
 - The dictation history file (`history.jsonl`) is now readable by you only.
