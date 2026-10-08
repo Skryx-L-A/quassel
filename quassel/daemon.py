@@ -101,6 +101,7 @@ class Daemon(dictation.DictationCore):
         self.wake = None             # WakeListener-Thread (nur wenn Wake-Word an)
         self._bt = False             # ist die aktive Aufnahmequelle Bluetooth?
         self._vad = False            # läuft serverseitig VAD? (dann Vorlauf nicht doppelt trimmen)
+        self._linux_reset = threading.Event()
         profiles.prewarm()           # Per-App-Profile: AppKit nicht erst im ersten Diktat laden
 
     # ------------------------------------------------- Plattform-Anbindung
@@ -188,6 +189,22 @@ class Daemon(dictation.DictationCore):
     def _reset_hotkey(self):
         if self._listener is not None:
             self._listener.force_reset()
+        else:
+            self._linux_reset.set()
+
+    def panic_stop(self, *_args):
+        # Sleep can arrive with keys held but no active recording. Reset the
+        # Linux key table even when the shared panic path has nothing to stop.
+        if sys.platform.startswith("linux"):
+            self._linux_reset.set()
+        return super().panic_stop(*_args)
+
+    def _consume_linux_reset(self, pressed):
+        if not self._linux_reset.is_set():
+            return False
+        self._linux_reset.clear()
+        pressed.clear()
+        return True
 
     def _action_running(self):
         if self._listener is not None and self._listener.current_action is not None:
@@ -426,6 +443,9 @@ class Daemon(dictation.DictationCore):
 
         while True:
             now = time.monotonic()
+            if self._consume_linux_reset(pressed):
+                st = "idle"
+                pending = False
             if now - last_scan > RESCAN_EVERY:
                 gone = []
                 scan_devices(fds, on_close=gone.append)
