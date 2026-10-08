@@ -152,6 +152,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- macOS: when the text could not be typed and is left on the clipboard, the
+  pill now says to press ⌘V instead of Ctrl+V.
 - Turning off dictation on macOS now unloads Quassel's own speech server;
   turning it back on starts the server before dictation resumes.
 - Linux Bluetooth output gets a short silence lead-in before the recording

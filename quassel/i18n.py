@@ -109,6 +109,8 @@ STRINGS = {
                        "Diktierdienst beendet (Code {code}). Zum erneuten Versuch einschalten."),
     "paste_clipboard_only": ("Text is on the clipboard – press Ctrl+V",
                              "Text liegt in der Zwischenablage – Strg+V drücken"),
+    "paste_clipboard_only_mac": ("Text is on the clipboard – press ⌘V",
+                                 "Text liegt in der Zwischenablage – ⌘V drücken"),
     "err_paste_blocked": ("The text couldn't be inserted. On macOS, allow Quassel in System Settings → Privacy & Security → Accessibility. The text is on the clipboard.",
                           "Der Text ließ sich nicht einfügen. Unter macOS Quassel in Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen freigeben. Der Text liegt in der Zwischenablage."),
     # macOS-Rechte (hotkey_mac.py), mit dem tatsächlich eingestellten Chord
