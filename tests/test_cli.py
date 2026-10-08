@@ -55,6 +55,7 @@ def test_transcribe_json_warns_when_the_current_backend_has_no_timestamps(monkey
     result = json.loads(capsys.readouterr().out)
     assert result["text"] == "hello"
     assert result["segments"] == []
+    assert "timestamps" in result["warning"]
 
 
 def test_history_is_refused_when_the_privacy_switch_is_off(capsys):

@@ -145,7 +145,8 @@ def _transcribe(path, output):
         print("transcription failed (unsupported file, ffmpeg, or local server unavailable)", file=sys.stderr)
         return EXIT_FAILED
     if output == "json":
-        _emit({"text": text, "segments": []}, as_json=True)
+        _emit({"text": text, "segments": [],
+               "warning": "timestamps are unavailable from the current speech backend"}, as_json=True)
     else:
         print(text)
         if output in ("srt", "vtt"):
