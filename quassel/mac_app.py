@@ -275,6 +275,8 @@ class MacApp:
         st = state_read()
         s = st.get("state", "idle")
         self.tray.set_mode("ready" if s == "idle" else s, st.get("text", ""))
+        if hasattr(self.tray, "refresh_secure_input"):
+            self.tray.refresh_secure_input()
 
     def shutdown(self):
         """Kindprozesse beenden — idempotent (Signal-Handler UND das Ende von

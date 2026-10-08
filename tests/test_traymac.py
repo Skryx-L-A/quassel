@@ -187,3 +187,29 @@ def test_retranslate_switches_menu_language(qapp):
                           "Open Control Center", "Quit Quassel"]
     finally:
         t.hide()
+
+
+
+# ------------------------------------------- H120 Sichere Eingabe
+def test_secure_input_is_named_in_the_status_line(tray):
+    assert tray.refresh_secure_input(query=lambda: True) is True
+    assert tray.status_action.text() == "Bereit · Sichere Eingabe aktiv, Hotkey pausiert"
+    tray.set_mode("recording")
+    assert tray.status_action.text().startswith("Aufnahme · Sichere Eingabe")
+    tray.set_mode("off")
+    assert tray.status_action.text() == "Aus"        # aus: nichts zu pausieren
+    tray.set_mode("ready")
+    tray.refresh_secure_input(query=lambda: False)
+    assert tray.status_action.text() == "Bereit"
+
+
+def test_secure_input_query_is_a_plain_bool():
+    """Echte, rein lesende Abfrage (HIToolbox); auf anderen Plattformen False."""
+    assert traymac.secure_input_enabled() in (True, False)
+
+
+def test_secure_input_query_survives_missing_framework(monkeypatch):
+    monkeypatch.setattr(traymac, "_secure_fn", [])
+    monkeypatch.setattr(traymac, "CARBON", "/nonexistent/Carbon")
+    monkeypatch.setattr(traymac.sys, "platform", "darwin")
+    assert traymac.secure_input_enabled() is False

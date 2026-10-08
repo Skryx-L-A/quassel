@@ -77,6 +77,11 @@ BUBBLE_MIN_ALPHA = 0.85
 # einen Prozess und wird deshalb zwischengespeichert.
 REDUCED_MOTION_CACHE_S = 30.0
 _reduced_motion_cache = {"ts": float("-inf"), "val": False}
+# Sichere Eingabe (macOS): einmal je Sekunde prüfen, beim Einschalten den
+# Hinweis einige Sekunden zeigen — danach nur noch in der Menüleiste, damit
+# ein dauerhaft geschütztes Terminal die Pille nicht stundenlang belegt.
+SECURE_POLL_S = 1.0
+SECURE_HINT_S = 4.0
 STATUS_KEYS = {"off": "tray_off", "ready": "tray_ready",
                "recording": "tray_recording", "transcribing": "tray_transcribing",
                "done": "tray_done", "error": "tray_error"}
@@ -100,6 +105,13 @@ def _query_reduced_motion():
                           "enable-animations"], capture_output=True, text=True,
                          timeout=2, check=False).stdout
     return out.strip() == "false"
+
+
+def secure_input_enabled():
+    if sys.platform != "darwin":
+        return False
+    from .traymac import secure_input_enabled as query
+    return query()
 
 
 def reduced_motion():
@@ -150,6 +162,10 @@ class Pill(QWidget):
         self.cfg = config.Cfg()
         self.text = ""
         self.meter = LevelMeter()
+        self.secure = False
+        self.secure_until = 0.0
+        self._painted_bubble = ""
+        self.last_secure_poll = float("-inf")
         self.last_ts = None
         self.result_until = 0.0
         self.last_poll = 0.0
@@ -326,6 +342,9 @@ class Pill(QWidget):
             self.set_mode("ready" if s == "idle" else s, st.get("text", ""))
         if self.mode in ("done", "error") and now > self.result_until:
             self.set_mode("ready" if self.on else "off")
+        self._poll_secure_input(now)
+        if self.bubble_text() != self._painted_bubble:
+            self.update()       # Hinweis abgelaufen oder neu: neu zeichnen
         self._apply_tick_interval()
         if self.mode == "recording":
             self.meter.feed(level_read(st))
@@ -350,9 +369,25 @@ class Pill(QWidget):
         p.fillPath(path, self._bg_color())
         # Balken bleiben immer voll deckend — nur der Ovalhintergrund wird transparent
         self._draw_wave(p, pill.left() + pad, pill.center().y(), wave_w, 14 * s)
-        bubble = self.bubble_text()
+        bubble = self._painted_bubble = self.bubble_text()
         if bubble:
             self._draw_bubble(p, pill, s, bubble)
+
+    def _poll_secure_input(self, now):
+        if now - self.last_secure_poll < SECURE_POLL_S:
+            return
+        self.last_secure_poll = now
+        on = secure_input_enabled()
+        if on and not self.secure:
+            self.secure_until = now + SECURE_HINT_S
+        if on != self.secure:
+            self.secure = on
+            self._update_accessible()
+            self.update()
+
+    def secure_hint(self, now=None):
+        now = time.monotonic() if now is None else now
+        return self.secure and self.on and now < self.secure_until
 
     def mic_silent(self):
         """Aufnahme läuft, der Pegel kommt an, aber seit 1,5 s ist nichts zu
@@ -364,6 +399,8 @@ class Pill(QWidget):
         Vorschau- bzw. Ergebnistext, wenn eingeschaltet."""
         if self.mic_silent():
             return tr("mic_silent")
+        if self.secure_hint() and self.mode in ("ready", "recording"):
+            return tr("secure_input")
         if self.cfg.pill_preview and self.text and \
                 self.mode in ("recording", "done", "error"):
             return self.text

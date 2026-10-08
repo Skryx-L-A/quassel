@@ -62,6 +62,12 @@ def normal_motion(monkeypatch):
                         {"ts": float("-inf"), "val": False})
 
 
+@pytest.fixture(autouse=True)
+def no_secure_input(monkeypatch):
+    """Sichere Eingabe nie echt abfragen (Ergebnis hinge vom Testrechner ab)."""
+    monkeypatch.setattr(pill_qt, "secure_input_enabled", lambda: False)
+
+
 @pytest.fixture
 def pill(qapp, isolated_cfg):
     p = pill_qt.Pill()
@@ -704,3 +710,45 @@ def test_offscreen_bubble_sits_behind_the_text_and_stays_opaque(pill):
     assert y0 > 10
     alpha = img.pixelColor((x0 + x1) // 2, y0 + 2).alphaF()
     assert alpha >= pill_qt.BUBBLE_MIN_ALPHA - 0.02
+
+
+
+# ------------------------------------------- H120 Hinweis bei Sicherer Eingabe
+def test_secure_input_hint_shows_for_a_few_seconds(pill, monkeypatch):
+    from quassel import i18n
+    i18n.set_language("en")
+    monkeypatch.setattr(pill_qt, "secure_input_enabled", lambda: True)
+    try:
+        pill.on = True
+        pill.set_mode("ready")
+        pill.tick()
+        assert pill.bubble_text().startswith("Secure input is on")
+        assert "Secure input" in pill.accessibleDescription()
+        pill.grab()                                   # zeichnet die Blase
+        updates = []
+        monkeypatch.setattr(pill, "update", lambda *a: updates.append(1))
+        pill.secure_until = time.monotonic() - 0.1    # Hinweiszeit vorbei
+        pill.tick()
+        assert pill.bubble_text() == ""
+        assert updates                                # Blase verschwindet sichtbar
+    finally:
+        i18n.set_language(None)
+
+
+def test_secure_input_hint_not_repeated_while_it_stays_on(pill, monkeypatch):
+    monkeypatch.setattr(pill_qt, "secure_input_enabled", lambda: True)
+    pill.on = True
+    pill.set_mode("ready")
+    pill.tick()
+    pill.secure_until = time.monotonic() - 0.1
+    pill.last_secure_poll = float("-inf")
+    pill.tick()                                       # bleibt an: kein neuer Hinweis
+    assert pill.bubble_text() == ""
+
+
+def test_silent_mic_wins_over_secure_input_hint(pill, monkeypatch):
+    monkeypatch.setattr(pill_qt, "secure_input_enabled", lambda: True)
+    _recording(pill, level=0.0)
+    pill.meter.quiet_since -= 2.0
+    from quassel.i18n import tr
+    assert pill.bubble_text() == tr("mic_silent")

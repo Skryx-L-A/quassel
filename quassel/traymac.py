@@ -5,6 +5,7 @@ Menu items: Turn off, Stop dictation now, Open Control Center, Quit Quassel
 (English or German, following the app language; retranslate() after a switch).
 Icon: monochromatic template-style for native macOS menu bar rendering.
 """
+import ctypes
 import os
 import sys
 from PySide6.QtCore import Qt
@@ -21,6 +22,28 @@ STATUS_KEYS = {
     "error": "tray_error",
     "off": "tray_off",
 }
+
+
+CARBON = "/System/Library/Frameworks/Carbon.framework/Carbon"
+_secure_fn = []
+
+
+def secure_input_enabled():
+    """Ist irgendwo „Sichere Eingabe" an (Passwortfeld, Terminal mit
+    „Sichere Tastatureingabe")? Dann liefert macOS keinem Event-Tap mehr
+    Tasten, der Diktier-Hotkey kommt nicht an (H120). Reine Abfrage über
+    Carbon/HIToolbox, systemweit gültig; False, wenn nicht ermittelbar."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        if not _secure_fn:
+            fn = ctypes.cdll.LoadLibrary(CARBON).IsSecureEventInputEnabled
+            fn.restype = ctypes.c_bool
+            fn.argtypes = []
+            _secure_fn.append(fn)
+        return bool(_secure_fn[0]())
+    except (OSError, AttributeError):
+        return False
 
 
 def _create_mic_icon(size=22, dpr=2.0):
@@ -77,6 +100,7 @@ class TrayMenu(QSystemTrayIcon):
         self.on_open_center = on_open_center
         self.on_quit = on_quit
         self.mode = "ready"  # ready, recording, off, error, transcribing
+        self.secure_input = False
 
         # Create menu
         self.menu = QMenu()
@@ -130,10 +154,21 @@ class TrayMenu(QSystemTrayIcon):
             text: optional detail text (ignored in status line)
         """
         self.mode = mode
-        self.status_action.setText(tr(STATUS_KEYS.get(mode, "tray_ready")))
+        status = tr(STATUS_KEYS.get(mode, "tray_ready"))
+        if self.secure_input and mode != "off":
+            status += " · " + tr("tray_secure")
+        self.status_action.setText(status)
         if self.toggle_action is not None:
             self.toggle_action.setText(
                 tr("turn_on") if mode == "off" else tr("turn_off"))
+
+    def refresh_secure_input(self, query=None):
+        """Statuszeile um „Sichere Eingabe aktiv" ergänzen, solange sie an ist."""
+        on = (query or secure_input_enabled)()
+        if on != self.secure_input:
+            self.secure_input = on
+            self.set_mode(self.mode)
+        return on
 
     def retranslate(self):
         """Nach einem Wechsel der App-Sprache alle Menütexte neu setzen."""

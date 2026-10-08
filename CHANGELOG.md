@@ -14,6 +14,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- macOS: when Secure Input is on (a password field, or Secure Keyboard Entry
+  in Terminal), the system hides every key from Quassel and the hotkey does
+  nothing. The pill now says so for a few seconds when it starts, and the menu
+  bar status line shows "Secure input is on, hotkey paused" for as long as it
+  lasts.
+
 ### Changed
 - The pill now shows your real microphone level while you dictate instead of a
   fixed animation. If nothing arrives from the microphone for 1.5 seconds, the

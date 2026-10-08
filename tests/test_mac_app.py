@@ -396,3 +396,13 @@ def test_start_and_supervise_rotate_the_daemon_log(tmp_path, monkeypatch):
     mac.daemon.poll.return_value = None
     mac._supervise(now=1.0)
     assert calls == [mac_app.daemon_log_path()] * 2
+
+
+
+def test_sync_tray_refreshes_secure_input(monkeypatch):
+    monkeypatch.setattr(mac_app, "state_read", lambda: {"state": "idle"})
+    mac = mac_app.MacApp(MagicMock())
+    mac.enabled = True
+    mac.tray = MagicMock()
+    mac.sync_tray()
+    mac.tray.refresh_secure_input.assert_called_once()

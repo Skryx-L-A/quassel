@@ -127,6 +127,9 @@ STRINGS = {
     "tray_off": ("Off", "Aus"),
     "tray_panic": ("Stop dictation now", "Diktat sofort beenden"),
     "tray_open_center": ("Open Control Center", "Kontrollzentrum öffnen"),
+    "tray_secure": ("Secure input is on, hotkey paused", "Sichere Eingabe aktiv, Hotkey pausiert"),
+    "secure_input": ("Secure input is on (a password field, or Secure Keyboard Entry in Terminal). Quassel can't hear the hotkey until it ends.",
+                     "Sichere Eingabe ist aktiv (Passwortfeld oder „Sichere Tastatureingabe“ im Terminal). Quassel hört den Hotkey erst danach wieder."),
     # --- macOS-App (Hinweise der Menüleisten-App) ---
     "daemon_giveup": ("The dictation service keeps restarting. Please check the log: {path}",
                       "Der Diktat-Dienst startet wiederholt neu, bitte Log prüfen: {path}"),
