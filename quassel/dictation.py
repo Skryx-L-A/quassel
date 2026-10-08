@@ -114,6 +114,16 @@ def wake_transcribe(cfg, pcm, wav_path, wav_from_raw, log):
     return text
 
 
+def clipboard_only_text():
+    """Hinweis, wenn der Text nur in der Zwischenablage liegt. Nutzt den
+    i18n-Schlüssel, sobald es ihn gibt; bis dahin beide Sprachen hier."""
+    if "paste_clipboard_only" in i18n.STRINGS:
+        return tr("paste_clipboard_only")
+    if i18n.current() == "de":
+        return "Text liegt in der Zwischenablage – Strg+V drücken"
+    return "Text is on the clipboard – press Ctrl+V"
+
+
 def scratch_wav(name):
     """Pfad einer Zwischen-WAV dieses Prozesses (Diktat, Vorschau). Die
     Prozessnummer im Namen sorgt dafür, dass beim Aufräumen nie die Datei
@@ -587,6 +597,7 @@ class DictationCore:
                 self._state("error", tr("nothing"))
             return
         mech = self._refine_mechanical(value)
+        inserted = True             # Streaming tippt selbst, ohne Rückmeldung
         if streamer is not None:
             # Streaming: KI auf den Endtext, dann Zielfenster exakt darauf bringen.
             final = self._ai_refine(mech) if self.cfg.ai_enabled else mech
@@ -598,23 +609,41 @@ class DictationCore:
             # Lokale KI braucht Sekunden. ERST den Rohtext einfügen (solange der
             # Fokus sicher im Zielfeld ist), DANN durch die KI-Fassung ersetzen —
             # sonst landet bei langsamen Modellen nichts mehr im Fenster.
-            self._paste(mech)
-            self.last_paste_len = len(mech)
+            inserted = self._insert(mech)
+            self.last_paste_len = len(mech) if inserted else 0
             self._state("transcribing")
             final = self._ai_refine(mech)
-            if final != mech:
+            if final != mech and inserted:
                 self._send_backspaces(len(mech))
-                self._paste(final)
-                self.last_paste_len = len(final)
+                inserted = self._insert(final)
+                self.last_paste_len = len(final) if inserted else 0
                 self._log("ai: replaced %d -> %d chars" % (len(mech), len(final)))
+            elif final != mech:
+                inserted = self._insert(final)  # nichts zu ersetzen: Endfassung ablegen
             value = final
         else:
-            self._paste(mech)
-            self.last_paste_len = len(mech)
+            inserted = self._insert(mech)
+            self.last_paste_len = len(mech) if inserted else 0
             value = mech
-        self._forget_text(self._state("done", value))
+        if inserted:
+            self._forget_text(self._state("done", value))
+        else:
+            self._report_clipboard_only()
         secs = len(data) / (RATE * SAMPLE_BYTES)
         self._after_insert(value, secs)
+
+    # ------------------------------------------------------------ Einfügen
+    def _insert(self, text):
+        """Text einfügen. False nur, wenn die Plattform ausdrücklich meldet,
+        dass der Tastendruck nicht ankam und der Text nur in der
+        Zwischenablage liegt (Linux ohne laufendes ydotoold, Audit D57).
+        Plattformen ohne Rückmeldung (None) gelten als erfolgreich."""
+        return self._paste(text) is not False
+
+    def _report_clipboard_only(self):
+        """Die Pille sagte sonst „fertig", obwohl im Fenster nichts ankam."""
+        self._log("paste: Tastendruck nicht angekommen, Text nur in der Zwischenablage")
+        self._state("error", clipboard_only_text())
 
     # --------------------------------------------------- Rettung der Aufnahme
     def _fail_with_rescue(self, data, streamer, clip_backup):
@@ -791,9 +820,12 @@ class DictationCore:
         if kind != "text" or not value.strip():
             return
         value = self._refine(value)
-        self._paste(value)
-        self.last_paste_len = len(value)
-        self._forget_text(self._state("done", value))
+        if self._insert(value):
+            self.last_paste_len = len(value)
+            self._forget_text(self._state("done", value))
+        else:
+            self.last_paste_len = 0
+            self._report_clipboard_only()
         self._after_insert(value)
 
 
