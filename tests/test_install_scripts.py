@@ -750,3 +750,11 @@ def test_pkgbuild_package_installs_every_launcher_unit_and_icon(tmp_path):
     assert (pkg / "usr/lib/modules-load.d/quassel-uinput.conf").read_text().strip() == "uinput"
     assert (pkg / "usr/share/licenses/quassel-type-git/LICENSE").exists()
     assert not list(pkg.rglob(".tmp-*")) and not list(pkg.rglob(".quassel.desktop"))
+
+
+def test_cask_comment_no_longer_waits_for_the_ffmpeg_measurement():
+    cask = (ROOT / "packaging" / "homebrew" / "Casks" / "quassel.rb").read_text(
+        encoding="utf-8")
+    assert "solange die Messung läuft" not in cask
+    assert "seit 2.5.0" in cask
+    assert '\n  depends_on formula: "ffmpeg"' not in cask

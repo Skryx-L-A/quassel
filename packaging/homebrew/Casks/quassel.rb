@@ -13,9 +13,9 @@ cask "quassel" do
   depends_on macos: :big_sur
   depends_on arch: :arm64
 
-  # ffmpeg-Abhängigkeit NICHT aktivieren, solange die Messung läuft, ob die App
-  # ffmpeg zur Laufzeit überhaupt noch braucht (parallele Untersuchung, Stand
-  # 2026-07-28). Erst eintragen, wenn diese Messung "ja" ergibt:
+  # Keine ffmpeg-Abhängigkeit: seit 2.5.0 nimmt die App über sounddevice/
+  # CoreAudio auf (CHANGELOG 2.5.0); ffmpeg dient nur noch dazu, vorhandene
+  # Nicht-WAV-Audiodateien umzuwandeln. Wer das braucht, installiert es selbst.
   # depends_on formula: "ffmpeg"
 
   app "Quassel.app"
