@@ -22,6 +22,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lasts.
 
 ### Changed
+- Fewer system notifications. Pressing the hotkey together with another key
+  (for example to switch desktops) now ends quietly instead of announcing
+  "Canceled (other key pressed)". A single tap and a recording that is too
+  short are shown in the pill for a moment instead of as a notification; only
+  with the pill switched off do they still come as a notification.
 - Windows: the pill now shows the real microphone level too, flags a silent
   microphone with a flat amber line and a hint, gives each state its own shape,
   respects "Show animations" being off, and tells screen readers its state. Its

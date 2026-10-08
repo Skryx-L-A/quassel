@@ -369,6 +369,17 @@ class DictationCore:
     def _wake_busy(self):
         return self.rec.active
 
+    def _tell(self, key):
+        """Kurzer Hinweis ohne Fehlercharakter (Einzeltipp, zu kurz): die
+        Pille zeigt ihn 3 s. Eine Systembenachrichtigung kommt nur, wenn die
+        Pille ausgeschaltet ist — sonst gäbe es gar keine Rückmeldung (H118)."""
+        text = tr(key)
+        if getattr(self.cfg, "pill_enabled", True):
+            self._state("done", text)
+        else:
+            self._state("idle")
+            self._notify(text)
+
     # ---------------------------------------------------------------- Pegel
     def _start_level(self):
         """Pegelpumpe für dieses Diktat starten. Ein Fehler hier kostet nur
@@ -442,8 +453,14 @@ class DictationCore:
             if self.cfg.beep:
                 beep.stop()
             self.ducker.restore()
-            self._state("idle")
-            self._notify("✖ " + tr(reason_key))
+            if reason_key == "canceled_key":
+                # Eine andere Taste zum Chord (z.B. Strg+Meta+Pfeil für den
+                # Arbeitsflächenwechsel) ist eine bewusste Tastenkombination,
+                # kein gescheitertes Diktat: still beenden, nur ins Log.
+                self._log("dict: abgebrochen (andere Taste)")
+                self._state("idle")
+            else:
+                self._tell(reason_key)
         finally:
             self._sync_action = None
         # Ein Stream, der beim Abbruch aufgegeben werden musste, vergiftet den
@@ -575,8 +592,7 @@ class DictationCore:
         self._log("dict: bt=%s vad=%s rec=%.2fs trim=%dms pad=%dms" % (
             self._bt, self._vad, raw_len / (RATE * SAMPLE_BYTES), trim_ms, pad_ms))
         if len(data) < MIN_AUDIO_BYTES:
-            self._state("idle")
-            self._notify(tr("too_short"))
+            self._tell("too_short")
             discard(done_path)
             return None
         self._state("transcribing")

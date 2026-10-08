@@ -1131,7 +1131,8 @@ def test_finish_restarts_even_on_an_early_return(monkeypatch):
     d, seen = _transcribing_daemon(monkeypatch, rec)
     run_finish(d)
     assert seen["order"] == [("exit", daemon_mod.RESTART_EXIT)]
-    assert any(text == daemon_mod.tr("too_short") for text in seen["notes"])
+    # „zu kurz" steht seit H118 in der Pille statt in einer Benachrichtigung
+    assert ("done", daemon_mod.tr("too_short")) in seen["states"]
 
 
 def test_finish_does_not_restart_after_a_healthy_recording(monkeypatch):

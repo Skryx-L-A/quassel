@@ -150,3 +150,45 @@ def test_daemon_sends_the_level_through_state_json(monkeypatch):
     d = daemon_mod.Daemon.__new__(daemon_mod.Daemon)
     d._level_target()(0.25)
     assert got == [0.25]
+
+
+# ------------------------------------------- H118 weniger Benachrichtigungen
+def test_other_key_cancel_is_silent(pumps):
+    core = Core()
+    core.start_recording()
+    core.cancel_recording("canceled_key")
+    assert core.notes == []
+    assert core.states[-1] == ("idle", "")
+
+
+def test_single_tap_goes_to_the_pill_not_the_system(pumps):
+    core = Core()
+    core.start_recording()
+    core.cancel_recording("canceled_tap")
+    assert core.notes == []
+    assert core.states[-1] == ("done", i18n.tr("canceled_tap"))
+
+
+def test_too_short_goes_to_the_pill(pumps):
+    core = Core(data=b"\1\0" * 10)
+    core.start_recording()
+    assert core._finish_capture() is None
+    assert core.notes == []
+    assert core.states[-1] == ("done", i18n.tr("too_short"))
+
+
+def test_without_a_pill_the_system_notification_remains(pumps):
+    core = Core(pill=False)
+    core.start_recording()
+    core.cancel_recording("canceled_tap")
+    assert core.notes == [i18n.tr("canceled_tap")]
+    assert core.states[-1] == ("idle", "")
+
+
+def test_panic_still_notifies(pumps):
+    """Der Not-Aus ist eine bewusste Handlung, oft bei hängendem Hotkey: die
+    Bestätigung bleibt eine Systembenachrichtigung."""
+    core = Core()
+    core.start_recording()
+    core.panic_stop()
+    assert core.notes == [i18n.tr("panic_stopped")]
