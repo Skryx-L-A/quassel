@@ -33,6 +33,27 @@ def nvidia_vram_mb():
     return max(vals) if vals else None
 
 
+def _lspci_gpu_vendor(vendor):
+    """True, wenn Linux PCI-Geräte des GPU-Herstellers melden."""
+    try:
+        result = subprocess.run(["lspci"], capture_output=True, text=True,
+                                timeout=3, check=False, **_NOWIN)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return any(vendor in line.casefold() and ("vga" in line.casefold()
+               or "3d controller" in line.casefold()) for line in result.stdout.splitlines())
+
+
+def amd_gpu_present():
+    """Erkennt AMD-GPUs ohne optionale Python-Abhängigkeit."""
+    return _lspci_gpu_vendor("amd") or _lspci_gpu_vendor("advanced micro devices")
+
+
+def intel_gpu_present():
+    """Erkennt Intel-GPUs ohne optionale Python-Abhängigkeit."""
+    return _lspci_gpu_vendor("intel")
+
+
 def is_apple_silicon():
     """True auf Apple-Silicon-Macs (arm64) — dort rechnet whisper.cpp über Metal."""
     return sys.platform == "darwin" and platform.machine() == "arm64"
@@ -96,11 +117,19 @@ def default_model_for_hardware():
     # Apple Silicon: whisper.cpp läuft über Metal auf der GPU — das große
     # Turbo-Modell ist dort flott. q5_0 statt voll: praktisch gleiche
     # Genauigkeit, kleinere Datei.
+    ram = total_ram_gb() or 0
     if is_apple_silicon():
-        return "large-v3-turbo-q5_0"
+        return "large-v3-turbo-q5_0" if ram >= 16 else "small-q5_1"
     vram = nvidia_vram_mb()
     if vram is not None:
         return "large-v3-turbo" if vram >= 6144 else "medium"
+    # AMD/Intel-Vulkan nutzt häufig gemeinsamen Speicher. Deshalb entscheidet
+    # nicht der Installationsweg, sondern der tatsächlich verfügbare RAM.
+    if amd_gpu_present() or intel_gpu_present():
+        if ram >= 32:
+            return "large-v3-turbo"
+        if ram >= 16:
+            return "medium"
     cores = cpu_core_count()
     if cores >= 4:
         return "small-q5_1"
