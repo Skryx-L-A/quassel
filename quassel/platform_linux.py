@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import threading
 import time
+import stat
 
 KEY_BACKSPACE = 14
 KEY_ENTER = 28
@@ -21,16 +22,32 @@ if IS_WAYLAND:
 
 
 def find_ydotool_socket():
-    if os.environ.get("YDOTOOL_SOCKET"):
-        return os.environ["YDOTOOL_SOCKET"]
-    for cand in (os.path.join(XDG_RUNTIME, ".ydotool_socket"),
-                 "/tmp/.ydotool_socket"):
-        if os.path.exists(cand):
-            return cand
-    return os.path.join(XDG_RUNTIME, ".ydotool_socket")
+    """Return only an owned socket below this user's runtime directory.
+
+    A socket in /tmp is shared between local users and must never become an
+    input-injection endpoint merely because ydotoold is missing.
+    """
+    runtime = os.path.realpath(XDG_RUNTIME) if XDG_RUNTIME else ""
+    candidate = os.environ.get("YDOTOOL_SOCKET") or os.path.join(runtime, ".ydotool_socket")
+    if not runtime or not candidate:
+        return None
+    try:
+        candidate = os.path.realpath(candidate)
+        if os.path.commonpath((runtime, candidate)) != runtime:
+            return None
+        info = os.stat(candidate)
+        if info.st_uid != os.getuid() or not stat.S_ISSOCK(info.st_mode):
+            return None
+    except (OSError, ValueError):
+        return None
+    return candidate
 
 
-os.environ["YDOTOOL_SOCKET"] = find_ydotool_socket()
+_ydotool_socket = find_ydotool_socket()
+if _ydotool_socket:
+    os.environ["YDOTOOL_SOCKET"] = _ydotool_socket
+else:
+    os.environ.pop("YDOTOOL_SOCKET", None)
 
 
 def clip_copy(text):
@@ -94,9 +111,27 @@ def send_backspaces(n):
     keys = []
     for _ in range(n):
         keys += [f"{KEY_BACKSPACE}:1", f"{KEY_BACKSPACE}:0"]
+    delay = ["-d", "1"] if _ydotool_supports_fast_delay() else []
     while keys:
-        subprocess.run(["ydotool", "key"] + keys[:400], check=False)
+        subprocess.run(["ydotool", "key"] + delay + keys[:400], check=False)
         keys = keys[400:]
+
+
+_fast_delay_supported = None
+
+
+def _ydotool_supports_fast_delay():
+    """Detect -d once; older ydotool versions retain the safe old command."""
+    global _fast_delay_supported
+    if _fast_delay_supported is None:
+        try:
+            result = subprocess.run(["ydotool", "key", "--help"],
+                                    capture_output=True, text=True, timeout=2,
+                                    check=False)
+            _fast_delay_supported = "-d" in result.stdout or "--delay" in result.stdout
+        except (OSError, subprocess.SubprocessError):
+            _fast_delay_supported = False
+    return _fast_delay_supported
 
 
 def send_enter():
