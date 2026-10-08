@@ -7,3 +7,7 @@ comtypes==1.4.16 ; sys_platform == "win32"
 pycaw==20251023 ; sys_platform == "win32"
 winrt-Windows.Foundation==3.2.1 ; sys_platform == "win32"
 winrt-Windows.Media.Control==3.2.1 ; sys_platform == "win32"
+# Optional, not installed by default: transcribe.cpp Python binding for the
+# experimental TranscribeCppPythonBackend (quassel/backends/transcribe_cpp_py.py).
+# transcribe-cpp==0.3.1
+# transcribe-cpp-native==0.3.1
