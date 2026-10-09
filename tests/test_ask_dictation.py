@@ -501,3 +501,44 @@ def test_crash_during_an_answer_fails_the_question_without_rescue(env, monkeypat
     assert err.value.reason == "failed"
     assert _no_rescue(env)
     assert env.core.states[-1][0] == "error"
+
+
+def _terminal_in_front(env, monkeypatch, seen):
+    """Per-app profile of a terminal: no Enter. An answer must not care."""
+    def for_active_app(cfg, log=None):
+        seen.append(1)
+        return SimpleNamespace(**dict(vars(cfg), allow_enter=False))
+    monkeypatch.setattr(dictation.profiles, "for_active_app", for_active_app)
+
+
+def test_answer_is_formed_without_the_profile_of_the_window_in_front(env, monkeypatch):
+    # N6: the answer goes to a program, not into the terminal in front.
+    seen = []
+    _terminal_in_front(env, monkeypatch, seen)
+    env.transcript["text"] = "zeile eins\nzeile zwei\n"
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _dictate(env.core)
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == \
+        "zeile eins\nzeile zwei\n"
+    assert seen == []
+
+
+def test_wake_answer_is_formed_without_the_profile_of_the_window_in_front(env, monkeypatch):
+    seen = []
+    _terminal_in_front(env, monkeypatch, seen)
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch)
+    env.core._wake_record_followup()
+    env.core._wake_insert("zeile eins\nzeile zwei\n")
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == \
+        "zeile eins\nzeile zwei\n"
+    assert seen == []
+
+
+def test_dictation_without_question_still_uses_the_profile(env, monkeypatch):
+    seen = []
+    _terminal_in_front(env, monkeypatch, seen)
+    env.transcript["text"] = "zeile eins\nzeile zwei\n"
+    _dictate(env.core)
+    assert env.core.pasted == ["zeile eins zeile zwei"]
+    assert seen

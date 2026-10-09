@@ -811,7 +811,8 @@ class DictationCore:
     def _transcribe_and_insert(self, streamer, clip_backup, data, panic, ask_doc=None):
         # Per-App-Profil der Anwendung, in die gleich eingefügt wird. Gilt nur
         # für dieses Diktat und nur auf diesem Thread; self.cfg bleibt, wie es ist.
-        cfg = self._run.cfg = self._profile_cfg()
+        # Eine Antwort an ein Programm geht in kein Fenster: Grundeinstellungen.
+        cfg = self._run.cfg = self.cfg if ask_doc is not None else self._profile_cfg()
         try:
             return self._transcribe_and_insert_with(cfg, streamer, clip_backup, data, panic,
                                                     ask_doc=ask_doc)
@@ -1144,20 +1145,23 @@ class DictationCore:
                 text = textreplace.apply_rules(text, rules)
         return text
 
-    def _refine(self, text):
-        """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
+    def _refine(self, text, window=True):
+        """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad).
+        window=False: der Text geht in kein Fenster (Antwort an ein Programm),
+        also ohne Terminal-Schutz (_finish_text)."""
         cfg = self._cfg_now()
+        finish = self._finish_text if window else (lambda value, _cfg: value)
         raw = text
         if self._cleanup_active():
             try:
                 text = self._refine_mechanical(text)
             except Exception:
                 return raw
-            return self._finish_text(self._cleanup_refine(raw, text), cfg)
+            return finish(self._cleanup_refine(raw, text), cfg)
         text = self._refine_mechanical(text)
         if cfg.ai_enabled:
             text = self._ai_refine(text)
-        return self._finish_text(text, cfg)
+        return finish(text, cfg)
 
     def _cleanup_active(self):
         cfg = self._cfg_now()
@@ -1277,7 +1281,13 @@ class DictationCore:
             self._ask_release(ask_doc)
             self._state("error", tr("ask_no_answer"))
             return
-        text = self._refine(value)
+        # Grundeinstellungen statt des Profils der Anwendung, die gerade vorne
+        # ist, und kein Terminal-Schutz: die Antwort geht in kein Fenster.
+        previous, self._run.cfg = getattr(self._run, "cfg", None), self.cfg
+        try:
+            text = self._refine(value, window=False)
+        finally:
+            self._run.cfg = previous
         if panic is not None and panic.is_set():
             self._state("idle")
             return
@@ -1438,6 +1448,18 @@ class DictationCore:
         return claimed
 
     def _wake_insert(self, raw_text):
+        # Auch ein per Wake-Phrase begonnenes Diktat beantwortet eine wartende
+        # Frage, statt einzufügen: die beim Start der Folgeaufnahme gebundene
+        # oder eine, die schon vor Beginn der Äußerung wartete. Eine Antwort
+        # geht in kein Fenster, also ohne Per-App-Profil (Grundeinstellungen).
+        waiting, self._wake_ask = self._wake_ask, None
+        if waiting is None:
+            waiting = self._wake_claim_older()
+        if waiting is not None:
+            # Bei Stille oder Sprachbefehl gibt _answer die Frage wieder frei.
+            kind, value = postprocess_transcript(raw_text, self.cfg)
+            self._answer(waiting, kind, value)
+            return
         cfg = self._run.cfg = self._profile_cfg()
         try:
             self._wake_insert_with(cfg, raw_text)
@@ -1446,19 +1468,7 @@ class DictationCore:
 
     def _wake_insert_with(self, cfg, raw_text):
         kind, value = postprocess_transcript(raw_text, cfg)
-        # Auch ein per Wake-Phrase begonnenes Diktat beantwortet eine wartende
-        # Frage, statt einzufügen: die beim Start der Folgeaufnahme gebundene
-        # (dann auch bei Stille oder Sprachbefehl, das gibt die Frage frei) ...
-        waiting, self._wake_ask = self._wake_ask, None
-        if waiting is not None:
-            self._answer(waiting, kind, value)
-            return
         if kind != "text" or not value.strip():
-            return
-        # ... oder eine, die schon vor Beginn der Äußerung wartete.
-        waiting = self._wake_claim_older()
-        if waiting is not None:
-            self._answer(waiting, kind, value)
             return
         self._last_raw = None
         raw = value
