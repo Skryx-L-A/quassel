@@ -69,3 +69,41 @@ def test_decider_address_reaches_the_cleanup_config(monkeypatch, tmp_path):
     assert seen[0].cleanup_decider_url == "http://127.0.0.1:8095"
     cleanup_bench.run("http://127.0.0.1:9", "fake", "stark", 1)
     assert seen[1].cleanup_decider_url == ""
+
+
+def test_decider_calls_are_counted_and_rejections_shown(monkeypatch, tmp_path):
+    corpus = tmp_path / "corpus.jsonl"
+    rows = [{"id": f"C00{i}", "language": "en", "raw": f"raw {i}", "expected_rule": f"raw {i}",
+             "expected_guard": f"raw {i}", "terms": []} for i in (1, 2, 3)]
+    corpus.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    monkeypatch.setattr(cleanup_bench, "CORPUS", corpus)
+    verdicts = iter([True, False])
+
+    def fake_meaning(*args, **kwargs):
+        return next(verdicts)
+
+    def fake_cleanup(raw, level, cfg):
+        if raw == "raw 1":
+            return CleanupResult(raw, used_llm=True)
+        from quassel import decider
+        ok = decider.same_meaning(cfg.cleanup_decider_url, raw, "changed", timeout=1)
+        if ok:
+            return CleanupResult(raw, used_llm=True)
+        return CleanupResult(raw, used_llm=True, fallback_reason="decider_meaning")
+
+    monkeypatch.setattr(cleanup_bench, "cleanup", fake_cleanup)
+    monkeypatch.setattr(cleanup_bench.decider, "same_meaning", fake_meaning)
+    report = tmp_path / "cases.jsonl"
+    summary = cleanup_bench.run("http://127.0.0.1:9", "fake", "stark", 1, report,
+                                show_unsafe=True, decider_url="http://127.0.0.1:8095")
+    assert summary["decider"]["asked"] == 2
+    assert summary["decider"]["rejected"] == 1 and summary["decider"]["unavailable"] == 0
+    assert set(summary["decider"]["latency_seconds"]) == {"p50", "p95"}
+    lines = [json.loads(line) for line in report.read_text(encoding="utf-8").splitlines()]
+    assert [row["decider_asked"] for row in lines] == [False, True, True]
+    assert "raw" not in lines[1] and lines[2]["raw"] == "raw 3"
+    assert lines[2]["rejected_output"] == "changed"
+    assert cleanup_bench.decider.same_meaning is fake_meaning
+    monkeypatch.setattr(cleanup_bench, "cleanup", lambda raw, level, cfg: CleanupResult(raw))
+    plain = cleanup_bench.run("http://127.0.0.1:9", "fake", "stark", 1)
+    assert "decider" not in plain
