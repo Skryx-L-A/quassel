@@ -2,6 +2,8 @@
 
 The server uses JSON-RPC lines over stdio. It intentionally has no recording
 tool: starting the microphone remains a direct action in the Quassel app.
+The opt-in tool ask_user only waits for the next dictation the user starts
+themselves (quassel/ask.py).
 """
 import json
 import os
@@ -10,6 +12,9 @@ import sys
 from . import cli, config
 
 PROTOCOL_VERSION = "2025-06-18"
+# Name the MCP client gave in initialize (clientInfo.name): the pill and the
+# notification say who asks.
+_client = {"name": ""}
 
 
 def _history_allowed():
@@ -23,6 +28,17 @@ def _history_allowed():
     except ValueError:
         return False
     return shared and config.Cfg().history_enabled
+
+
+def _ask_allowed():
+    """ask_user is off unless [mcp] mcp_ask = true: a program that may wait
+    for your next dictation is a choice, not a default. An absent or
+    malformed setting keeps it off."""
+    parser = config._read_parser()
+    try:
+        return parser.getboolean("mcp", "mcp_ask", fallback=False)
+    except ValueError:
+        return False
 
 
 def _tool(name, description, properties=None, required=()):
@@ -43,6 +59,17 @@ def tools():
     if _history_allowed():
         out.append(_tool("history_list", "Read explicitly shared local dictation history.",
                          {"since": {"type": "string", "description": "ISO-8601 or Unix seconds."}}))
+    if _ask_allowed():
+        out.append(_tool(
+            "ask_user",
+            "Ask the user a question and wait for a spoken answer. Quassel shows the "
+            "question; the user answers with their next dictation, which they start "
+            "themselves with the hotkey. This never starts the microphone. Returns the "
+            "transcribed answer, or an error if nobody answered before the timeout.",
+            {"question": {"type": "string", "description": "Short question shown to the user."},
+             "timeout": {"type": "number", "minimum": 1, "maximum": 600,
+                         "description": "Seconds to wait for the user (default 120, max 600)."}},
+            ("question",)))
     return out
 
 
@@ -51,7 +78,34 @@ def _content(value, error=False):
             "isError": error}
 
 
+def _ask_user(arguments):
+    from . import ask, i18n
+    if not _ask_allowed():
+        return _content({"error": "ask_user is disabled; set [mcp] mcp_ask = true"}, True)
+    question = arguments.get("question")
+    if not isinstance(question, str) or not question.strip():
+        return _content({"error": "question must be a non-empty string"}, True)
+    timeout = arguments.get("timeout", ask.DEFAULT_TIMEOUT)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) \
+            or not 0 < timeout <= ask.MAX_TIMEOUT:
+        return _content({"error": "timeout must be a number of seconds from 1 to 600"}, True)
+    if cli._daemon_status() == "stopped":
+        return _content({"error": "Quassel is not running", "reason": "unavailable"}, True)
+    try:
+        cfg = config.Cfg()
+        i18n.set_language(None if cfg.ui_language == "auto" else cfg.ui_language)
+    except Exception:   # noqa: BLE001 — only the language of the notification
+        pass
+    try:
+        answer = ask.ask(question, timeout, _client["name"] or "MCP", notify=ask.notify_user)
+    except ask.AskError as exc:
+        return _content({"error": str(exc), "reason": exc.reason}, True)
+    return _content({"answer": answer})
+
+
 def _call(name, arguments):
+    if name == "ask_user":
+        return _ask_user(arguments)
     if name == "status":
         return _content(cli.status_data())
     if name == "dictionary_list":
@@ -102,6 +156,10 @@ def handle(message):
     if not isinstance(method, str):
         return _error(request_id, -32600, "method is required")
     if method == "initialize":
+        params = message.get("params")
+        info = params.get("clientInfo") if isinstance(params, dict) else None
+        name = info.get("name") if isinstance(info, dict) else None
+        _client["name"] = name if isinstance(name, str) else ""
         return {"jsonrpc": "2.0", "id": request_id,
                 "result": {"protocolVersion": PROTOCOL_VERSION,
                            "capabilities": {"tools": {}},
