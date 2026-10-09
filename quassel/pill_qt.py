@@ -20,7 +20,7 @@ from PySide6.QtCore import Qt, QTimer, QRectF, QPoint, QFileSystemWatcher
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QApplication, QWidget
 
-from . import config, profile
+from . import ask, config, profile
 from .i18n import STRINGS, tr
 from .state import LevelMeter, RUNDIR, level_read, state_read
 
@@ -166,6 +166,7 @@ class Pill(QWidget):
             self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.cfg = config.Cfg()
         self.text = ""
+        self.ask_text = ""      # wartende Frage eines Programms (G104)
         self.meter = LevelMeter()
         self.secure = False
         self.secure_until = 0.0
@@ -348,6 +349,10 @@ class Pill(QWidget):
         if self.mode in ("done", "error") and now > self.result_until:
             self.set_mode("ready" if self.on else "off")
         self._poll_secure_input(now)
+        ask_text = ask.pill_line() if self.on else ""
+        if ask_text != self.ask_text:
+            self.ask_text = ask_text
+            self._update_accessible()
         if self.bubble_text() != self._painted_bubble:
             self.update()       # Hinweis abgelaufen oder neu: neu zeichnen
         self._apply_tick_interval()
@@ -416,6 +421,12 @@ class Pill(QWidget):
             return tr("secure_input")
         if self.wake_listening():
             return tr("wake_listening")
+        # Wartet ein Programm auf eine Antwort (G104), steht die Frage in der
+        # Pille, auch ohne Vorschau: niemand soll versehentlich ins falsche
+        # Ziel diktieren. Während der Antwort weicht sie der Live-Vorschau.
+        if self.ask_text and (self.mode == "ready" or (
+                self.mode == "recording" and not (self.cfg.pill_preview and self.text))):
+            return self.ask_text
         if self.cfg.pill_preview and self.text and \
                 self.mode in ("recording", "done", "error"):
             return self.text

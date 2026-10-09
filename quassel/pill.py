@@ -43,7 +43,7 @@ def _gnome_fallback():
     return ("GNOME has no layer shell and XWayland is unavailable; "
             "the pill may be hidden behind other windows.")
 
-from . import config, profile  # noqa: E402
+from . import ask, config, profile  # noqa: E402
 from .i18n import STRINGS, tr  # noqa: E402
 from .state import LevelMeter, RUNDIR, level_read, state_read  # noqa: E402
 
@@ -158,6 +158,7 @@ class Pill(Gtk.Application):
         self.wave = None
         self.meter = LevelMeter()
         self.text = ""
+        self._ask_shown = ""             # angezeigte wartende Frage (G104)
         self._hint_shown = False
         self.last_ts = None
         self.result_until = 0.0
@@ -332,6 +333,7 @@ class Pill(Gtk.Application):
         return fracs, WAVE_PINE, False   # ready / recording / transcribing / done
 
     def set_mode(self, mode, text=""):
+        self._ask_shown = ""             # sync_ask zeigt eine wartende Frage neu
         if mode == "recording" and self.mode != "recording":
             self.meter.reset()           # neue Aufnahme: Pegelquelle abwarten
             self._hint_shown = False
@@ -401,7 +403,23 @@ class Pill(Gtk.Application):
             self.wave.queue_draw()
         if self.mode in ("done", "error") and now > self.result_until:
             self.set_mode("ready" if self.on else "off")
+        self.sync_ask()
         return True
+
+    def sync_ask(self):
+        """Wartet ein Programm auf eine Antwort (G104), steht die Frage in der
+        Pille, auch ohne Vorschau: niemand soll versehentlich ins falsche Ziel
+        diktieren. Nur im Ruhezustand; Aufnahme und Ergebnis zeigen ihr Eigenes."""
+        shown = ask.pill_line() if self.on and self.mode == "ready" else ""
+        if shown == self._ask_shown:
+            return
+        self._ask_shown = shown
+        if shown:
+            self.show_text(shown, force=True)
+            self.update_accessible(shown)
+        elif self.mode == "ready":
+            self.textbox.set_visible(False)
+            self.update_accessible()
 
     # --------------------------------------------------------------- Klicks
     def on_left_click(self, *_a):

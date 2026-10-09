@@ -39,7 +39,8 @@ MAX_TIMEOUT = 600
 # Matches dictation.ACTION_STALL (the longest the rest of a dictation may run)
 # plus the time to speak.
 ANSWER_GRACE = 120
-QUESTION_MAX = 200         # characters shown in the pill and the notification
+QUESTION_MAX = 200         # characters kept in the request and the notification
+PILL_QUESTION_MAX = 60     # the pill bubble holds ~140 characters in all
 PROGRAM_MAX = 40
 ORPHAN_AGE = 30            # s: an answer nobody picked up is removed after this
 
@@ -335,16 +336,26 @@ def discard(now=None, rundir=None):
     return waiting
 
 
-def display(doc):
+def display(doc, question_max=QUESTION_MAX):
     """The calm line for pill and notification: who asks, what, and how to
     answer. Only the shortened question, never an answer."""
-    question = shorten(doc.get("question"), QUESTION_MAX)
+    question = shorten(doc.get("question"), question_max)
     program = shorten(doc.get("program"), PROGRAM_MAX)
     if not question:
         return i18n.tr("ask_waiting", program=program or i18n.tr("ask_a_program"))
     if program:
         return i18n.tr("ask_question", program=program, question=question)
     return i18n.tr("ask_question_anon", question=question)
+
+
+def pill_line(rundir=None):
+    """What the pill shows while a request waits, "" otherwise. Never raises:
+    the pill must keep drawing."""
+    try:
+        doc = pending(rundir=rundir)
+        return display(doc, PILL_QUESTION_MAX) if doc is not None else ""
+    except Exception:   # noqa: BLE001
+        return ""
 
 
 def notify_user(doc):
