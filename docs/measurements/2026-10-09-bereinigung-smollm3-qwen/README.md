@@ -22,18 +22,18 @@ Schutzprüfung, sonst Rohtext.
 | 03:36 (Schutz für Fragen und Injection, Stufe im Prompt) | SmolLM3, mittel | 53,5 % | 90 / 17 von je 100 | 10 |
 | 03:36 | SmolLM3, stark | 56,5 % | 90 / 23 | 10 |
 | 03:36 | qwen2.5-coder:3b, mittel | 34,0 % | 28 / 40 | 6 |
-| 04:04 (plus „Sprache behalten, nie übersetzen", `de0ceff`) | SmolLM3, mittel | 40,0 % | 63 / 17 | 10 |
+| 04:04 (plus „Sprache behalten, nie übersetzen", `7be970f`) | SmolLM3, mittel | 40,0 % | 63 / 17 | 10 |
 | 04:04 | SmolLM3, stark | 45,5 % | 75 / 16 | 12 |
 | 04:04 | qwen2.5-coder:3b, mittel | 28,0 % | 26 / 30 | 3 |
-| 04:17 (Stand `ad014fa`, Apache-Kandidaten) | Qwen3-4B-Instruct-2507 Q4_K_M, mittel | 27,0 % | 34 / 20 | 18 |
+| 04:17 (Stand `4b3f5ee`, Apache-Kandidaten) | Qwen3-4B-Instruct-2507 Q4_K_M, mittel | 27,0 % | 34 / 20 | 18 |
 | 04:17 | Qwen3-4B-Instruct-2507, stark | 50,5 % | 88 / 13 | 10 |
 | 04:17 | Granite 4 micro, mittel | 31,5 % | 34 / 29 | 13 |
 | 04:17 | Granite 4 micro, stark | 43,0 % | 61 / 25 | 11 |
 | 04:17 | SmolLM3, mittel (Wiederholung) | 40,0 % | 63 / 17 | 10 |
-| 04:40 (Schutz-Fix URL, `2763980`) | Qwen3-4B, mittel / stark | 37,5 % / 55,5 % | 55 / 20 · 98 / 13 | 8 / 0 |
+| 04:40 (Schutz-Fix URL, `70a52d7`) | Qwen3-4B, mittel / stark | 37,5 % / 55,5 % | 55 / 20 · 98 / 13 | 8 / 0 |
 | 04:40 | Granite 4 micro, mittel / stark | 39,0 % / 48,0 % | 49 / 29 · 71 / 25 | 3 / 1 |
 | 04:40 | SmolLM3, mittel / stark | 50,0 % / 51,0 % | 83 / 17 · 86 / 16 | 0 / 1 |
-| 05:02 (deutsche Stufenanweisung `a5d7191`, Schutz für Markup, Fragen, Sprache `0dac2d3`) | Qwen3-4B, mittel / stark | 30,0 % / **20,5 %** | 40 / 20 · **28** / 13 | 9 / 8 |
+| 05:02 (deutsche Stufenanweisung `03f592d`, Schutz für Markup, Fragen, Sprache `9f1d5ac`) | Qwen3-4B, mittel / stark | 30,0 % / **20,5 %** | 40 / 20 · **28** / 13 | 9 / 8 |
 | 05:02 | Granite 4 micro, mittel / stark | 54,5 % / 56,0 % | 77 / 32 · 85 / 27 | 0 / 0 |
 | 05:02 | SmolLM3, mittel / stark | 30,5 % / 26,5 % | 44 / 17 · 37 / 16 | 0 / 3 |
 
@@ -51,7 +51,7 @@ qwen2.5-coder:3b 0,54 s.
 auf Deutsch (Qwen3-4B stark: 98 auf 28, SmolLM3 mittel: 83 auf 44). Granite 4 micro liefert mit
 der deutschen Anweisung oft kein gültiges JSON mehr (70 bis 75 Schemafehler) und fällt damit
 zurück. Die einzigen unsicheren Annahmen in diesem Lauf waren gestrichenes „Bitte"/„Please";
-seit `2aef8ab` zählen Höflichkeitswörter als Inhalt. Bestes Modell dieser Nacht:
+seit `bf73e6d` zählen Höflichkeitswörter als Inhalt. Bestes Modell dieser Nacht:
 **Qwen3-4B-Instruct-2507 auf Stufe stark** (20,5 % Rückfall, Apache-2.0, 0,52 s je Fall);
 eine Vorgabe ist das erst nach einem Lauf auf dem jetzigen Stand und einer Prüfung am Gerät.
 
@@ -64,7 +64,7 @@ Frühere Läufe:
 - Unsicher waren bei allen drei Modellen vor allem deutsche URL-Sätze: Lauf 04:17 mit
   `--show-unsafe` zeigt „Öffne https://example.com/alpha." → „Open https://example.com/alpha.".
   Der Schutz ließ das durch, weil die URL in vier Wörter zerfiel und die Ähnlichkeit genau
-  0,80 erreichte. Behoben in `2763980` (Wortvergleich ohne Entitäten, `mittel` fügt nie ein
+  0,80 erreichte. Behoben in `70a52d7` (Wortvergleich ohne Entitäten, `mittel` fügt nie ein
   Wort hinzu). Die Zahlen der Spalte „Unsicher" gelten für den Stand davor; ein neuer Lauf
   steht aus.
 - qwen2.5-coder:3b ist auf Deutsch besser und sicherer (26 % Rückfall, 3 unsicher), steht aber
