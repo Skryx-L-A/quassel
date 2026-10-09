@@ -29,7 +29,7 @@ import queue
 import threading
 import time
 
-from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, eszett, i18n,
+from . import (aimodes, ask, beep, cleanup as cleanup_module, config, dictprompt, eszett, i18n,
                power, profiles, progmode, selfheal, stats, textproc, textreplace, vad,
                wakeword, whisperclient)
 from .audio import LevelPump, RATE, SAMPLE_BYTES, rms_level
@@ -330,6 +330,9 @@ class DictationCore:
     # „Rohtext zurück" aus dem Kontrollzentrum.
     _last_raw = None
     _autostop = None            # vad.AutoStop im Freihand-Modus (Schalter [vad] autostop)
+    # Frage per Stimme (G104): die Anfrage, die das laufende Diktat
+    # beantwortet. Gebunden beim START der Aufnahme, nie erst am Ende.
+    _ask = None
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -496,6 +499,10 @@ class DictationCore:
             self._report_mic_missing()
             return False
         power.install(self)
+        # Wartet ein Programm auf eine Antwort, beantwortet DIESES Diktat sie.
+        # Erst nach dem Start: das Mikrofon läuft nur, weil der Nutzer selbst
+        # den Hotkey gedrückt hat — die Anfrage startet es nie.
+        self._ask = self._ask_claim()
         if self.cfg.beep:
             beep.start()                 # aufsteigender Ton: jetzt sprechen
         if sys.platform.startswith("linux"):
@@ -519,7 +526,9 @@ class DictationCore:
         self._handsfree = True
         self._arm_autostop()
         if (self.streamer is not None or not self.cfg.streaming
-                or self._cleanup_active() or self.cfg.ai_enabled):
+                or self._cleanup_active() or self.cfg.ai_enabled
+                or self._ask is not None):
+            # Eine Antwort an ein Programm tippt nie live ins Fenster.
             return
         # Per-App-Profil vor dem ersten getippten Zeichen: Streaming tippt
         # Tasten, ein Zeilenumbruch wäre im Terminal sofort ein Enter.
@@ -577,6 +586,8 @@ class DictationCore:
         # Wie finish(): läuft synchron auf dem Ereignis-Thread und zählt
         # solange als laufendes Diktat (siehe _busy).
         self._sync_action = "cancel"
+        # Die Frage bleibt offen; das nächste Diktat beantwortet sie.
+        self._ask = None
         try:
             if self.partial:
                 self.partial.stop()
@@ -610,8 +621,16 @@ class DictationCore:
         Schritt hier hat eine harte Frist (Recorder-Stopp, osascript), damit
         der Not-Aus nicht genau dort hängen bleibt, wo das Diktat schon hängt.
         Läuft weder eine Aufnahme noch eine Aktion, gibt es nichts zu beenden
-        — dann sagt die Methode das und tut sonst nichts."""
+        — dann sagt die Methode das und tut sonst nichts. Eine wartende
+        Frage eines Programms (G104) verwirft der Not-Aus in jedem Fall."""
+        dismissed = self._ask_discard()
+        self._ask = None
         if not self._busy():
+            if dismissed:
+                self._log("panic: wartende Frage verworfen")
+                self._state("idle")
+                self._notify(tr("ask_dismissed"))
+                return
             self._log("panic: Not-Aus ohne laufendes Diktat")
             self._notify(tr("nothing_running"))
             return
@@ -683,6 +702,8 @@ class DictationCore:
             rest()
 
     def _finish_capture(self):
+        # Die Frage gehört zu GENAU diesem Diktat; das nächste prüft neu.
+        answer_to, self._ask = self._ask, None
         if self.partial:
             # C44: läuft gerade ein Teiltranskript, wartet das Finale dahinter.
             # Die Anfrage selbst lässt sich nicht zurückholen; festhalten, wie
@@ -743,9 +764,10 @@ class DictationCore:
             # nichts mehr kam, sagt eine Benachrichtigung.
             self._notify(tr("err_mic_lost_partial"))
         self._state("transcribing")
-        return lambda: self._finish_rest(streamer, clip_backup, data, panic, done_path)
+        return lambda: self._finish_rest(streamer, clip_backup, data, panic, done_path,
+                                         ask_doc=answer_to)
 
-    def _finish_rest(self, streamer, clip_backup, data, panic, done_path=None):
+    def _finish_rest(self, streamer, clip_backup, data, panic, done_path=None, ask_doc=None):
         """Der lange Teil: Server, Transkription, Nachbearbeitung, Einfügen.
         Läuft auf dem Aktions-Thread und fasst den Recorder nicht mehr an —
         nur die Rohdatei SEINES Diktats wird am Ende gelöscht: die Daten
@@ -753,7 +775,8 @@ class DictationCore:
         eigene Datei. Scheitert die Rettung, bleibt die Rohdatei stehen."""
         keep_raw = True
         try:
-            keep_raw = self._transcribe_and_insert(streamer, clip_backup, data, panic) is False
+            keep_raw = self._transcribe_and_insert(streamer, clip_backup, data, panic,
+                                                   ask_doc=ask_doc) is False
         except Exception as exc:  # noqa: BLE001 — Text nie still verlieren
             # Zwischenablage, Tastendruck oder volle Platte: wie ein
             # Fehlschlag retten und melden, statt auf „transkribiert" stehen
@@ -765,16 +788,18 @@ class DictationCore:
                 discard(done_path)
             self._after_audio_released()
 
-    def _transcribe_and_insert(self, streamer, clip_backup, data, panic):
+    def _transcribe_and_insert(self, streamer, clip_backup, data, panic, ask_doc=None):
         # Per-App-Profil der Anwendung, in die gleich eingefügt wird. Gilt nur
         # für dieses Diktat und nur auf diesem Thread; self.cfg bleibt, wie es ist.
         cfg = self._run.cfg = self._profile_cfg()
         try:
-            return self._transcribe_and_insert_with(cfg, streamer, clip_backup, data, panic)
+            return self._transcribe_and_insert_with(cfg, streamer, clip_backup, data, panic,
+                                                    ask_doc=ask_doc)
         finally:
             self._run.cfg = None
 
-    def _transcribe_and_insert_with(self, cfg, streamer, clip_backup, data, panic):
+    def _transcribe_and_insert_with(self, cfg, streamer, clip_backup, data, panic,
+                                    ask_doc=None):
         # Beim Kaltstart lädt der Server erst das Modell; eine kurze Frist wäre
         # dort gleichbedeutend mit einem weggeworfenen Diktat.
         deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
@@ -803,6 +828,8 @@ class DictationCore:
         kind, value = postprocess_transcript(
             raw_text, cfg,
             result.language or getattr(cfg, "language", "auto"), data)
+        if ask_doc is not None:
+            return self._answer(ask_doc, kind, value, panic)
         if kind is None:
             if streamer is not None:
                 self._streaming_restore(clip_backup)
@@ -1155,6 +1182,61 @@ class DictationCore:
             except Exception:    # noqa: BLE001 — Lernen darf nie stören
                 pass
 
+    # ------------------------------------------------ Frage per Stimme (G104)
+    # Ein Programm (CLI dictate --once, MCP ask_user) legt nur eine Anfrage
+    # ab (quassel/ask.py). Das nächste Diktat, das der Nutzer SELBST startet,
+    # wird nicht eingefügt, sondern als Antwort zurückgegeben: fertig
+    # nachbearbeitet, ohne Verlauf, Statistik und Wörterbuch-Lernen — eine
+    # Antwort an ein Programm ist kein Diktat ins eigene Fenster. Der Text
+    # kommt nie ins Log und nie in die Pille.
+    def _ask_dir(self):
+        """Laufzeitordner der Anfrage (Tests setzen dictation.RUNDIR)."""
+        return RUNDIR
+
+    def _ask_claim(self):
+        try:
+            doc = ask.claim(rundir=self._ask_dir())
+        except Exception as exc:  # noqa: BLE001 — eine kaputte Anfrage stört kein Diktat
+            self._log("ask: Anfrage nicht lesbar: %s" % type(exc).__name__)
+            return None
+        if doc is not None:
+            self._log("ask: dieses Diktat beantwortet eine wartende Frage")
+        return doc
+
+    def _ask_pending(self):
+        try:
+            return ask.pending(rundir=self._ask_dir())
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _ask_discard(self):
+        try:
+            return ask.discard(rundir=self._ask_dir())
+        except Exception as exc:  # noqa: BLE001 — der Not-Aus darf an nichts scheitern
+            self._log("panic: Frage nicht verworfen: %s" % type(exc).__name__)
+            return False
+
+    def _answer(self, ask_doc, kind, value, panic=None):
+        """Den Text als Antwort an das fragende Programm geben, nichts einfügen."""
+        self.last_paste_len = 0          # „Rückgängig" löscht danach nichts
+        self._last_raw = None
+        if kind != "text" or not (value or "").strip():
+            # Stille oder ein Sprachbefehl („Enter", „Rückgängig"): nichts
+            # ausführen, die Frage wartet weiter auf eine Antwort.
+            self._log("ask: keine Antwort erkannt (%s)" % (kind or "leer"))
+            self._state("error", tr("ask_no_answer"))
+            return
+        text = self._refine(value)
+        if panic is not None and panic.is_set():
+            self._state("idle")
+            return
+        if ask.deliver(ask_doc["token"], text, rundir=self._ask_dir()):
+            self._log("ask: Antwort übergeben (%d Zeichen)" % len(text))
+            self._state("done", tr("ask_sent"))
+        else:
+            self._log("ask: Frage nicht mehr offen, Antwort verworfen")
+            self._state("error", tr("ask_gone"))
+
     # ----------------------------------------------------- Wake-Word (opt-in)
     def _sync_wakeword(self):
         """Listener nach Konfig starten/stoppen (idempotent)."""
@@ -1246,6 +1328,12 @@ class DictationCore:
     def _wake_insert_with(self, cfg, raw_text):
         kind, value = postprocess_transcript(raw_text, cfg)
         if kind != "text" or not value.strip():
+            return
+        # Auch ein per Wake-Phrase begonnenes Diktat beantwortet eine wartende
+        # Frage, statt einzufügen.
+        waiting = self._ask_pending()
+        if waiting is not None:
+            self._answer(waiting, kind, value)
             return
         self._last_raw = None
         raw = value
