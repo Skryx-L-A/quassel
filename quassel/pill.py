@@ -43,8 +43,8 @@ def _gnome_fallback():
     return ("GNOME has no layer shell and XWayland is unavailable; "
             "the pill may be hidden behind other windows.")
 
-from . import config  # noqa: E402
-from .i18n import tr  # noqa: E402
+from . import config, profile  # noqa: E402
+from .i18n import STRINGS, tr  # noqa: E402
 from .state import LevelMeter, RUNDIR, level_read, state_read  # noqa: E402
 
 BARS = 9
@@ -97,9 +97,14 @@ def esc(s):
     return GLib.markup_escape_text(s or "")
 
 
+def daemon_unit():
+    """Daemon-Unit dieser Instanz (Profil: quasseld@<name>.service)."""
+    return profile.service("quasseld")
+
+
 def daemon_active():
     return subprocess.run(
-        ["systemctl", "--user", "is-active", "--quiet", "quasseld"],
+        ["systemctl", "--user", "is-active", "--quiet", daemon_unit()],
         check=False).returncode == 0
 
 
@@ -336,7 +341,12 @@ class Pill(Gtk.Application):
         if mode in ("off", "ready"):
             self.textbox.set_visible(False)
         elif mode == "recording":
-            self.show_text(text, italic=True)
+            # „Hört zu…" nach der Wake-Phrase auch ohne Vorschau zeigen: sonst
+            # sieht man nicht, dass Quassel zuhört. Der Dienst schreibt dafür
+            # nur diesen festen Text, nie Diktiertes.
+            listening = text in STRINGS["wake_listening"]
+            self.show_text(tr("wake_listening") if listening else text,
+                           italic=True, force=listening)
         elif mode == "transcribing":
             pass                       # Textbox bleibt wie zuletzt (Live-Transkript)
         elif mode in ("done", "error"):
@@ -399,17 +409,18 @@ class Pill(Gtk.Application):
 
     def on_right_click(self, *_a):
         # Bewusste Geste zum An/Aus-Schalten.
+        own = [daemon_unit(), profile.service()]
         if daemon_active():
-            subprocess.run(["systemctl", "--user", "stop",
-                            "quasseld", "quassel-server", "quassel-ydotoold"],
+            # Ein Profil stoppt den geteilten ydotoold der installierten App nicht.
+            shared = [] if profile.name() else ["quassel-ydotoold"]
+            subprocess.run(["systemctl", "--user", "stop", *own, *shared],
                            check=False)
             self.on = False
             self.set_mode("off")
         else:
             from .platform_linux import import_session_env
             import_session_env()
-            subprocess.run(["systemctl", "--user", "start",
-                            "quasseld", "quassel-server"], check=False)
+            subprocess.run(["systemctl", "--user", "start", *own], check=False)
             self.on = True
             self.set_mode("ready")
 

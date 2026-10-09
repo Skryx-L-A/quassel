@@ -545,6 +545,8 @@ class Pill(QWidget):
             self.on = False
             self.set_mode("off")
         else:
+            from .platform_linux import import_session_env
+            import_session_env()
             subprocess.run(["systemctl", "--user", "start", *own], check=False)
             daemon_active_invalidate()
             self.on = True
