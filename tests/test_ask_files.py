@@ -241,3 +241,40 @@ def test_released_claim_can_be_claimed_again(tmp_path):
     ask.release(doc["token"], rundir=rundir)
     assert ask.claim(rundir=rundir)["token"] == doc["token"]
     assert sorted(os.listdir(tmp_path)) == [ask.CLAIM_NAME, ask.REQUEST_NAME]
+
+
+def test_late_delivery_does_not_remove_a_newer_request(tmp_path, monkeypatch):
+    # N3: deliver for A passed pending() just before A ended and B asked.
+    rundir = str(tmp_path)
+    doc_a = ask.open_request("A?", 30, rundir=rundir)
+    ask.close_request(doc_a, rundir)
+    doc_b = ask.open_request("B?", 30, rundir=rundir)
+    monkeypatch.setattr(ask, "pending", lambda now=None, rundir=None: doc_a)
+    ask.deliver(doc_a["token"], "for A", rundir=rundir)
+    monkeypatch.undo()
+    assert ask.pending(rundir=rundir)["token"] == doc_b["token"]
+
+
+def test_racing_askers_do_not_remove_each_others_request(tmp_path, monkeypatch):
+    # N3: two askers see the same expired request; the faster one links its
+    # own. The slower one must get busy, not delete the fresh request.
+    rundir = str(tmp_path)
+    ask.open_request("old", 5, now=time.time() - 60, rundir=rundir)
+    real_pending = ask.pending
+    winner = {}
+
+    def pending_then_lose_the_race(now=None, rundir=None):
+        if not winner:
+            os.remove(os.path.join(rundir, ask.REQUEST_NAME))
+            monkeypatch.setattr(ask, "pending", real_pending)
+            winner["doc"] = ask.open_request("fast", 30, rundir=rundir)
+            monkeypatch.setattr(ask, "pending", pending_then_lose_the_race)
+            return None                 # what the slow asker saw before
+        return real_pending(now, rundir)
+
+    monkeypatch.setattr(ask, "pending", pending_then_lose_the_race)
+    with pytest.raises(ask.AskError) as err:
+        ask.open_request("slow", 30, rundir=rundir)
+    assert err.value.reason == "busy"
+    monkeypatch.undo()
+    assert ask.pending(rundir=rundir)["token"] == winner["doc"]["token"]

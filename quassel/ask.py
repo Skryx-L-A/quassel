@@ -217,10 +217,13 @@ def open_request(question, timeout=DEFAULT_TIMEOUT, program="", pid=None, now=No
                 os.link(staging, request)
                 return doc
             except FileExistsError:
+                # Token first, then judge: whatever another asker links in
+                # between carries a different token and stays.
+                stale = _token_of(request)
                 if pending(now, rundir) is not None:
                     raise AskError("busy", "another question is already waiting for an answer")
-                _remove(request)             # expired, or its asker is gone
-                _remove(claim)
+                _remove_token(request, stale)        # expired, or its asker is gone
+                _remove_token(claim, stale)
             except OSError:
                 # File system without hard links: check, then replace.
                 if pending(now, rundir) is not None:
@@ -348,8 +351,10 @@ def deliver(token, text, now=None, rundir=None):
         fsutil.atomic_write(answer, json.dumps({"token": token, "text": text}), mode=0o600)
     except OSError:
         return False
-    _remove(request)
-    _remove(claim_path)
+    # Only this request's files: the asker may have ended meanwhile and a
+    # new one asked.
+    _remove_token(request, token)
+    _remove_token(claim_path, token)
     return True
 
 
