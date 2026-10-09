@@ -21,7 +21,7 @@ from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QApplication, QWidget
 
 from . import config, profile
-from .i18n import tr
+from .i18n import STRINGS, tr
 from .state import LevelMeter, RUNDIR, level_read, state_read
 
 RESULT_SHOW_S = 3.0
@@ -399,13 +399,23 @@ class Pill(QWidget):
         hören: stummgeschaltet, falsches Gerät oder keine Mikrofonfreigabe."""
         return self.mode == "recording" and self.meter.silent()
 
+    def wake_listening(self):
+        """Nimmt Quassel gerade die Äußerung nach der Wake-Phrase auf? Der
+        Dienst schreibt dafür den festen Text "wake_listening" (in seiner
+        Sprache) in den Zustand, nie diktierten Text."""
+        return self.mode == "recording" and self.text in STRINGS["wake_listening"]
+
     def bubble_text(self):
-        """Hinweis „kein Ton" geht vor (auch ohne Vorschau), sonst der
-        Vorschau- bzw. Ergebnistext, wenn eingeschaltet."""
+        """Hinweis „kein Ton" geht vor (auch ohne Vorschau), dann „Sichere
+        Eingabe" und „Hört zu…" nach der Wake-Phrase (auch ohne Vorschau,
+        damit man sieht, dass Quassel zuhört), sonst der Vorschau- bzw.
+        Ergebnistext, wenn eingeschaltet."""
         if self.mic_silent():
             return tr("mic_silent")
         if self.secure_hint() and self.mode in ("ready", "recording"):
             return tr("secure_input")
+        if self.wake_listening():
+            return tr("wake_listening")
         if self.cfg.pill_preview and self.text and \
                 self.mode in ("recording", "done", "error"):
             return self.text

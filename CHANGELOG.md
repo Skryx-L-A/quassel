@@ -15,6 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Wake word (macOS and the portable Linux pill): "Listening…" after the
+  phrase now shows above the pill even when the live preview is turned off,
+  so you can see that Quassel is listening. Dictated preview text stays
+  hidden as before.
 - Linux and macOS: if the microphone stops delivering sound during a
   recording (unplugged, Bluetooth disconnected, system power event), Quassel
   now notices it and closes the dead input instead of keeping it open for the
