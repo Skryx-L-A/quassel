@@ -199,3 +199,23 @@ def test_dry_run_over_a_json_manifest(tmp_path, capsys):
     data = manifest_mod.load_manifest(manifest_path)
     assert len(data.items) == 5
     assert data.items[4].ref == ""            # absichtlich leer = Stille
+
+
+def test_server_time_recorder_passes_every_argument_through(monkeypatch):
+    """whisperclient._post_multipart bekam ein viertes Argument (errors). Der
+    Zeitmesser nahm nur drei: jede Turbo-Anfrage der Latenzmessung vom 09.10.
+    scheiterte mit TypeError, die Zeiten standen auf 0,000 s."""
+    import quassel.whisperclient as wc
+    seen = []
+
+    def original(body, content_type, timeout, errors=None):
+        seen.append((body, content_type, timeout, errors))
+        return "text"
+    monkeypatch.setattr(wc, "_post_multipart", original)
+    recorder = []
+    with run_bench._record_server_time(recorder):
+        errors = []
+        assert wc._post_multipart(b"x", "multipart/form-data", 5, errors) == "text"
+    assert seen == [(b"x", "multipart/form-data", 5, [])]
+    assert len(recorder) == 1 and recorder[0][1] is True
+    assert wc._post_multipart is original

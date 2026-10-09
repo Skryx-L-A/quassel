@@ -133,10 +133,12 @@ def _record_server_time(recorder):
     import quassel.whisperclient as wc
     original = wc._post_multipart
 
-    def timed(body, content_type, timeout):
+    def timed(*args, **kwargs):
+        # Alle Argumente durchreichen: die Signatur von _post_multipart wächst
+        # (errors kam dazu), und ein TypeError hier sah aus wie 0,000 s.
         start = time.perf_counter()
         try:
-            result = original(body, content_type, timeout)
+            result = original(*args, **kwargs)
         finally:
             duration = time.perf_counter() - start
         recorder.append((duration, result is not None))
