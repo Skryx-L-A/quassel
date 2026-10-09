@@ -45,7 +45,12 @@ PROGRAM_MAX = 40
 ORPHAN_AGE = 30            # s: an answer nobody picked up is removed after this
 
 _TOKEN = re.compile(r"[0-9a-f]{32}")
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f  ]+")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+# Bidi controls, zero-width characters and other invisible formatting: they
+# could make the pill show a different program name or question than the
+# one sent. Removed outright, not replaced by a space.
+_INVISIBLE = re.compile(r"[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e"
+                        r"\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb]+")
 
 
 class AskError(Exception):
@@ -75,7 +80,7 @@ def clamp_timeout(value):
 
 def shorten(text, limit):
     """One calm line for display: no control characters, no line breaks."""
-    text = _CONTROL.sub(" ", str(text or ""))
+    text = _CONTROL.sub(" ", _INVISIBLE.sub("", str(text or "")))
     text = " ".join(text.split())
     if len(text) > limit:
         text = text[:limit - 1].rstrip() + "…"

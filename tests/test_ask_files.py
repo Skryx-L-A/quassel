@@ -302,3 +302,20 @@ def test_failed_answer_reaches_the_asker_as_failed(tmp_path):
     assert err.value.reason == "failed"
     assert os.listdir(tmp_path) == []
     assert not ask.fail(doc["token"], rundir=rundir)
+
+
+@pytest.mark.parametrize("raw, shown", [
+    ("Quassel‮gnp.exe", "Quasselgnp.exe"),        # right-to-left override
+    ("⁦claude⁩ code", "claude code"),          # isolates
+    ("cl​au‍de﻿", "claude"),              # zero width
+    ("a‎b‏c؜d­e", "abcde"),          # marks, soft hyphen
+    ("one two", "one two"),
+])
+def test_bidi_and_invisible_characters_are_removed(raw, shown):
+    # N5: a client name or question must not disguise who asks or what.
+    assert ask.shorten(raw, 80) == shown
+
+
+def test_request_keeps_no_bidi_controls(tmp_path):
+    doc = ask.open_request("Delete ‮all?", 30, "Quassel‮", rundir=str(tmp_path))
+    assert "‮" not in doc["question"] and "‮" not in doc["program"]

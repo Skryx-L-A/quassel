@@ -123,7 +123,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   waiting for your next dictation. The live preview stays empty while you
   answer, so the answer never shows in the pill. If the speech server fails
   while you answer, the asking program gets an error right away; the
-  recording of the answer is not kept.
+  recording of the answer is not kept. Invisible and right-to-left control
+  characters are removed from the question and the program name, so the
+  pill cannot be made to show a different asker.
 - German "ß" is restored where spelling needs it when a German fine-tuned
   speech model is in use (it writes "grosses" instead of "großes"); "dass",
   "Masse" and English words stay as they are. Setting `[speech] eszett`
