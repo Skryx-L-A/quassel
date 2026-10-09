@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Linux now finds an existing Wayland socket instead of assuming `wayland-0`
+  when the session does not provide a display name.
 - On Windows, unavailable media controls no longer toggle muted sound or start
   paused playback when dictation begins.
 - Dictated questions and instruction-override examples now stay exactly as

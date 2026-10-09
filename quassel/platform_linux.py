@@ -27,8 +27,16 @@ XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR",
     f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else "")
 IS_WAYLAND = bool(os.environ.get("WAYLAND_DISPLAY")) or \
     os.environ.get("XDG_SESSION_TYPE", "") == "wayland"
-if IS_WAYLAND:
-    os.environ.setdefault("WAYLAND_DISPLAY", "wayland-0")
+if IS_WAYLAND and not os.environ.get("WAYLAND_DISPLAY") and XDG_RUNTIME:
+    # The session name is not fixed; guessing can point at another session.
+    try:
+        displays = [name for name in os.listdir(XDG_RUNTIME)
+                    if name.startswith("wayland-") and name[8:].isdigit()
+                    and stat.S_ISSOCK(os.stat(os.path.join(XDG_RUNTIME, name)).st_mode)]
+    except OSError:
+        displays = []
+    if len(displays) == 1:
+        os.environ["WAYLAND_DISPLAY"] = displays[0]
 
 
 def find_ydotool_socket():
