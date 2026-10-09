@@ -18,6 +18,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Linux dictation now inserts text when the clipboard was empty. After a
   browser text copy that cannot be fully preserved, it leaves the dictated
   text available to paste and warns that the copied formatting was lost.
+- macOS dictation returns to normal paste after an unreadable clipboard item
+  has been handled by direct typing.
 - A damaged settings file is no longer replaced by the part that could still be
   read: Quassel keeps a copy next to it (`config.ini.damaged-…`) before saving.
 - The dictation history could lose a new entry while expired entries were
