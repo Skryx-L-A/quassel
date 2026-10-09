@@ -17,10 +17,13 @@ not yet released or tried on a real device by the maintainer.
   with a real keyword model, and no model ships with Quassel — **M**
 - #32 Voice command "press enter" — works as a whole utterance. "Enter at the end of a
   dictation" ("…, press enter") is open — **S**
-- Evaluate other speech engines behind the `SpeechBackend` interface (the interface and
-  the whisper.cpp adapter exist; a second engine, for example `transcribe.cpp`, is a
-  stub). A model only replaces the current one if German, mixed language and names are at
-  least as good, or the speed gain carries it — **L**
+- Other speech engines behind the `SpeechBackend` interface. `transcribe.cpp` runs in the
+  benchmark: Cohere Transcribe and Parakeet v3 beat the current model on mixed German and
+  English, but Cohere invents sentences on silence and needs a voice-activity gate first
+  (`docs/measurements/2026-10-09-transcribe-cpp-vier-modelle/`). Open: wire it into
+  dictation behind that gate and measure latency with the model kept loaded. A model only
+  replaces the current one if German, mixed language and names are at least as good, or
+  the speed gain carries it — **L**
 - Latency: keep trimming the fixed waits per platform after each measurement
   (see `docs/next/PLAN.md`, phase 3) — **M**
 - Personal dictionary: smarter selection of words when the list outgrows the prompt
@@ -46,8 +49,6 @@ not yet released or tried on a real device by the maintainer.
   since 2.4.0 and needs a Windows machine to rebuild — **M**
 - Packaging: an AUR draft exists but has not been tested on Arch; COPR and Flathub (#9) — **S/M/L**
 - Distro testing: Ubuntu/Debian/Mint (#13), Arch (#14), openSUSE (#15) — help wanted
-- Install the command-line client with the installers (today it runs from a checkout,
-  see [docs/cli.md](docs/cli.md)) — **S**
 
 ### Someday / maybe
 - macOS: measure the Bluetooth microphone path (24 kHz) and word-error rate on a real
@@ -66,9 +67,18 @@ not yet released or tried on a real device by the maintainer.
   hands-free auto-stop (`[vad] autostop`, off by default); the loudness threshold stays
   the fallback.
 - Dictation clean-up (opt-in): conservative filler, repeat and number handling, with
-  an optional checked local model step. Files only so far, see above.
+  an optional local model step whose answer is checked (entities, numbers, negations,
+  questions, language, markup) before anything is inserted. Best measured model so far:
+  Qwen3-4B-Instruct at the strong level.
 - Command-line client and local MCP server, SRT/WebVTT output for file transcription.
-- Pre-roll buffer on Linux and macOS (`preroll_ms`, off by default).
+- Pre-roll buffer on Linux, macOS and Windows (`preroll_ms`, off by default).
+- OpenAI-compatible servers (llama-server, LM Studio, vLLM) for clean-up and AI modes;
+  "Raw text back" in the menus and on the command line; "Listening…" after the wake
+  phrase; "Save as" for transcribed files; German "ß" restored for fine-tuned models.
+- A microphone that drops out mid-dictation is reported instead of "too short"; a
+  damaged settings file is kept as a copy instead of being overwritten; the history
+  cannot lose an entry while old ones are removed.
+- The command-line client ships with the Linux installers and the AUR package.
 - `QUASSEL_PROFILE` to run a second copy next to the installed one.
 - Windows runs the same dictation flow as Linux and macOS (rescue of failed recordings,
   separate wake-word recording file, the stop-race fix).
