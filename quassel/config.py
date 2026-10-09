@@ -41,7 +41,8 @@ MODELDIR = os.path.join(SHARED_DATADIR, "models")
 CONFIG = os.path.join(CONFDIR, "config.ini")
 SERVERENV = os.path.join(CONFDIR, "server.env")
 DICTIONARY = os.path.join(CONFDIR, "dictionary.txt")
-LEARN_COUNTS = os.path.join(CONFDIR, "dictionary-counts.json")
+# Automatisch gelernte Wörter mit Herkunft, getrennt vom eigenen Wörterbuch.
+LEARNED = os.path.join(CONFDIR, "dictionary-learned.json")
 REPLACEMENTS = os.path.join(CONFDIR, "replacements.txt")
 CLEANUP_CORRECTIONS = os.path.join(CONFDIR, "cleanup-corrections.txt")
 AI_MODES = os.path.join(CONFDIR, "ai_modes.txt")
@@ -379,7 +380,12 @@ def write_serverenv(env):
 _dictionary_cache = {"key": None, "words": []}
 
 
-def dictionary_words():
+def _now():
+    return __import__("time").time()
+
+
+def dictionary_manual():
+    """Das eigene Wörterbuch (dictionary.txt), ohne gelernte Wörter."""
     try:
         st = os.stat(DICTIONARY)
     except OSError:
@@ -398,6 +404,16 @@ def dictionary_words():
     # künftiger, der sie doch verändert (z.B. sort() oder append()), würde
     # sonst den Cache für alle Leser verfälschen.
     return list(_dictionary_cache["words"])
+
+
+def dictionary_words(now=None):
+    """Was als Erkennungshilfe wirkt: eigene Wörter, dann gelernte, die gerade
+    gelten (bestätigt, nicht verfallen, nicht gesperrt)."""
+    from . import learn      # erst hier: learn kennt config nicht
+    manual = dictionary_manual()
+    have = {w.casefold() for w in manual}
+    learned = learn.active_words(_learned_state(), _now() if now is None else now)
+    return manual + [w for w in learned if w.casefold() not in have]
 
 
 def dictionary_save(text):
@@ -423,26 +439,107 @@ def cleanup_corrections():
 
 
 _dictionary_lock = threading.Lock()
+_learned_cache = {"key": None, "state": None}
 
 
-def dictionary_learn(text, cap=500):
-    """Lernt Jargon aus einem Diktat ins Wörterbuch und gibt die neu
-    aufgenommenen Wörter zurück (leer, wenn nichts Neues dabei war).
+def _learned_state():
+    """Gelernte Wörter, gecacht nach mtime+size; kaputte Datei = leer."""
+    from . import learn
+    try:
+        st = os.stat(LEARNED)
+    except OSError:
+        return learn.empty_state()
+    key = (LEARNED, st.st_mtime_ns, st.st_size)
+    if _learned_cache["key"] != key:
+        _learned_cache["state"] = _read_learned()
+        _learned_cache["key"] = key
+    return _learned_cache["state"]
 
-    Liest die Datei dazu FRISCH von der Platte (nicht aus dem Cache und nicht
-    aus einer Kopie, die der Aufrufer schon länger hält), führt zusammen und
-    schreibt atomar. Was der Nutzer inzwischen im Kontrollzentrum ergänzt
-    hat, geht so nicht verloren. Die Sperre schützt vor zwei Lernern im selben
-    Prozess; über Prozessgrenzen bleibt nur das Fenster zwischen Lesen und
-    Ersetzen, das nach Millisekunden zählt."""
-    from . import learn      # erst hier: learn kennt config nicht
-    with _dictionary_lock:
-        _dictionary_cache["key"] = None
-        merged, added = learn.learn(text, dictionary_words(), cap,
-                                    counter_path=LEARN_COUNTS)
-        if added:
-            dictionary_save("\n".join(merged))
+
+def _read_learned():
+    from . import learn
+    try:
+        with open(LEARNED, encoding="utf-8") as f:
+            return learn.normalize_state(json.load(f))
+    except (OSError, ValueError):
+        return learn.empty_state()
+
+
+def _write_learned(state):
+    # 0600: die Wörter verraten, worüber jemand diktiert.
+    fsutil.atomic_write(LEARNED, json.dumps(state, ensure_ascii=False, indent=1) + "\n",
+                        mode=0o600)
+    _learned_cache["key"] = None
+
+
+@contextlib.contextmanager
+def _learned_update():
+    """Liest die gelernten Wörter frisch unter einer Sperre über alle Prozesse
+    (Daemon lernt, Kontrollzentrum oder CLI entfernen) und schreibt sie nur,
+    wenn sich etwas geändert hat."""
+    with _dictionary_lock, _file_lock(LEARNED):
+        state = _read_learned()
+        before = json.dumps(state, sort_keys=True)
+        yield state
+        if json.dumps(state, sort_keys=True) != before:
+            _write_learned(state)
+
+
+def _correction_triggers():
+    """Schreibweisen, die der Nutzer schon als falsch korrigiert: Auslöser in
+    den Textersetzungen und den Korrekturen der Bereinigung."""
+    triggers = list(cleanup_corrections())
+    for line in replacement_text().splitlines():
+        if "=" in line and not line.lstrip().startswith("#"):
+            trigger = line.split("=", 1)[0].strip()
+            if trigger:
+                triggers.append(trigger)
+    return triggers
+
+
+def dictionary_learn(text, now=None):
+    """Zählt die Fachbegriffe eines Diktats und gibt die Wörter zurück, die
+    dadurch neu wirken (leer, wenn keins). Gelernte Wörter stehen in LEARNED,
+    nie in dictionary.txt; siehe learn.py zu Bestätigung und Verfall."""
+    from . import learn
+    now = _now() if now is None else now
+    words = learn.jargon_words(text)
+    with _learned_update() as state:
+        added = learn.observe(state, words, now, manual=dictionary_manual(),
+                              blocked=_correction_triggers()) if words else []
+        learn.prune(state, now)
     return added
+
+
+def dictionary_learned(now=None):
+    """Gelernte Wörter, die gerade wirken, mit Herkunft (für Anzeige/CLI)."""
+    from . import learn
+    now = _now() if now is None else now
+    state = _learned_state()
+    return [dict(word=w, **{k: state["words"][w][k] for k in ("first", "last", "seen", "active")})
+            for w in learn.active_words(state, now)]
+
+
+def dictionary_forget(word):
+    """Entfernt ein gelerntes Wort und sperrt es für immer."""
+    from . import learn
+    with _learned_update() as state:
+        return learn.forget(state, word)
+
+
+def dictionary_keep(word):
+    """Übernimmt ein gelerntes Wort ins eigene Wörterbuch (dort verfällt nichts)."""
+    from . import learn
+    with _learned_update() as state:
+        item = learn.entry(state, word)
+        if item is None:
+            return False
+        known = next(w for w in state["words"] if w.casefold() == word.casefold())
+        learn.drop(state, known)
+    manual = dictionary_manual()
+    if known.casefold() not in {w.casefold() for w in manual}:
+        dictionary_save("\n".join(manual + [known]))
+    return True
 
 
 # ------------------------------------------------------------- Textersetzungen
@@ -502,8 +599,15 @@ def _history_lock():
     Kontrollzentrum, CLI und MCP (Ablauf entfernen, leeren). Ohne Sperre
     überschrieb ein Leser, der abgelaufene Einträge wegschrieb, ein Diktat,
     das der Daemon zwischen Lesen und Ersetzen angehängt hatte."""
-    os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
-    fd = os.open(HISTORY + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+    with _file_lock(HISTORY):
+        yield
+
+
+@contextlib.contextmanager
+def _file_lock(path):
+    """Exklusive Sperre auf path + ".lock" über Prozessgrenzen."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
     try:
         if os.name == "nt":
             import msvcrt

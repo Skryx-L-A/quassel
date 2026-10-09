@@ -10,11 +10,10 @@ gelernt -- nur Tokens, die klar nach Namen/Bezeichnern/Jargon aussehen.
 
 Reine Funktionen ohne Datei-IO; der Aufrufer kuemmert sich um die Persistenz
 (config.dictionary_learn liest frisch, fuehrt zusammen und schreibt atomar).
+Gelernte Woerter landen nicht in dictionary.txt, sondern mit Herkunft in einer
+eigenen Datei (siehe "Lebenszyklus" unten).
 """
-import json
 import re
-
-from . import fsutil
 
 # Zeichen, die rund um ein Token entfernt werden (Satzzeichen, Klammern, Quotes).
 # Bindestrich/Apostroph/Slash bleiben im Wortinneren erhalten.
@@ -81,6 +80,23 @@ def _is_jargon(tok: str) -> bool:
     return _has_upper(rest)
 
 
+def _jargon_in(tok: str) -> list[str]:
+    """Jargon in einem Token. Bindestrich-Komposita werden je Teil beurteilt:
+    Im Deutschen ist das Glied nach dem Bindestrich gross ("Jeff-Artigen",
+    "Stand-Up-Runde"), das ist keine innere Grossschreibung. Bestehen alle
+    Teile aus Jargon, Zahlen oder einzelnen Grossbuchstaben ("GPT-4o",
+    "COVID-19", "USB-C"), bleibt das Token ganz; sonst nur die Jargon-Teile
+    ("PyTorch-Modell" -> "PyTorch")."""
+    parts = [p for p in tok.split("-") if p]
+    if len(parts) < 2:
+        return [tok] if _is_jargon(tok) else []
+    jargon = [p for p in parts if _is_jargon(p)]
+    if jargon and all(_is_jargon(p) or p.isdigit() or (len(p) == 1 and p.isupper())
+                      for p in parts):
+        return [tok]
+    return jargon
+
+
 def jargon_words(text: str) -> list[str]:
     """Liefert verschiedene Tokens aus `text`, die nach Jargon aussehen.
 
@@ -91,6 +107,7 @@ def jargon_words(text: str) -> list[str]:
     Ausgeschlossen: reine Kleinschreibung, gewoehnliche am-Wortanfang-gross
     geschriebene Woerter (normale Satz-/Substantiv-Grossschreibung), reine
     Zahlen und Tokens kuerzer als 2. Umgebende Satzzeichen werden entfernt.
+    Bindestrich-Komposita siehe _jargon_in.
     Reihenfolge des ersten Auftretens bleibt erhalten, keine Duplikate
     (gross-/kleinschreibungssensitiv unterschieden).
     """
@@ -98,69 +115,143 @@ def jargon_words(text: str) -> list[str]:
     out = []
     for raw in text.split():
         tok = raw.strip(_STRIP)
-        if not tok or tok in seen:
+        if not tok:
             continue
-        if _is_jargon(tok):
-            seen.add(tok)
-            out.append(tok)
+        for word in _jargon_in(tok):
+            if word not in seen:
+                seen.add(word)
+                out.append(word)
     return out
 
 
-def merge_into_dictionary(new_words: list[str], existing: list[str],
-                          cap: int = 500) -> list[str]:
-    """Liefert die zusammengefuehrte Woerterbuch-Liste.
-
-    Bestehende Woerter zuerst (Reihenfolge erhalten), dann die new_words, die
-    noch nicht vorhanden sind (gross-/kleinschreibungs-unabhaengige Dedup gegen
-    existing UND innerhalb von new_words), solange die Liste unter cap bleibt.
-    Die Obergrenze begrenzt nur, was NEU dazukommt: bestehende Eintraege werden
-    nie entfernt. Frueher wurde auf die letzten cap Eintraege gekuerzt, und weil
-    die eigenen (manuellen) Woerter vorne stehen, traf das zuerst sie. Ein
-    Woerterbuch, das schon ueber cap liegt, bleibt unveraendert. Kein Datei-IO.
-    """
-    result = list(existing)
-    have = {w.lower() for w in existing}
-    for w in new_words:
-        if cap is not None and len(result) >= cap:
-            break
-        lw = w.lower()
-        if lw in have:
-            continue
-        have.add(lw)
-        result.append(w)
-    return result
+# ------------------------------------------------- Lebenszyklus gelernter Wörter
+# Gelernte Wörter liegen getrennt vom eigenen Wörterbuch (config.LEARNED), mit
+# Herkunft je Eintrag. Ein Wort wirkt erst, wenn es in zwei Diktaten mit
+# mindestens MIN_GAP_S Abstand vorkam: eine Fehlhörung, die in einem Gespräch
+# dreimal fällt, reicht nicht. Es verfällt, wenn es UNUSED_DAYS nicht mehr
+# vorkam, und spätestens nach MAX_ACTIVE_DAYS: ein Wort im Prompt bringt
+# Whisper dazu, es wieder zu schreiben, und hielte sich sonst selbst am Leben.
+# Wer es behalten will, übernimmt es ins eigene Wörterbuch. Ein entferntes
+# Wort kommt auf die Sperrliste und wird nie wieder gelernt.
+MIN_GAP_S = 600
+CONFIRM_SIGHTINGS = 2
+UNUSED_DAYS = 30
+MAX_ACTIVE_DAYS = 90
+MAX_ENTRIES = 300
+MAX_BLOCKED = 500
+_DAY = 86400
 
 
-def _confirmed_words(words, counter_path):
-    """Wörter erst beim zweiten Vorkommen freigeben; Datei enthält nur Wörter."""
-    try:
-        with open(counter_path, encoding="utf-8") as f:
-            counts = json.load(f)
-        if not isinstance(counts, dict):
-            counts = {}
-    except (OSError, ValueError, TypeError):
-        counts = {}
-    confirmed = []
+def empty_state() -> dict:
+    return {"version": 1, "words": {}, "blocked": []}
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def normalize_state(raw) -> dict:
+    """Übernimmt nur gültige Einträge; alles Kaputte fällt weg."""
+    state = empty_state()
+    if not isinstance(raw, dict):
+        return state
+    words = raw.get("words")
+    if isinstance(words, dict):
+        for word, entry in words.items():
+            if not (isinstance(word, str) and word.strip() and isinstance(entry, dict)):
+                continue
+            if not all(_number(entry.get(k)) for k in ("first", "last", "counted", "seen")):
+                continue
+            active = entry.get("active")
+            if active is not None and not _number(active):
+                continue
+            state["words"][word] = {k: entry[k] for k in ("first", "last", "counted", "seen")}
+            state["words"][word]["active"] = active
+    blocked = raw.get("blocked")
+    if isinstance(blocked, list):
+        state["blocked"] = [w for w in blocked if isinstance(w, str) and w.strip()][-MAX_BLOCKED:]
+    return state
+
+
+def _key(state, word):
+    folded = word.casefold()
+    for known in state["words"]:
+        if known.casefold() == folded:
+            return known
+    return None
+
+
+def entry(state, word):
+    """Eintrag zu word (ohne Rücksicht auf Gross-/Kleinschreibung) oder None."""
+    known = _key(state, word)
+    return state["words"][known] if known is not None else None
+
+
+def observe(state, words, now, manual=(), blocked=()) -> list[str]:
+    """Zählt die Sichtungen eines Diktats und liefert die Wörter, die dadurch
+    neu wirken. Eigene und gesperrte Wörter werden nicht verfolgt."""
+    skip = {w.casefold() for w in manual}
+    skip |= {w.casefold() for w in blocked}
+    skip |= {w.casefold() for w in state["blocked"]}
+    added = []
     for word in words:
-        counts[word] = min(int(counts.get(word, 0)) + 1, 2)
-        if counts[word] >= 2:
-            confirmed.append(word)
-    while len(counts) > 500:
-        counts.pop(next(iter(counts)))
-    fsutil.atomic_write(counter_path, json.dumps(counts, ensure_ascii=False) + "\n")
-    return confirmed
+        if word.casefold() in skip:
+            continue
+        known = _key(state, word)
+        if known is None:
+            state["words"][word] = {"first": now, "last": now, "counted": now,
+                                    "seen": 1, "active": None}
+            item = state["words"][word]
+        else:
+            item = state["words"][known]
+            item["last"] = max(item["last"], now)
+            if now - item["counted"] >= MIN_GAP_S:
+                item["seen"] += 1
+                item["counted"] = now
+        if item["active"] is None and item["seen"] >= CONFIRM_SIGHTINGS:
+            item["active"] = now
+            added.append(known or word)
+    return added
 
 
-def learn(text: str, existing: list[str], cap: int = 500,
-          counter_path=None) -> tuple[list[str], list[str]]:
-    """Bequemlichkeit: erkennt Jargon und fuehrt ihn ins Woerterbuch ein.
+def _expired(item, now) -> bool:
+    if now - item["last"] > UNUSED_DAYS * _DAY:
+        return True
+    return item["active"] is not None and now - item["active"] > MAX_ACTIVE_DAYS * _DAY
 
-    Liefert (neues_vollstaendiges_woerterbuch, tatsaechlich_hinzugefuegte_woerter);
-    passt wegen cap nicht alles hinein, steht in der zweiten Liste nur, was
-    wirklich aufgenommen wurde.
-    """
-    words = jargon_words(text)
-    if counter_path is not None:
-        words = _confirmed_words(words, counter_path)
-    merged = merge_into_dictionary(words, existing, cap)
-    return merged, merged[len(existing):]
+
+def active_words(state, now) -> list[str]:
+    """Wörter, die jetzt wirken, in der Reihenfolge ihrer Freigabe."""
+    items = [(word, item["active"]) for word, item in state["words"].items()
+             if item["active"] is not None and not _expired(item, now)]
+    return [word for word, _ in sorted(items, key=lambda pair: pair[1])]
+
+
+def prune(state, now) -> None:
+    """Entfernt Verfallenes und hält die Datei klein (zuerst Vorgemerktes)."""
+    for word in [w for w, item in state["words"].items() if _expired(item, now)]:
+        del state["words"][word]
+    if len(state["words"]) > MAX_ENTRIES:
+        order = sorted(state["words"].items(),
+                       key=lambda kv: (kv[1]["active"] is not None, kv[1]["last"]))
+        for word, _ in order[:len(state["words"]) - MAX_ENTRIES]:
+            del state["words"][word]
+
+
+def forget(state, word) -> bool:
+    """Entfernt word und sperrt es. True, wenn es ein Eintrag war."""
+    known = _key(state, word)
+    if known is not None:
+        del state["words"][known]
+    if word.casefold() not in {w.casefold() for w in state["blocked"]}:
+        state["blocked"] = (state["blocked"] + [word])[-MAX_BLOCKED:]
+    return known is not None
+
+
+def drop(state, word) -> bool:
+    """Entfernt word ohne Sperre (es wandert ins eigene Wörterbuch)."""
+    known = _key(state, word)
+    if known is None:
+        return False
+    del state["words"][known]
+    return True

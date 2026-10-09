@@ -15,8 +15,9 @@ from quassel import config
 def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
     monkeypatch.setattr(config, "DICTIONARY", str(tmp_path / "dictionary.txt"))
-    monkeypatch.setattr(config, "LEARN_COUNTS", str(tmp_path / "dictionary-counts.json"))
+    monkeypatch.setattr(config, "LEARNED", str(tmp_path / "dictionary-learned.json"))
     config._dictionary_cache["key"] = None
+    config._learned_cache["key"] = None
     config._dictionary_cache["words"] = []
 
 
@@ -326,11 +327,12 @@ def test_old_config_is_migrated_once_and_save_merges_fresh_values(tmp_path, monk
 
 
 # ------------------------------------------- Auto-Wörterbuch schreibt mit Merge (B22)
-def test_learning_reads_the_file_fresh_and_keeps_what_was_added_meanwhile(tmp_path, monkeypatch):
+def test_learning_never_writes_over_what_was_added_meanwhile(tmp_path, monkeypatch):
     """Der Daemon lernte aus seiner Kopie und schrieb sie über die Datei: ein
     Eintrag, den der Nutzer im Kontrollzentrum inzwischen ergänzt hatte, war
     weg. Selbst der mtime/size-Cache verrät das nicht, wenn der Austausch
-    dieselbe Länge hat und in dieselbe Zeitauflösung fällt."""
+    dieselbe Länge hat und in dieselbe Zeitauflösung fällt. Gelerntes landet
+    heute in einer eigenen Datei; dictionary.txt schreibt das Lernen nie."""
     _isolate(tmp_path, monkeypatch)
     config.dictionary_save("Alpha\nBeta")
     assert config.dictionary_words() == ["Alpha", "Beta"]      # Cache gefüllt
@@ -338,9 +340,10 @@ def test_learning_reads_the_file_fresh_and_keeps_what_was_added_meanwhile(tmp_pa
     with open(config.DICTIONARY, "w", encoding="utf-8") as f:   # von außen ersetzt
         f.write("Alpha\nGamma")                                # gleiche Länge
     os.utime(config.DICTIONARY, ns=(st.st_atime_ns, st.st_mtime_ns))
-    assert config.dictionary_learn("Ich nutze PyTorch") == []
-    assert config.dictionary_learn("Ich nutze PyTorch") == ["PyTorch"]
-    assert config.dictionary_words() == ["Alpha", "Gamma", "PyTorch"]
+    assert config.dictionary_learn("Ich nutze PyTorch", now=1000.0) == []
+    assert config.dictionary_learn("Ich nutze PyTorch", now=5000.0) == ["PyTorch"]
+    with open(config.DICTIONARY, encoding="utf-8") as f:
+        assert f.read() == "Alpha\nGamma"
 
 
 def test_learning_writes_nothing_when_nothing_is_new(tmp_path, monkeypatch):
@@ -367,12 +370,12 @@ def test_two_learners_at_once_lose_no_word(tmp_path, monkeypatch):
 
     def learn_many(prefix):
         for i in range(25):
-            config.dictionary_learn("Wort %sX%d" % (prefix, i))
-            config.dictionary_learn("Wort %sX%d" % (prefix, i))
+            config.dictionary_learn("Wort %sX%d" % (prefix, i), now=1000.0)
+            config.dictionary_learn("Wort %sX%d" % (prefix, i), now=5000.0)
     threads = [threading.Thread(target=learn_many, args=(p,)) for p in ("a", "b")]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
-    words = config.dictionary_words()
+    words = config.dictionary_words(now=5000.0)
     assert len(words) == 50 and len(set(words)) == 50

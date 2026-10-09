@@ -1,4 +1,5 @@
-"""Tests des automatischen Woerterbuch-Lernens (jargon_words/merge/learn).
+"""Tests der Jargon-Erkennung fuers automatische Woerterbuch-Lernen
+(Lebenszyklus: tests/test_learn_lifecycle.py).
 
 Kern-Anforderung: deutsche Substantive (am Wortanfang gross) werden NICHT
 gelernt -- nur klar nach Namen/Bezeichnern/Jargon aussehende Tokens."""
@@ -36,43 +37,6 @@ def test_distinct_first_seen_order():
     assert learn.jargon_words("GPU GPU NASA gpu") == ["GPU", "NASA"]
 
 
-def test_merge_dedupes_case_insensitively_and_keeps_order():
-    existing = ["PyTorch", "NASA"]
-    new = ["nasa", "GPU", "gpu", "K8s"]
-    # "nasa"/"gpu"-Duplikate fallen weg (case-insensitive), Reihenfolge bleibt.
-    assert learn.merge_into_dictionary(new, existing) == \
-        ["PyTorch", "NASA", "GPU", "K8s"]
-
-
-def test_cap_limits_what_is_added_and_never_deletes():
-    """Die Obergrenze kürzte früher auf die LETZTEN Einträge. Die manuellen
-    stehen vorne und wurden deshalb als Erste gelöscht: wer 500 Wörter hatte,
-    verlor seine eigenen. Jetzt begrenzt sie nur, was neu dazukommt."""
-    existing = ["A1", "B2", "C3"]
-    new = ["D4", "E5"]
-    assert learn.merge_into_dictionary(new, existing, cap=3) == ["A1", "B2", "C3"]
-    assert learn.merge_into_dictionary(new, existing, cap=4) == ["A1", "B2", "C3", "D4"]
-    assert learn.merge_into_dictionary(new, existing, cap=5) == ["A1", "B2", "C3", "D4", "E5"]
-
-
-def test_a_dictionary_over_the_cap_is_left_alone():
-    manual = ["Wort%d" % i for i in range(600)]
-    assert learn.merge_into_dictionary(["K8s"], manual, cap=500) == manual
-
-
-def test_manual_entries_survive_the_default_cap():
-    manual = ["Eigenname%d" % i for i in range(500)]
-    full, added = learn.learn("Ich nutze PyTorch", manual)
-    assert full == manual
-    assert added == []                 # nichts hinzugekommen, also nichts gemeldet
-
-
-def test_learn_reports_only_what_fitted_under_the_cap():
-    full, added = learn.learn("PyTorch NASA GPU", ["A1"], cap=3)
-    assert full == ["A1", "PyTorch", "NASA"]
-    assert added == ["PyTorch", "NASA"]
-
-
 def test_units_ordinals_and_everyday_capitals_are_not_learned():
     """"2nd", "10pm", "5EUR", "100km", "OK", "20er", "3D" gelten als Jargon,
     weil Ziffer und Buchstabe gemischt sind, sind aber nur Zahlwörter."""
@@ -86,19 +50,6 @@ def test_real_jargon_with_digits_is_still_learned():
         ["K8s", "GPT4", "x86", "H264", "iPhone15", "S3", "EC2", "ISO27001", "3GPP"]
 
 
-def test_learn_returns_full_dict_and_added_subset():
-    existing = ["PyTorch"]
-    full, added = learn.learn("Ich nutze PyTorch und NASA auf der GPU", existing)
-    assert full == ["PyTorch", "NASA", "GPU"]
-    assert added == ["NASA", "GPU"]   # PyTorch war schon da
-
-
-def test_learn_needs_two_occurrences_when_given_a_counter_file(tmp_path):
-    counter = tmp_path / "dictionary-counts.json"
-    assert learn.learn("PyTorch", [], counter_path=str(counter))[1] == []
-    assert learn.learn("PyTorch", [], counter_path=str(counter))[1] == ["PyTorch"]
-
-
 if __name__ == "__main__":
     for fn in [
         test_camelcase_allcaps_detected_not_sentence_start,
@@ -107,9 +58,6 @@ if __name__ == "__main__":
         test_punctuation_is_stripped,
         test_pure_numbers_and_short_tokens_excluded,
         test_distinct_first_seen_order,
-        test_merge_dedupes_case_insensitively_and_keeps_order,
-        test_cap_limits_what_is_added_and_never_deletes,
-        test_learn_returns_full_dict_and_added_subset,
     ]:
         fn()
     print("ok")

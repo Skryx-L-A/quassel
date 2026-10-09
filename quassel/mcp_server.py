@@ -116,7 +116,7 @@ def _call(name, arguments, cancel=None):
         word = str(arguments.get("word", "")).strip()
         if not word:
             return _content({"error": "word must not be empty"}, True)
-        words = config.dictionary_words()
+        words = config.dictionary_manual()
         if word not in words:
             words.append(word)
             config.dictionary_save("\n".join(words))

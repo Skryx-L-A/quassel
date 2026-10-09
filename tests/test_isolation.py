@@ -19,7 +19,7 @@ def _inside_real_home(path):
 
 
 def test_config_paths_are_not_in_the_real_home():
-    for name in ("CONFDIR", "DATADIR", "CONFIG", "DICTIONARY", "LEARN_COUNTS",
+    for name in ("CONFDIR", "DATADIR", "CONFIG", "DICTIONARY", "LEARNED",
                  "REPLACEMENTS", "HISTORY", "AI_MODES"):
         assert not _inside_real_home(getattr(config, name)), name
 

@@ -932,7 +932,9 @@ class Center(QMainWindow):
         scroll, lay = self.page()
         g = self.group(tr("sec_dict"), lay)
         self.desc(tr("dict_hint"), g)
-        self.dict_edit = QPlainTextEdit("\n".join(config.dictionary_words()))
+        # Nur die eigenen Wörter: stünden die gelernten hier, schriebe das erste
+        # Speichern sie ins eigene Wörterbuch, wo sie nie mehr verfallen.
+        self.dict_edit = QPlainTextEdit("\n".join(config.dictionary_manual()))
         self.dict_effective = QLabel()
         self.dict_effective.setObjectName("desc")
         self.dict_effective.setWordWrap(True)
@@ -951,11 +953,76 @@ class Center(QMainWindow):
         self.auto_learn.toggled.connect(self.save_settings)
         g.addWidget(self.auto_learn)
         self.desc(tr("auto_learn_hint"), g)
+        self.learned_label = QLabel(tr("learned_title"))
+        g.addWidget(self.learned_label)
+        self.learned_list = QListWidget()
+        self.learned_list.setAccessibleName(tr("learned_title"))
+        self.learned_list.setMaximumHeight(160)
+        self.learned_label.setBuddy(self.learned_list)
+        g.addWidget(self.learned_list)
+        row = QHBoxLayout()
+        self.learned_keep = QPushButton(tr("learned_keep"))
+        self.learned_keep.setAccessibleName(tr("learned_keep"))
+        self.learned_keep.clicked.connect(self.on_learned_keep)
+        self.learned_forget = QPushButton(tr("learned_forget"))
+        self.learned_forget.setAccessibleName(tr("learned_forget"))
+        self.learned_forget.clicked.connect(self.on_learned_forget)
+        row.addWidget(self.learned_keep)
+        row.addWidget(self.learned_forget)
+        row.addStretch(1)
+        g.addLayout(row)
+        self.desc(tr("learned_hint"), g)
+        self._fill_learned()
         return scroll
+
+    def _fill_learned(self):
+        import datetime
+        self.learned_list.clear()
+        items = config.dictionary_learned()
+        for item in items:
+            since = datetime.date.fromtimestamp(item["first"]).strftime("%d.%m.%Y")
+            row = QListWidgetItem(tr("learned_row", word=item["word"], since=since,
+                                     seen=item["seen"]))
+            row.setData(Qt.UserRole, item["word"])
+            self.learned_list.addItem(row)
+        if not items:
+            self.learned_list.addItem(QListWidgetItem(tr("learned_none")))
+            self.learned_list.item(0).setFlags(Qt.NoItemFlags)
+        for button in (self.learned_keep, self.learned_forget):
+            button.setEnabled(bool(items))
+        self._update_dict_effective()
+
+    def _selected_learned(self):
+        item = self.learned_list.currentItem()
+        return item.data(Qt.UserRole) if item is not None else None
+
+    def on_learned_keep(self):
+        word = self._selected_learned()
+        if not word:
+            return
+        if self.dict_timer.isActive():         # erst die eigene Eingabe sichern
+            self.dict_timer.stop()
+            config.dictionary_save(self.dict_edit.toPlainText())
+        config.dictionary_keep(word)
+        self.dict_edit.blockSignals(True)
+        self.dict_edit.setPlainText("\n".join(config.dictionary_manual()))
+        self.dict_edit.blockSignals(False)
+        self._fill_learned()
+
+    def on_learned_forget(self):
+        word = self._selected_learned()
+        if not word:
+            return
+        config.dictionary_forget(word)
+        self._fill_learned()
 
     def _update_dict_effective(self):
         words = [word.strip() for word in self.dict_edit.toPlainText().splitlines()
                  if word.strip()]
+        if hasattr(self, "learned_list"):
+            have = {w.casefold() for w in words}
+            words += [item["word"] for item in config.dictionary_learned()
+                      if item["word"].casefold() not in have]
         effective = dictprompt.effective_words(
             words, dictprompt.FULL_DICTIONARY_TOKEN_BUDGET)
         self.dict_effective.setText(tr("dict_effective", count=len(effective),

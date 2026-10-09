@@ -175,7 +175,7 @@ def _dict_add(word):
     if not word:
         print("dictionary word must not be empty", file=sys.stderr)
         return EXIT_USAGE
-    words = config.dictionary_words()
+    words = config.dictionary_manual()
     if word not in words:
         words.append(word)
         config.dictionary_save("\n".join(words))
@@ -184,12 +184,25 @@ def _dict_add(word):
 
 
 def _dict_remove(word):
-    words = config.dictionary_words()
+    """Entfernt ein eigenes Wort; ein gelerntes wird entfernt und gesperrt."""
+    words = config.dictionary_manual()
     kept = [item for item in words if item != word]
-    if len(kept) == len(words):
-        print("dictionary word not found", file=sys.stderr)
-        return EXIT_FAILED
-    config.dictionary_save("\n".join(kept))
+    if len(kept) != len(words):
+        config.dictionary_save("\n".join(kept))
+        return 0
+    if any(item["word"].casefold() == word.casefold()
+           for item in config.dictionary_learned()):
+        config.dictionary_forget(word)
+        return 0
+    print("dictionary word not found", file=sys.stderr)
+    return EXIT_FAILED
+
+
+def _dict_learned():
+    import datetime
+    for item in config.dictionary_learned():
+        since = datetime.date.fromtimestamp(item["first"]).isoformat()
+        print(f"{item['word']}\tsince {since}\tseen {item['seen']}x")
     return 0
 
 
@@ -296,6 +309,7 @@ def parser():
     dictionary = sub.add_parser("dict", help="manage the local dictionary")
     dict_sub = dictionary.add_subparsers(dest="dict_command", required=True)
     dict_sub.add_parser("list")
+    dict_sub.add_parser("learned", help="auto-learned words with their origin")
     add = dict_sub.add_parser("add")
     add.add_argument("word")
     remove = dict_sub.add_parser("remove")
@@ -342,6 +356,8 @@ def main(argv=None):
         if args.dict_command == "list":
             print("\n".join(config.dictionary_words()))
             return 0
+        if args.dict_command == "learned":
+            return _dict_learned()
         return _dict_add(args.word) if args.dict_command == "add" else _dict_remove(args.word)
     return _history_list(args.since)
 

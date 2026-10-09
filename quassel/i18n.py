@@ -280,8 +280,15 @@ STRINGS = {
     # --- Auto-Lernen ---
     "auto_learn": ("Auto-learn names & jargon into the dictionary",
                    "Namen & Fachwörter automatisch ins Wörterbuch lernen"),
-    "auto_learn_hint": ("Words that look like names or jargon (CamelCase, ALLCAPS, with digits) are added automatically to improve future recognition.",
-                        "Wörter, die wie Namen/Fachbegriffe aussehen (CamelCase, GROSSBUCHSTABEN, mit Ziffern), werden automatisch ergänzt — für bessere Erkennung."),
+    "auto_learn_hint": ("Words that look like names or jargon (CamelCase, ALLCAPS, with digits) are learned once they appear in two separate dictations. Learned words stay out of your own list and lapse after 30 days unused, at the latest after 90 days.",
+                        "Wörter, die wie Namen/Fachbegriffe aussehen (CamelCase, GROSSBUCHSTABEN, mit Ziffern), werden gelernt, sobald sie in zwei getrennten Diktaten vorkommen. Gelerntes steht nicht in deiner eigenen Liste und verfällt nach 30 Tagen ohne Nutzung, spätestens nach 90 Tagen."),
+    "learned_title": ("Learned words", "Gelernte Wörter"),
+    "learned_row": ("{word} — since {since}, heard {seen}×", "{word} — seit {since}, {seen}× gehört"),
+    "learned_none": ("No learned words.", "Keine gelernten Wörter."),
+    "learned_keep": ("Keep", "Behalten"),
+    "learned_forget": ("Remove and never learn again", "Entfernen und nie wieder lernen"),
+    "learned_hint": ("Keep moves a word into your own list, where it never lapses. A removed word is never learned again.",
+                     "„Behalten“ übernimmt ein Wort in deine eigene Liste, dort verfällt es nicht. Ein entferntes Wort wird nie wieder gelernt."),
     # --- Gemischte Sprache ---
     "lang_mixed": ("Mixed (German + English)", "Gemischt (Deutsch + Englisch)"),
     # --- Textersetzungen ---
