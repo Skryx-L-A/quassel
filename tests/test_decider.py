@@ -76,7 +76,8 @@ def test_sends_one_typed_question_in_the_jev_wire_format(server):
 
 
 @pytest.mark.parametrize("choice,p,expected", [
-    ("nein", 0.9, False), ("unklar", 0.8, False), ("ja", 0.55, False), ("ja", 0.8, True)])
+    ("nein", 0.9, False), ("unklar", 0.8, False), ("ja", 0.55, False), ("ja", 0.8, False),
+    ("ja", 0.9, True)])
 def test_only_a_confident_yes_keeps_the_cleaned_text(server, choice, p, expected):
     s = server(_answer(choice, p))
     assert decider.same_meaning(s.url, "a", "b") is expected
@@ -137,10 +138,10 @@ def test_unavailable_decider_fails_closed(swapped):
 
 
 def test_decider_yes_keeps_the_cleaned_text(monkeypatch, server):
-    monkeypatch.setattr(ai, "chat_cleanup", lambda pre, **kw: ("Ich komme morgen.", None))
+    monkeypatch.setattr(ai, "chat_cleanup", lambda pre, **kw: ("Ich glaube, das ist gut.", None))
     s = server(_answer("ja", 0.97))
-    result = cleanup.cleanup("Ähm, ich ich komme morgen.", "stark", _cfg(s.url))
-    assert result.text == "Ich komme morgen." and result.fallback_reason is None
+    result = cleanup.cleanup("ich glaube also das ist gut", "stark", _cfg(s.url))
+    assert result.text == "Ich glaube, das ist gut." and result.fallback_reason is None
     assert len(s.requests) == 1
 
 
@@ -169,3 +170,28 @@ def test_config_reads_only_a_loopback_decider(tmp_path, monkeypatch):
 def test_decider_is_off_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
     assert config.Cfg().cleanup_decider_url == ""
+
+
+# ---------------------------------------------------------------- 09.10., Decider-4B
+
+def test_accepts_the_full_service_address_too(server):
+    s = server(_answer("ja", 0.97))
+    assert decider.same_meaning(s.url + "/v1/systemone", "a", "b") is True
+    assert s.requests[0][0] == "/v1/systemone"
+
+
+def test_threshold_was_chosen_on_the_dev_pairs():
+    """Decider-4B (jev-kandidaten, 09.10.): auf den dev-Paaren lag das
+    unsichere Paar mit der höchsten Ja-Wahrscheinlichkeit bei 0,799
+    ("might" -> "will"), das schwächste sichere bei 0,907. 0,85 trennt beide;
+    auf den test-Paaren fällt ein sicheres Paar (0,78) auf den Rohtext zurück,
+    kein unsicheres kommt durch."""
+    assert 0.7986 < decider.MIN_YES <= 0.9065
+
+
+@pytest.mark.parametrize("edited", ["ich komme morgen", "Ich komme morgen."])
+def test_only_punctuation_or_case_changes_need_no_decider(monkeypatch, server, edited):
+    monkeypatch.setattr(ai, "chat_cleanup", lambda pre, **kw: (edited, None))
+    s = server(_answer("nein", 0.99))
+    result = cleanup.cleanup("ich komme morgen", "stark", _cfg(s.url))
+    assert result.fallback_reason is None and s.requests == []

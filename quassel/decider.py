@@ -16,8 +16,12 @@ import urllib.request
 
 from . import ai
 
-# A "yes" below this probability is not trusted.
-MIN_YES = 0.7
+# A "yes" below this probability is not trusted. Chosen on the dev pairs of
+# the 40-pair set with Decider-4B, the workbench's default local model
+# (2026-10-09): the unsafe pair with the highest yes was 0.799 ("might" ->
+# "will"), the weakest safe pair 0.907. On the test pairs no unsafe pair got
+# through and one safe pair (0.78) fell back to the raw text.
+MIN_YES = 0.85
 
 QUESTION = {
     "type": "choice",
@@ -47,7 +51,9 @@ def same_meaning(url: str, raw: str, cleaned: str, timeout: float = 2.0) -> bool
     body = json.dumps({"state": {"raw_dictation": raw, "cleaned_text": cleaned},
                        "model": "jev-latest", "questions": {"q": QUESTION}},
                       ensure_ascii=False).encode("utf-8")
-    endpoint = url.rstrip("/") + "/v1/systemone"
+    endpoint = url.rstrip("/")
+    if not endpoint.endswith("/v1/systemone"):
+        endpoint += "/v1/systemone"
     req = urllib.request.Request(endpoint, data=body, method="POST",
                                  headers={"Content-Type": "application/json"})
     try:

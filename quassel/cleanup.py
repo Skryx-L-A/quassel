@@ -102,6 +102,10 @@ def _guarded_input(raw: str) -> bool:
     return raw.rstrip().endswith("?") or bool(_INSTRUCTION_OVERRIDE.search(raw))
 
 
+def _plain_words(text: str) -> list[str]:
+    return [w.casefold() for w in _WORD.findall(unicodedata.normalize("NFC", text))]
+
+
 def _check(before: str, after: str, level: str, terms: list[str]) -> str | None:
     if not after.strip():
         return "empty"
@@ -192,7 +196,9 @@ def cleanup(raw: str, level: str, cfg, context=None) -> CleanupResult:
             # Die Wortprüfung sieht keinen Rollentausch und kein Gegenwort. Ist
             # ein lokaler Entscheider eingestellt, muss er die Bedeutung bestätigen.
             decider_url = getattr(cfg, "cleanup_decider_url", "")
-            if decider_url:
+            # Nur fragen, wenn sich Wörter geändert haben: Satzzeichen und
+            # Großschreibung prüft die Wortprüfung selbst (Frage, neue Sätze).
+            if decider_url and _plain_words(pre) != _plain_words(edited):
                 from . import decider
                 verdict = decider.same_meaning(
                     decider_url, pre, edited,
