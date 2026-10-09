@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from .. import config, dictation, i18n, pill_qt, power, profile, selfheal, whisperclient
+from .. import ask, config, dictation, i18n, pill_qt, power, profile, selfheal, whisperclient
 from ..audio import wav_from_raw
 from ..mediacontrol import AudioDucker
 from ..i18n import tr
@@ -211,6 +211,7 @@ class Pill(QWidget):
         self.cfg = config.Cfg()
         self.mode = "ready"
         self.text = ""
+        self.ask_text = ""      # wartende Frage eines Programms (G104), wie pill_qt
         self.level_source = lambda: None
         self._silent_shown = False
         lay = QVBoxLayout(self)
@@ -227,7 +228,16 @@ class Pill(QWidget):
         # Größe/Transparenz aus den Einstellungen sofort wirken
         cfgtimer = QTimer(self)
         cfgtimer.timeout.connect(self._reload_cfg)
+        cfgtimer.timeout.connect(self._poll_ask)
         cfgtimer.start(1000)
+
+    def _poll_ask(self):
+        """Wartet ein Programm auf eine gesprochene Antwort? Dann steht die
+        Frage in der Blase, auch ohne Vorschau (wie Qt- und GTK-Pille)."""
+        text = ask.pill_line() if self.mode != "off" else ""
+        if text != self.ask_text:
+            self.ask_text = text
+            self._show_bubble()
 
     def _reload_cfg(self):
         if not self.cfg.reload():
@@ -258,6 +268,9 @@ class Pill(QWidget):
         """„Kein Ton vom Mikrofon" geht vor, sonst Vorschau bzw. Ergebnis."""
         if self.body.mic_silent():
             return tr("mic_silent")
+        if self.ask_text and (self.mode == "ready" or (
+                self.mode == "recording" and not self.text)):
+            return self.ask_text
         if self.mode in ("recording", "done", "error"):
             return self.text
         return ""
@@ -589,6 +602,19 @@ class WinApp(QObject):
         ga, gb = CHORDS_VK[self.cfg.chord]
         self.pump.reconfigure(ga, gb, self.cfg.hold_min, self.cfg.double_window)
         self.core._sync_wakeword()  # Wake-Word nach Konfig starten/stoppen
+        self._announce_question()
+
+    def _announce_question(self):
+        """Neue Frage eines Programms einmal als Tray-Hinweis zeigen (auf
+        Windows hat der fragende Prozess keinen eigenen Benachrichtigungsweg)."""
+        try:
+            doc = ask.pending()
+        except Exception:  # noqa: BLE001 — der Hinweis darf den Takt nie stören
+            return
+        token = doc.get("token") if doc else None
+        if token and token != getattr(self, "_ask_token_shown", None):
+            self.tray.showMessage("Quassel", ask.display(doc))
+        self._ask_token_shown = token
 
     def _apply_state(self, state, text):
         self.pill.cfg.reload()

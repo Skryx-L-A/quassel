@@ -192,3 +192,26 @@ def test_windows_dictation_reads_the_clipboard_for_the_not_inserted_check(win, m
     monkeypatch.setattr(app, "clip_read", lambda: "Diktat")
     core = app.WinDictation.__new__(app.WinDictation)
     assert core._clip_read() == "Diktat"
+
+
+def test_windows_pill_shows_a_waiting_question(win, monkeypatch):
+    app = win.app
+    pill = app.Pill.__new__(app.Pill)
+    pill.mode, pill.text, pill.ask_text = "ready", "", "Frage von codex: Weiter? — Hotkey halten"
+    pill.body = type("Body", (), {"mic_silent": lambda self: False})()
+    assert pill.bubble_text() == pill.ask_text
+    pill.mode, pill.text = "recording", "live"
+    assert pill.bubble_text() == "live"            # Live-Vorschau geht vor
+
+
+def test_windows_tray_announces_a_new_question_once(win, monkeypatch):
+    app = win.app
+    shown = []
+    owner = app.WinApp.__new__(app.WinApp)
+    owner.tray = type("Tray", (), {"showMessage": lambda self, t, m: shown.append(m)})()
+    doc = {"token": "a" * 32, "question": "Weiter?", "program": "codex"}
+    monkeypatch.setattr(app.ask, "pending", lambda: doc)
+    monkeypatch.setattr(app.ask, "display", lambda d: "Frage von codex: Weiter?")
+    owner._announce_question()
+    owner._announce_question()
+    assert shown == ["Frage von codex: Weiter?"]

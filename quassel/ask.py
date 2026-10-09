@@ -368,8 +368,8 @@ def pill_line(rundir=None):
 
 def notify_user(doc):
     """System notification for a new request, so nobody dictates into the
-    wrong place by accident. Windows: the tray app has no notification path
-    for a second process yet; the pill shows the question."""
+    wrong place by accident. Windows: the tray app shows the question itself
+    (win/app.py WinApp._announce_question), so the asking process does not."""
     if os.name == "nt":
         return False
     from . import platform
