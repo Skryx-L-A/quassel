@@ -33,6 +33,7 @@ from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18
                power, profiles, progmode, selfheal, stats, textproc, textreplace, vad,
                wakeword, whisperclient)
 from .audio import LevelPump, RATE, SAMPLE_BYTES
+from .backends.base import SpeechResult
 from .i18n import tr
 from .state import RUNDIR, WAV
 from .streaming import StreamTyper
@@ -745,6 +746,12 @@ class DictationCore:
         keep_raw = True
         try:
             keep_raw = self._transcribe_and_insert(streamer, clip_backup, data, panic) is False
+        except Exception as exc:  # noqa: BLE001 — Text nie still verlieren
+            # Zwischenablage, Tastendruck oder volle Platte: wie ein
+            # Fehlschlag retten und melden, statt auf „transkribiert" stehen
+            # zu bleiben. Nur der Typ ins Log, nie der Text.
+            self._log("dict: Rest fehlgeschlagen: %s" % type(exc).__name__)
+            keep_raw = not self._fail_safely(data, streamer, clip_backup)
         finally:
             if not keep_raw:
                 discard(done_path)
@@ -929,6 +936,19 @@ class DictationCore:
             text += " · " + tr("rescued").format(path=path)
         self._state("error", text)
         return path is not None
+
+    def _fail_safely(self, data, streamer, clip_backup):
+        """_fail_with_rescue nach einer Ausnahme: scheitert auch das, bleibt
+        die Rohdatei, und die Pille zeigt trotzdem einen Fehler."""
+        try:
+            return self._fail_with_rescue(data, streamer, clip_backup, SpeechResult(None))
+        except Exception as exc:  # noqa: BLE001
+            self._log("rescue: gescheitert: %s" % type(exc).__name__)
+            try:
+                self._state("error", tr("err_transcribe"))
+            except Exception:  # noqa: BLE001
+                pass
+            return False
 
     def _rescue(self, data):
         """Rohdaten als eigene WAV-Datei ablegen. Rückgabe: Pfad oder None."""

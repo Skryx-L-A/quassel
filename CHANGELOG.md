@@ -21,6 +21,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - In apps whose profile forbids Enter (terminals by default), line breaks
   inside a dictation are now inserted as spaces, so a spoken "new line" can no
   longer run the first half as a command.
+- If something unexpected fails after a dictation was transcribed (for
+  example the clipboard or a full disk), Quassel now saves the recording, shows
+  an error and returns to idle instead of hanging on "transcribing".
 - A damaged settings file is no longer replaced by the part that could still be
   read: Quassel keeps a copy next to it (`config.ini.damaged-…`) before saving.
 - The dictation history could lose a new entry while expired entries were
