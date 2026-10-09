@@ -15,7 +15,7 @@ import time
 import wave
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPalette
+from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
     QSpinBox,
@@ -31,6 +31,7 @@ from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
 from .i18n import tr
 from .net import download as net_download
+from .pill_qt import app_icon
 from .state import RUNDIR, LevelMeter
 if os.name == "nt":
     from .win.audio_win import list_mics
@@ -45,10 +46,6 @@ else:
 FILE_EXT = {"text": ".txt", "srt": ".srt", "vtt": ".vtt"}
 UNITS_START = ["quasseld", "quassel-server", "quassel-pill"]
 UNITS_STOP = ["quasseld", "quassel-server", "quassel-ydotoold"]
-ICON_PATHS = [
-    os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/quassel-voice.svg"),
-    os.path.join(os.path.dirname(__file__), "..", "assets", "quassel.svg"),
-]
 
 # Stylesheet-Vorlage. Die Markenfarbe (Pine-Grün, Direction B "Lokal") wird je
 # nach hellem/dunklem System-Theme eingesetzt — der Rest bleibt bewusst
@@ -287,13 +284,6 @@ def restart_server():
 
 class MicTestError(Exception):
     """Mikrofontest konnte nicht aufnehmen; args[0] ist der i18n-Schlüssel."""
-
-
-def app_icon():
-    for p in ICON_PATHS:
-        if os.path.exists(p):
-            return QIcon(p)
-    return QIcon.fromTheme("quassel-voice")
 
 
 class NoWheel(QObject):
