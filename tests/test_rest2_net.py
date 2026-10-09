@@ -110,34 +110,75 @@ def test_cancel_terminates_curl_and_keeps_the_old_target(tmp_path, curl):
     assert target.read_bytes() == b"previous model"
 
 
-def test_without_curl_urllib_is_used(tmp_path, monkeypatch):
-    monkeypatch.setattr(net.shutil, "which", lambda name: None)
+class Response:
+    """urlopen-Ersatz: liefert payload in Blöcken, optional danach einen Fehler."""
 
-    def retrieve(url, path, hook):
-        with open(path, "wb") as f:
-            f.write(b"data")
-        if hook:
-            hook(1, 4, 4)
-        return path, None
-    monkeypatch.setattr(net.urllib.request, "urlretrieve", retrieve)
+    def __init__(self, payload=b"data", error=None, endless=False):
+        self.payload, self.error, self.endless = payload, error, endless
+        self.headers = {"Content-Length": str(len(payload))}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def read(self, _size):
+        if self.payload:
+            chunk, self.payload = self.payload, b""
+            return chunk
+        if self.error:
+            raise self.error
+        return b"x" if self.endless else b""
+
+
+def _no_curl(monkeypatch, response):
+    monkeypatch.setattr(net.shutil, "which", lambda name: None)
+    seen = {}
+
+    def urlopen(url, timeout=None):
+        seen["timeout"] = timeout
+        return response
+    monkeypatch.setattr(net.urllib.request, "urlopen", urlopen)
+    return seen
+
+
+def test_without_curl_urllib_is_used(tmp_path, monkeypatch):
+    seen_open = _no_curl(monkeypatch, Response(b"data"))
     target = tmp_path / "x.bin"
     seen = []
     assert net.download("https://example.invalid/x", str(target), seen.append)
     assert target.read_bytes() == b"data"
     assert seen and seen[-1] == 1.0
+    assert seen_open["timeout"] == net.READ_TIMEOUT_S
 
 
 def test_without_curl_a_network_error_is_a_clean_failure(tmp_path, monkeypatch):
-    monkeypatch.setattr(net.shutil, "which", lambda name: None)
-
-    def retrieve(url, path, hook):
-        with open(path, "wb") as f:
-            f.write(b"par")
-        raise OSError("connection reset")
-    monkeypatch.setattr(net.urllib.request, "urlretrieve", retrieve)
+    _no_curl(monkeypatch, Response(b"par", error=OSError("connection reset")))
     target = tmp_path / "x.bin"
     assert net.download("https://example.invalid/x", str(target)) is False
     assert not target.exists() and not (tmp_path / "x.bin.part").exists()
+
+
+def test_without_curl_a_trickling_server_hits_the_total_deadline(tmp_path, monkeypatch):
+    _no_curl(monkeypatch, Response(b"a", endless=True))
+    monkeypatch.setattr(net, "MAX_DOWNLOAD_S", 0)
+    target = tmp_path / "x.bin"
+    assert net.download("https://example.invalid/x", str(target)) is False
+    assert not (tmp_path / "x.bin.part").exists()
+
+
+def test_without_curl_cancel_stops_the_download(tmp_path, monkeypatch):
+    _no_curl(monkeypatch, Response(b"a", endless=True))
+    cancel = threading.Event()
+    cancel.set()
+    assert net.download("https://example.invalid/x", str(tmp_path / "x.bin"), cancel=cancel) is False
+
+
+def test_curl_gets_a_total_time_limit(tmp_path, curl):
+    fake = curl(payload=b"model")
+    net.download("https://example.invalid/x", str(tmp_path / "x.bin"))
+    assert fake.argv[fake.argv.index("--max-time") + 1] == str(net.MAX_DOWNLOAD_S)
 
 
 class Headers:

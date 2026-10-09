@@ -55,6 +55,42 @@ def _content_length(url):
     return 0
 
 
+# Gesamtfrist je Download: ein Modell (bis ~3 GB) braucht auch bei langsamer
+# Leitung keine sechs Stunden; ein Server, der knapp über der Mindestrate
+# tröpfelt und nie fertig wird, darf das Kontrollzentrum nicht ewig binden.
+MAX_DOWNLOAD_S = 6 * 3600
+READ_TIMEOUT_S = 60        # urllib: so lange darf ein einzelner Lesevorgang hängen
+
+
+def _stop(proc):
+    proc.terminate()
+    # Erst warten, bis curl die .part-Datei losgelassen hat; Windows
+    # könnte sie sonst nicht löschen, und curl schriebe weiter.
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+def _urllib_download(url, tmp, progress, cancel, deadline):
+    """Rückfall ohne curl: dieselbe Gesamtfrist, Abbruch und Fortschritt."""
+    with urllib.request.urlopen(url, timeout=READ_TIMEOUT_S) as response, \
+            open(tmp, "wb") as out:
+        total = int(response.headers.get("Content-Length") or 0)
+        done = 0
+        while True:
+            if (cancel and cancel.is_set()) or time.monotonic() > deadline:
+                return False
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                return True
+            out.write(chunk)
+            done += len(chunk)
+            if progress and total > 0:
+                progress(min(done / total, 1.0))
+
+
 def download(url, target, progress=None, cancel=None):
     """Lädt url nach target. progress(frac 0..1) optional. True bei Erfolg."""
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -63,7 +99,8 @@ def download(url, target, progress=None, cancel=None):
         total = _content_length(url) if progress else 0
         proc = subprocess.Popen(
             ["curl", "-L", "-sS", "--fail", "-C", "-", "--retry", "3",
-             "--speed-time", "30", "--speed-limit", "1024", "-o", tmp, url],
+             "--speed-time", "30", "--speed-limit", "1024",
+             "--max-time", str(MAX_DOWNLOAD_S), "-o", tmp, url],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **NOWIN)
         if progress and total:
             def poll():
@@ -74,27 +111,19 @@ def download(url, target, progress=None, cancel=None):
                         pass
                     time.sleep(0.4)
             threading.Thread(target=poll, daemon=True).start()
+        deadline = time.monotonic() + MAX_DOWNLOAD_S + 60   # curl --max-time greift zuerst
         while proc.poll() is None:
-            if cancel and cancel.is_set():
-                proc.terminate()
-                # Erst warten, bis curl die .part-Datei losgelassen hat; Windows
-                # könnte sie sonst nicht löschen, und curl schriebe weiter.
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
+            if (cancel and cancel.is_set()) or time.monotonic() > deadline:
+                _stop(proc)
                 break
             time.sleep(0.1)
         ok = proc.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0
     else:
         try:
-            def hook(blocks, bs, total):
-                if progress and total > 0:
-                    progress(min(blocks * bs / total, 1.0))
-            urllib.request.urlretrieve(url, tmp, hook if progress else None)
-            ok = os.path.exists(tmp) and os.path.getsize(tmp) > 0
-        except OSError:
+            ok = (_urllib_download(url, tmp, progress, cancel,
+                                   time.monotonic() + MAX_DOWNLOAD_S)
+                  and os.path.exists(tmp) and os.path.getsize(tmp) > 0)
+        except (OSError, ValueError):
             ok = False
     expected = SHA256.get(os.path.basename(target))
     if ok and expected:
