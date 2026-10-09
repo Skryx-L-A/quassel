@@ -250,9 +250,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   downloads with checksums are in `scripts/tcpp/`.
 
 ### Changed
-- Text appears sooner after you release the hotkey. Recording now stops as
-  soon as the last word has ended (at least 80 ms, 250 ms with Bluetooth, at
-  most the former 250 or 450 ms), and the paste keystroke follows as soon as
+- Text appears sooner after you release the hotkey, about 0.1 s in a replay of
+  real recordings. Recording now stops once the last word has ended and 40 ms
+  of silence followed (never sooner than 80 ms, 250 ms with Bluetooth, never
+  later than the former 250 or 450 ms), and the paste keystroke follows as soon as
   the clipboard holds the text instead of after a fixed pause. An app that
   needs more time can get a `paste_delay_ms` in its per-app profile.
 - Automatic dictionary learning is stricter and easier to undo. A word is
