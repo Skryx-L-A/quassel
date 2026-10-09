@@ -27,7 +27,7 @@ import secrets
 import sys
 import time
 
-from . import fsutil, profile, state
+from . import fsutil, i18n, profile, state
 
 REQUEST_NAME = "ask.request"
 CLAIM_NAME = "ask.claim"
@@ -333,6 +333,32 @@ def discard(now=None, rundir=None):
     _remove(request)
     _remove(claim_path)
     return waiting
+
+
+def display(doc):
+    """The calm line for pill and notification: who asks, what, and how to
+    answer. Only the shortened question, never an answer."""
+    question = shorten(doc.get("question"), QUESTION_MAX)
+    program = shorten(doc.get("program"), PROGRAM_MAX)
+    if not question:
+        return i18n.tr("ask_waiting", program=program or i18n.tr("ask_a_program"))
+    if program:
+        return i18n.tr("ask_question", program=program, question=question)
+    return i18n.tr("ask_question_anon", question=question)
+
+
+def notify_user(doc):
+    """System notification for a new request, so nobody dictates into the
+    wrong place by accident. Windows: the tray app has no notification path
+    for a second process yet; the pill shows the question."""
+    if os.name == "nt":
+        return False
+    from . import platform
+    try:
+        platform.notify(display(doc))
+    except Exception:   # noqa: BLE001 — the pill still shows the question
+        return False
+    return True
 
 
 def program_name(pid=None):
