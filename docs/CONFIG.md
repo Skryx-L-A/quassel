@@ -241,7 +241,7 @@ configures the local speech server:
 
 | Variable | Effect |
 |---|---|
-| `QUASSEL_PROFILE` | Names a second, independent instance (`QUASSEL_PROFILE=next`). It gets its own settings, data, runtime and log folders (`Quassel-next`, `quassel-next`) and its own server port. Models are shared, read-only. Names use `a-z`, `0-9` and `-`, up to 32 characters; an invalid name is ignored. Without it nothing changes. |
+| `QUASSEL_PROFILE` | Names a second, independent instance (`QUASSEL_PROFILE=next`). It gets its own settings, data, runtime and log folders (`Quassel-next`, `quassel-next`) and its own server port. Models are shared, read-only. Names use `a-z`, `0-9` and `-`, up to 32 characters; an invalid name, or `QUASSEL_PORT=8765` together with a profile, stops the start with a message instead of falling back to the installed instance. Without it nothing changes. |
 | `QUASSEL_PORT` | Port of the local speech server, 1024 to 65535. Default 8765; a named profile gets a fixed port between 8766 and 8865 derived from its name. |
 | `QUASSEL_PREROLL_MS` | Pre-roll for recorders that were not given a value by the daemon (such as the control center's microphone test). The daemon itself uses `preroll_ms` in `config.ini`. |
 | `QUASSEL_MAC_AUDIO` | macOS recording backend: `sd16` (default), `sdnative` or `ffmpeg`. For diagnosis only. |
