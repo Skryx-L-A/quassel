@@ -19,10 +19,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spoken when text cleanup or number formatting would change them.
 
 ### Added
+- Wake word: after the phrase alone, the pill shows "Listening…" while it
+  records your dictation; a tone plays only when signal tones are on.
 - Transcribe file: "Save as…" writes the result as a text, SRT or WebVTT file.
   The suggested name is the source file's name with the matching extension.
-- "Raw text back" without a new global shortcut: the macOS menu bar menu can
-  offer it as an entry, and on Linux `quassel-type-cli raw-last` asks the
+- "Raw text back" without a new global shortcut: the macOS menu bar menu and the
+  Windows tray menu have it as an entry, and on Linux `quassel-type-cli raw-last` asks the
   running dictation service to put the unedited text of the last dictation on
   the clipboard. The command never reads the text itself; it stays only in the
   service's memory and is never written to disk.
