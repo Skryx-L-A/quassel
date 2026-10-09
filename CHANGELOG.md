@@ -15,6 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Linux and macOS: if the microphone stops delivering sound during a
+  recording (unplugged, Bluetooth disconnected, system power event), Quassel
+  now notices it and closes the dead input instead of keeping it open for the
+  next dictation.
 - Control center: a Whisper model you set up yourself now shows its file name
   instead of "small", and choosing it again switches back to it instead of
   loading a different model.
