@@ -65,6 +65,30 @@ def _control(command):
         return EXIT_FAILED
 
 
+def _raw_last():
+    """Ask the running daemon to put the raw text of the last dictation on the
+    clipboard. The CLI never sees the text: it lives only in the daemon's
+    memory, and the daemon sets the clipboard itself (SIGHUP, as the Control
+    Center button does). The pill shows whether there was any raw text."""
+    if not sys.platform.startswith("linux"):
+        # macOS/Windows: the daemon belongs to the menu bar/tray app and has no
+        # known PID for a second process; a SIGHUP to a guessed process would
+        # end any Quassel that does not handle it.
+        print('use "Raw text back" in the Quassel menu bar or tray menu on this platform',
+              file=sys.stderr)
+        return EXIT_UNAVAILABLE
+    if _daemon_status() != "running":
+        print("Quassel is not running, so there is no last dictation", file=sys.stderr)
+        return EXIT_UNAVAILABLE
+    result = subprocess.run(["systemctl", "--user", "kill", "-s", "HUP", "quasseld"],
+                            check=False)
+    if result.returncode != 0:
+        print("could not reach the dictation service", file=sys.stderr)
+        return EXIT_FAILED
+    print("requested: the raw text goes to the clipboard if the cleanup changed the last dictation")
+    return 0
+
+
 def _dict_add(word):
     word = word.strip()
     if not word:
@@ -165,6 +189,8 @@ def parser():
     status.add_argument("--json", action="store_true")
     sub.add_parser("toggle", help="toggle the existing daemon service")
     sub.add_parser("panic", help="stop an active dictation")
+    sub.add_parser("raw-last", help="put the raw text of the last dictation on the clipboard "
+                                    "(kept only in the daemon's memory)")
     transcribe = sub.add_parser("transcribe", help="transcribe an existing media file")
     transcribe.add_argument("file")
     formats = transcribe.add_mutually_exclusive_group()
@@ -202,6 +228,8 @@ def main(argv=None):
         return 0
     if args.command in ("toggle", "panic"):
         return _control(args.command)
+    if args.command == "raw-last":
+        return _raw_last()
     if args.command == "transcribe":
         return _transcribe(args.file, args.output or "text")
     if args.command == "model":

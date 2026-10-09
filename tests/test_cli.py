@@ -77,3 +77,45 @@ def test_status_reports_profile_server_model_and_state(monkeypatch, capsys):
     assert result["server"] == "running"
     assert result["daemon"] == "running"
     assert result["model"] == "tiny"
+
+
+class _Run:
+    def __init__(self, active=True):
+        self.calls = []
+        self.active = active
+
+    def __call__(self, cmd, **kw):
+        self.calls.append(cmd)
+        code = 0 if (self.active or "is-active" not in cmd) else 3
+        return type("R", (), {"returncode": code})()
+
+
+def test_raw_last_asks_the_linux_daemon_by_signal(monkeypatch, capsys):
+    """raw-last holt den Text nie selbst: der Daemon legt ihn in die
+    Zwischenablage (SIGHUP, wie der Knopf im Kontrollzentrum)."""
+    run = _Run()
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.setattr(cli.subprocess, "run", run)
+    assert cli.main(["raw-last"]) == 0
+    assert run.calls[-1] == ["systemctl", "--user", "kill", "-s", "HUP", "quasseld"]
+    out = capsys.readouterr().out
+    assert "clipboard" in out
+
+
+def test_raw_last_without_a_running_daemon(monkeypatch, capsys):
+    run = _Run(active=False)
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.setattr(cli.subprocess, "run", run)
+    assert cli.main(["raw-last"]) == cli.EXIT_UNAVAILABLE
+    assert not any("kill" in c for c in run.calls)        # nie ins Blaue signalisieren
+    assert "not running" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_raw_last_points_to_the_menu_elsewhere(monkeypatch, capsys, platform):
+    run = _Run()
+    monkeypatch.setattr(cli.sys, "platform", platform)
+    monkeypatch.setattr(cli.subprocess, "run", run)
+    assert cli.main(["raw-last"]) == cli.EXIT_UNAVAILABLE
+    assert run.calls == []
+    assert "Raw text back" in capsys.readouterr().err

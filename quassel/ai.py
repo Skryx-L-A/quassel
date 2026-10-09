@@ -1,5 +1,6 @@
 """Lokaler KI-Backend-Client: optionale Nachbearbeitung diktierten Texts durch
-einen LOKALEN Ollama-Server (http://127.0.0.1:11434).
+einen LOKALEN Ollama-Server (http://127.0.0.1:11434) oder einen
+OpenAI-kompatiblen Server (/v1/models, /v1/chat/completions).
 
 Privatsphaere geht vor: alles bleibt lokal. Der Client wirft NIE an den Aufrufer
 und scheitert weich (None / [] / False), damit ein Diktat nie verloren geht oder
@@ -26,6 +27,16 @@ CHAT_SYSTEM = (
     "Remove disfluencies and fix punctuation only. Do not add information. "
     "Return only a JSON object with one string property named cleaned."
 )
+# Stufeneigene Anweisung: steht in der Nutzernachricht VOR dem Diktatfeld.
+# Der Systemprompt bleibt fuer alle Stufen gleich, damit der Server ihn als
+# Praefix im KV-Cache halten kann; das Diktat steht immer zuletzt.
+LEVEL_INSTRUCTIONS = {
+    "mittel": ("Level medium: remove only filler words, repeated words and false "
+               "starts, and fix punctuation. Keep the wording and sentence structure."),
+    "stark": ("Level strong: remove filler words, repetitions and false starts, fix "
+              "punctuation, and also smooth the sentence structure and grammar. Do not "
+              "change the content: keep every fact, name, number, link and the meaning."),
+}
 _CHAT_SCHEMA = {"type": "object", "properties": {"cleaned": {"type": "string"}},
                 "required": ["cleaned"], "additionalProperties": False}
 _THINK = re.compile(r"<think>.*?</think>", re.I | re.S)
@@ -184,26 +195,76 @@ def build_generate_payload(model: str, prompt: str, system: str | None = None,
     return payload
 
 
-def available(endpoint: str = OLLAMA_DEFAULT, timeout: float = 2.0) -> bool:
-    """GET {endpoint}/api/tags; True genau dann bei HTTP 200.
-    Jeder Fehler/Timeout -> False (wirft nie)."""
-    url = endpoint.rstrip("/") + "/api/tags"
+def parse_openai_models(obj: dict) -> list[str]:
+    """Aus einer geparsten /v1/models-Antwort {"data":[{"id":"..."},...]}
+    (OpenAI-kompatible Server: llama.cpp, LM Studio, vLLM, Ollama unter /v1)
+    die Modellnamen zurueckgeben; [] wenn fehlend/fehlerhaft."""
+    if not isinstance(obj, dict):
+        return []
+    data = obj.get("data")
+    if not isinstance(data, list):
+        return []
+    names = []
+    for m in data:
+        if isinstance(m, dict):
+            name = m.get("id")
+            if isinstance(name, str) and name:
+                names.append(name)
+    return names
+
+
+def _models_url(endpoint: str) -> str:
+    base = endpoint.rstrip("/")
+    return base + ("/models" if base.endswith("/v1") else "/v1/models")
+
+
+def _is_v1(endpoint: str) -> bool:
     try:
-        with _open(url, endpoint, timeout) as resp:
-            return resp.status == 200
-    except Exception:
+        return urllib.parse.urlsplit(endpoint).path.rstrip("/").endswith("/v1")
+    except ValueError:
         return False
 
 
-def list_models(endpoint: str = OLLAMA_DEFAULT, timeout: float = 4.0) -> list[str]:
-    """GET {endpoint}/api/tags -> parse_tags. [] bei jedem Fehler (wirft nie)."""
-    url = endpoint.rstrip("/") + "/api/tags"
+def _get_json(url, endpoint, timeout):
+    """GET url -> geparstes JSON, None bei Nicht-200 oder jedem Fehler."""
     try:
         with _open(url, endpoint, timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        return parse_tags(data)
+            if resp.status != 200:
+                return None
+            return json.loads(resp.read().decode("utf-8"))
     except Exception:
-        return []
+        return None
+
+
+def probe(endpoint: str = OLLAMA_DEFAULT, timeout: float = 4.0):
+    """Welche Schnittstelle der Endpunkt spricht, mit seiner Modellliste.
+
+    -> ("ollama", [...])  GET /api/tags antwortet (Ollama)
+       ("openai", [...])  GET /v1/models antwortet (OpenAI-kompatibel)
+       (None, [])         nichts erreichbar
+    Endet der Pfad auf /v1, ist es ein OpenAI-kompatibler Endpunkt; /api/tags
+    wird dann nicht gefragt. Sonst zuerst Ollama, dann /v1/models. Wirft nie."""
+    endpoint = (endpoint or "").strip() or OLLAMA_DEFAULT
+    if not _is_v1(endpoint):
+        data = _get_json(endpoint.rstrip("/") + "/api/tags", endpoint, timeout)
+        if data is not None:
+            return "ollama", parse_tags(data)
+    data = _get_json(_models_url(endpoint), endpoint, timeout)
+    if data is not None:
+        return "openai", parse_openai_models(data)
+    return None, []
+
+
+def available(endpoint: str = OLLAMA_DEFAULT, timeout: float = 2.0) -> bool:
+    """True, wenn der Endpunkt als Ollama (/api/tags) oder OpenAI-kompatibel
+    (/v1/models) mit HTTP 200 antwortet. Jeder Fehler/Timeout -> False."""
+    return probe(endpoint, timeout)[0] is not None
+
+
+def list_models(endpoint: str = OLLAMA_DEFAULT, timeout: float = 4.0) -> list[str]:
+    """Modellnamen ueber /api/tags oder /v1/models (siehe probe).
+    [] bei jedem Fehler (wirft nie)."""
+    return probe(endpoint, timeout)[1]
 
 
 def generate(prompt: str, *, model: str, system: str | None = None,
@@ -297,7 +358,8 @@ def chat_cleanup(transcript: str, *, model: str, endpoint: str = OLLAMA_DEFAULT,
         return None, "unconfigured"
     if endpoint_warning(endpoint) == "invalid" or not 0 < timeout <= 3600:
         return None, "invalid_endpoint"
-    tagged = "<TRANSCRIPT>\n" + transcript + "\n</TRANSCRIPT>"
+    instruction = LEVEL_INSTRUCTIONS.get(level, LEVEL_INSTRUCTIONS["mittel"])
+    tagged = instruction + "\n<TRANSCRIPT>\n" + transcript + "\n</TRANSCRIPT>"
     max_tokens = min(4096, max(48, math.ceil(len(transcript) / 4 * 1.3) + 32))
     payload = {
         "model": model,

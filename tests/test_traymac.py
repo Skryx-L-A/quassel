@@ -213,3 +213,25 @@ def test_secure_input_query_survives_missing_framework(monkeypatch):
     monkeypatch.setattr(traymac, "CARBON", "/nonexistent/Carbon")
     monkeypatch.setattr(traymac.sys, "platform", "darwin")
     assert traymac.secure_input_enabled() is False
+
+
+def test_without_raw_back_callback_no_raw_back_item(tray):
+    assert tray.raw_back_action is None
+    assert "Rohtext zurück" not in [a.text() for a in tray.menu.actions()]
+
+
+def test_raw_back_item_fires_callback_and_follows_language(qapp):
+    """„Rohtext zurück" im Menüleistenmenü statt eines weiteren globalen
+    Hotkeys; der Text selbst bleibt im Daemon, das Menü löst nur aus."""
+    calls = []
+    t = traymac.TrayMenu(qapp, lambda: None, lambda: None,
+                         on_raw_back=lambda: calls.append(1))
+    try:
+        actions = {a.text(): a for a in t.menu.actions() if a.text()}
+        actions["Rohtext zurück"].trigger()
+        assert calls == [1]
+        i18n.set_language("en")
+        t.retranslate()
+        assert t.raw_back_action.text() == "Raw text back"
+    finally:
+        t.hide()

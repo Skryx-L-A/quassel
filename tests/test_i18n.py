@@ -193,3 +193,10 @@ def test_tray_panic_label_is_shared(lang, text):
     benutzen denselben Schlüssel."""
     i18n.set_language(lang)
     assert i18n.tr("tray_panic") == text
+
+
+def test_wake_listening_feedback_has_both_languages():
+    i18n.set_language("de")
+    assert i18n.tr("wake_listening") == "Hört zu…"
+    i18n.set_language("en")
+    assert i18n.tr("wake_listening") == "Listening…"

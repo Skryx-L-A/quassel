@@ -19,6 +19,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spoken when text cleanup or number formatting would change them.
 
 ### Added
+- Transcribe file: "Save as…" writes the result as a text, SRT or WebVTT file.
+  The suggested name is the source file's name with the matching extension.
+- "Raw text back" without a new global shortcut: the macOS menu bar menu can
+  offer it as an entry, and on Linux `quassel-type-cli raw-last` asks the
+  running dictation service to put the unedited text of the last dictation on
+  the clipboard. The command never reads the text itself; it stays only in the
+  service's memory and is never written to disk.
+- AI page: "Refresh" and "Test" also work with OpenAI-compatible servers such
+  as llama-server, LM Studio or vLLM. Quassel asks Ollama for its models first
+  and otherwise reads the server's model list (/v1/models); an address ending
+  in /v1 is treated as OpenAI-compatible straight away. "Test" then checks the
+  same cleanup call that dictation uses. Local addresses never go through a
+  system proxy.
 - Windows now supports the optional pre-roll setting: it keeps up to two seconds of recent microphone audio for the next dictation and closes the input after the short warm period.
 - Per-app profiles: the "While dictating" page has a button that creates the
   profiles file with the default profiles (terminal, mail, editor and so on) if
@@ -112,6 +125,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   downloads with checksums are in `scripts/tcpp/`.
 
 ### Changed
+- Clean up dictation: the Medium and Strong levels now ask the local AI for
+  different work. Medium removes only fillers, repeats and false starts and fixes
+  punctuation; Strong also smooths sentence structure and grammar. Both keep
+  facts, names, numbers, links and the meaning.
 - Transcribe file: you can choose plain text or subtitles (SRT or WebVTT),
   follow the progress and cancel a long file. The result is no longer copied to
   the clipboard automatically, which used to replace whatever you had copied;
@@ -160,6 +177,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is released afterwards, as before.
 
 ### Fixed
+- Per-app profiles: the page shows where the profiles file lives before you
+  press the button. On macOS the file opens in the default text editor (an .ini
+  file often has no app assigned there), on Windows in Notepad if no app is set
+  for it. If no editor opens, the page says so and names the path instead of
+  claiming it was opened.
+- macOS: when the text could not be typed and is left on the clipboard, the
+  pill now says to press ⌘V instead of Ctrl+V.
 - When a speech server responds but cannot transcribe, Quassel can restart its own profile server once and retry the recording. The macOS app accepts restart requests from its own dictation process.
 - Windows now stops dictation on sleep and checks the speech server after wake. Linux clears held shortcut keys after sleep so the next shortcut works.
 - Windows microphone choices now follow the selected WASAPI device by name when device indexes change.

@@ -1,7 +1,8 @@
 """macOS menu bar icon via QSystemTrayIcon.
 
 Status line (non-clickable): Ready/Recording/…
-Menu items: Turn off, Stop dictation now, Open Control Center, Quit Quassel
+Menu items: Turn off, Stop dictation now, Raw text back, Open Control Center,
+Quit Quassel
 (English or German, following the app language; retranslate() after a switch).
 Icon: monochromatic template-style for native macOS menu bar rendering.
 """
@@ -94,7 +95,7 @@ class TrayMenu(QSystemTrayIcon):
     """macOS menu bar tray icon with Quassel status and controls."""
 
     def __init__(self, app, on_open_center, on_quit, on_toggle=None,
-                 on_panic=None):
+                 on_panic=None, on_raw_back=None):
         super().__init__(app)
         self.app = app
         self.on_open_center = on_open_center
@@ -121,6 +122,12 @@ class TrayMenu(QSystemTrayIcon):
         self.panic_action = None
         if on_panic is not None:
             self.panic_action = self.menu.addAction(tr("tray_panic"), on_panic)
+
+        # „Rohtext zurück": statt eines weiteren globalen Hotkeys (Kollisionen)
+        # ein Menüeintrag. Der Text liegt nur im Daemon; das Menü löst aus.
+        self.raw_back_action = None
+        if on_raw_back is not None:
+            self.raw_back_action = self.menu.addAction(tr("raw_back"), on_raw_back)
 
         # Open control center
         self.open_action = self.menu.addAction(tr("tray_open_center"),
@@ -174,12 +181,15 @@ class TrayMenu(QSystemTrayIcon):
         """Nach einem Wechsel der App-Sprache alle Menütexte neu setzen."""
         if self.panic_action is not None:
             self.panic_action.setText(tr("tray_panic"))
+        if self.raw_back_action is not None:
+            self.raw_back_action.setText(tr("raw_back"))
         self.open_action.setText(tr("tray_open_center"))
         self.quit_action.setText(tr("quit"))
         self.set_mode(self.mode)
 
 
-def start_tray(app, on_open_center, on_quit, on_toggle=None, on_panic=None):
+def start_tray(app, on_open_center, on_quit, on_toggle=None, on_panic=None,
+               on_raw_back=None):
     """Initialize and show the macOS tray menu.
 
     Args:
@@ -188,12 +198,14 @@ def start_tray(app, on_open_center, on_quit, on_toggle=None, on_panic=None):
         on_quit: callable to quit the app
         on_toggle: optional callable to switch dictation on/off
         on_panic: optional callable to stop a running dictation at once
+        on_raw_back: optional callable that asks the daemon to put the raw
+            text of the last dictation on the clipboard
 
     Returns:
         TrayMenu instance (keep reference alive for menu to persist)
     """
     tray = TrayMenu(app, on_open_center, on_quit, on_toggle=on_toggle,
-                    on_panic=on_panic)
+                    on_panic=on_panic, on_raw_back=on_raw_back)
     return tray
 
 
