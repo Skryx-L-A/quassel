@@ -113,6 +113,8 @@ STRINGS = {
     # Einfügen gescheitert, Text liegt aber in der Zwischenablage (D57)
     "daemon_crashed": ("Dictation service stopped (exit {code}). Turn it on to retry.",
                        "Diktierdienst beendet (Code {code}). Zum erneuten Versuch einschalten."),
+    "err_not_inserted": ("Dictation could not be inserted",
+                         "Diktat konnte nicht eingefügt werden"),
     "paste_clipboard_only": ("Text is on the clipboard – press Ctrl+V",
                              "Text liegt in der Zwischenablage – Strg+V drücken"),
     "paste_clipboard_only_mac": ("Text is on the clipboard – press ⌘V",

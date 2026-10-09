@@ -20,6 +20,29 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   text available to paste and warns that the copied formatting was lost.
 - macOS dictation returns to normal paste after an unreadable clipboard item
   has been handled by direct typing.
+- When a dictation cannot be inserted, Quassel only says "Text is on the
+  clipboard" if the clipboard really holds it. Otherwise (for example when
+  Linux keeps a copied image untouched) it says the dictation could not be
+  inserted and saves the recording so nothing is lost.
+- Terminal protection now checks the app in front right before the text is
+  inserted. Switching from a mail window to a terminal while Quassel is still
+  transcribing no longer sends a line break or a spoken Enter there.
+- In apps whose profile forbids Enter (terminals by default), line breaks
+  inside a dictation are now inserted as spaces, so a spoken "new line" can no
+  longer run the first half as a command.
+- If something unexpected fails after a dictation was transcribed (for
+  example the clipboard or a full disk), Quassel now saves the recording, shows
+  an error and returns to idle instead of hanging on "transcribing".
+- With pre-roll switched on, starting or emergency-stopping a dictation no
+  longer waits while the idle microphone stream is being released.
+- The emergency stop signal (`SIGUSR2`, the "Stop dictation now" menu item on
+  macOS) can no longer freeze Quassel when it arrives while a recording is
+  starting or ending.
+- After saying only the wake phrase, the pill now shows the level of the
+  wake recording and no longer warns about a silent microphone while you speak.
+- Starting a dictation with the hotkey while the wake word is listening for
+  your follow-up no longer stops that dictation's level display, plays the stop
+  tone in the middle of it or shows the pill as idle.
 - A damaged settings file is no longer replaced by the part that could still be
   read: Quassel keeps a copy next to it (`config.ini.damaged-…`) before saving.
 - The dictation history could lose a new entry while expired entries were

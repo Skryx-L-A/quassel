@@ -32,7 +32,8 @@ import time
 from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18n,
                power, profiles, progmode, selfheal, stats, textproc, textreplace, vad,
                wakeword, whisperclient)
-from .audio import LevelPump, RATE, SAMPLE_BYTES
+from .audio import LevelPump, RATE, SAMPLE_BYTES, rms_level
+from .backends.base import SpeechResult
 from .i18n import tr
 from .state import RUNDIR, WAV
 from .streaming import StreamTyper
@@ -316,6 +317,7 @@ class DictationCore:
     _runner = None              # ActionRunner, wo die Plattform einen nutzt
     _handsfree = False          # Freihand-Modus (Doppeltipp) im laufenden Diktat
     _level_pump = None          # misst den Mikrofonpegel für die Pille (H112)
+    _wake_pump = None           # eigene Pegelpumpe der Wake-Folgeaufnahme
     # Unbereinigter Text des letzten Diktats, nur wenn die Bereinigung ihn
     # verändert hat — nur im Speicher, nie auf Platte oder im Log; für
     # „Rohtext zurück" aus dem Kontrollzentrum.
@@ -745,6 +747,12 @@ class DictationCore:
         keep_raw = True
         try:
             keep_raw = self._transcribe_and_insert(streamer, clip_backup, data, panic) is False
+        except Exception as exc:  # noqa: BLE001 — Text nie still verlieren
+            # Zwischenablage, Tastendruck oder volle Platte: wie ein
+            # Fehlschlag retten und melden, statt auf „transkribiert" stehen
+            # zu bleiben. Nur der Typ ins Log, nie der Text.
+            self._log("dict: Rest fehlgeschlagen: %s" % type(exc).__name__)
+            keep_raw = not self._fail_safely(data, streamer, clip_backup)
         finally:
             if not keep_raw:
                 discard(done_path)
@@ -800,7 +808,7 @@ class DictationCore:
             live_typed = len(streamer.typed) if streamer is not None else 0
             if streamer is not None:
                 self._streaming_restore(clip_backup)
-            if action == "enter" and not profiles.allow_enter(cfg):
+            if action == "enter" and not profiles.allow_enter(self._insert_cfg(cfg)):
                 # Terminal-Schutz: ein gesprochenes Enter führte den Befehl aus.
                 if live_typed:
                     self._send_backspaces(live_typed)
@@ -840,6 +848,7 @@ class DictationCore:
             if panic.is_set():
                 self._state("idle")
                 return
+            final = self._finish_text(final, self._insert_cfg(cfg))
             inserted = self._insert(final)
             self.last_paste_len = len(final) if inserted else 0
             if final != value:
@@ -861,17 +870,19 @@ class DictationCore:
             if panic.is_set():
                 self._state("idle")
                 return
+            final = self._finish_text(final, self._insert_cfg(cfg))
             inserted = self._insert(final)
             self.last_paste_len = len(final) if inserted else 0
             value = final
         else:
+            mech = self._finish_text(mech, self._insert_cfg(cfg))
             inserted = self._insert(mech)
             self.last_paste_len = len(mech) if inserted else 0
             value = mech
         if inserted:
             self._forget_text(self._state("done", value))
         else:
-            self._report_clipboard_only()
+            self._report_not_inserted(value, data)
         secs = len(data) / (RATE * SAMPLE_BYTES)
         self._after_insert(value, secs)
 
@@ -907,6 +918,39 @@ class DictationCore:
         with wakeword.INSERT_GATE.dictation():
             return self._paste(text) is not False
 
+    def _clip_read(self):
+        """Plattform: Text der Zwischenablage. None = nicht lesbar."""
+        return None
+
+    def _clipboard_holds(self, text):
+        """Liegt genau dieses Diktat in der Zwischenablage? Der Inhalt wird
+        nur verglichen, nie geloggt."""
+        try:
+            current = self._clip_read()
+        except Exception as exc:  # noqa: BLE001 — Zwischenablage kaputt
+            self._log("paste: Zwischenablage nicht lesbar: %s" % type(exc).__name__)
+            return False
+        return current is not None and current.rstrip("\r\n") == text.rstrip("\r\n")
+
+    def _report_not_inserted(self, text, data):
+        """Die Plattform meldete „nicht eingefügt". Nur wenn die Zwischenablage
+        das Diktat wirklich hält, stimmt der Hinweis auf Strg+V. Sonst (Linux
+        lässt Bild-, Datei- und unbekannte Ablagen absichtlich unverändert)
+        die Aufnahme retten, damit das Diktat nicht verloren ist."""
+        if self._clipboard_holds(text):
+            self._report_clipboard_only()
+            return
+        self._log("paste: nicht eingefügt, Diktat auch nicht in der Zwischenablage")
+        message = tr("err_not_inserted")
+        try:
+            path = self._rescue(data)
+        except Exception as exc:  # noqa: BLE001
+            self._log("rescue: gescheitert: %s" % type(exc).__name__)
+            path = None
+        if path:
+            message += " · " + tr("rescued").format(path=path)
+        self._state("error", message)
+
     def _report_clipboard_only(self):
         """Die Pille sagte sonst „fertig", obwohl im Fenster nichts ankam."""
         self._log("paste: Tastendruck nicht angekommen, Text nur in der Zwischenablage")
@@ -926,6 +970,19 @@ class DictationCore:
             text += " · " + tr("rescued").format(path=path)
         self._state("error", text)
         return path is not None
+
+    def _fail_safely(self, data, streamer, clip_backup):
+        """_fail_with_rescue nach einer Ausnahme: scheitert auch das, bleibt
+        die Rohdatei, und die Pille zeigt trotzdem einen Fehler."""
+        try:
+            return self._fail_with_rescue(data, streamer, clip_backup, SpeechResult(None))
+        except Exception as exc:  # noqa: BLE001
+            self._log("rescue: gescheitert: %s" % type(exc).__name__)
+            try:
+                self._state("error", tr("err_transcribe"))
+            except Exception:  # noqa: BLE001
+                pass
+            return False
 
     def _rescue(self, data):
         """Rohdaten als eigene WAV-Datei ablegen. Rückgabe: Pfad oder None."""
@@ -975,12 +1032,27 @@ class DictationCore:
         nicht erst abgefragt."""
         return profiles.for_active_app(self.cfg, log=self._log)
 
+    def _insert_cfg(self, cfg):
+        """Profil für die Enter-Sperre, unmittelbar vor dem Einfügen bestimmt:
+        zwischen der ersten Abfrage und dem Einfügen liegen Transkription und
+        Modellaufruf, inzwischen kann ein Terminal vorne sein. Sperrt schon
+        das Profil vom Diktatbeginn Enter, bleibt es dabei. Die Sprache
+        kommt weiter aus der ersten Abfrage."""
+        if not profiles.allow_enter(cfg):
+            return cfg
+        return self._profile_cfg()
+
     @staticmethod
     def _finish_text(text, cfg):
-        """Terminal-Schutz: verbietet das Profil Enter, kein Umbruch am Ende."""
+        """Terminal-Schutz: verbietet das Profil Enter, kein Umbruch am Ende,
+        und Umbrüche im Text werden Leerzeichen wie im Streaming. Die
+        Tipp-Rückfälle (ydotool, Unicode-Ereignisse) senden einen Umbruch als
+        Enter, und auch beim echten Einfügen schützt Bracketed Paste nur in
+        Shells, die es einschalten (nicht in REPLs, Passwortabfragen, ssh auf
+        alte Shells)."""
         if profiles.allow_enter(cfg):
             return text
-        return profiles.strip_trailing_enter(text)
+        return profiles.strip_trailing_enter(text).translate(_NO_ENTER)
 
     def _refine_mechanical(self, text):
         """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""
@@ -1113,18 +1185,45 @@ class DictationCore:
         """Die Äußerung nach der reinen Phrase: ohne Spotter, der hat sie gehört.
         Rückmeldung wie beim Hotkey: die Pille zeigt „hört zu" mit Pegel, ein
         Ton nur, wenn die Signaltöne an sind. Danach zurück auf Ruhe; das
-        Ergebnis meldet das Einfügen."""
+        Ergebnis meldet das Einfügen.
+
+        Ein Tastatur-Diktat hat Vorrang: läuft schon eins, keine
+        Folgeaufnahme; startet eins währenddessen, bleiben seine Pille, seine
+        Pegelpumpe und sein Ton unberührt."""
+        if self._busy():
+            self._log("wake: Folgeaufnahme übersprungen (Tastatur-Diktat läuft)")
+            return None
         self._state("recording", tr("wake_listening"))
         if self.cfg.beep:
             beep.start()
-        self._start_level()
+        self._start_wake_level()
         try:
             return self._wake_record_utterance(spot=False)
         finally:
-            self._stop_level()
-            if self.cfg.beep:
-                beep.stop()
-            self._state("idle")
+            pump, self._wake_pump = self._wake_pump, None
+            if pump is not None:
+                pump.stop()
+            if not self._busy():
+                if self.cfg.beep:
+                    beep.stop()
+                self._state("idle")
+
+    def _start_wake_level(self):
+        """Pegel aus der Rohdatei der Wake-Aufnahme, nicht aus der des letzten
+        Diktats (die ist alt -> 0 -> „kein Ton vom Mikrofon"). Sobald ein
+        Tastatur-Diktat läuft, meldet nur noch dessen Pumpe."""
+        target = self._level_target()
+        if target is None:
+            return
+
+        def publish(level):
+            if not self.rec.active:
+                target(level)
+        try:
+            self._wake_pump = LevelPump(
+                publish, level=lambda: rms_level(path=WAKE_RAW)).start()
+        except Exception as exc:  # noqa: BLE001
+            self._log("level: Pegelanzeige nicht gestartet: %r" % exc)
 
     def _wake_transcribe(self, pcm):
         return wake_transcribe(self.cfg, pcm, scratch_wav("wake"),

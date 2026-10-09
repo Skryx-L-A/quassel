@@ -17,6 +17,8 @@ def run(monkeypatch, tmp_path, paste_result, **cfg):
     for k, v in cfg.items():
         setattr(core.cfg, k, v)
     core._paste = lambda text: core.pasted.append(text) or paste_result
+    # D57: der Tastendruck kam nicht an, der Text liegt aber in der Ablage.
+    core._clip_read = lambda: core.pasted[-1] if core.pasted else ""
     assert core.start_recording()
     core.finish_now()
     return core

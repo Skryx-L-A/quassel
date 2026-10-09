@@ -54,6 +54,7 @@ RECORDING_STATES = ("hold", "toggle_armed", "toggle")
 RESCAN_EVERY = 5       # s: /dev/input auf neue Tastaturen prüfen
 AUTOSTOP_POLL = 0.5     # s: macOS-Wächter, solange ein Freihand-Auto-Stopp scharf ist
 PANIC_EXIT_WAIT = 5.0  # s: so lange wartet der Not-Aus auf das Ende einer Aktion
+PANIC_SIGNAL_WAIT = 0.5  # s: so lange wartet der SIGUSR2-Handler auf den Not-Aus-Thread
 # Der Ereignis-Thread führt den synchronen Teil der Aktionen selbst aus, und
 # darin steckt osascript (Benachrichtigung, Ducking) mit je 5 s Frist. Der Wert
 # liegt darüber, damit ein zäher, aber normaler Start keinen Fehlalarm samt
@@ -82,6 +83,16 @@ def clip_copy(text):
     import importlib
     from . import platform as platform_mod
     return importlib.import_module(platform_mod._backend_module_name()).clip_copy(text)
+
+
+def clip_read():
+    """Text der Zwischenablage über das Plattform-Backend; None, wenn das
+    Backend keine Lesefunktion hat."""
+    import importlib
+    from . import platform as platform_mod
+    backend = importlib.import_module(platform_mod._backend_module_name())
+    read = getattr(backend, "clip_read", None)
+    return read() if read is not None else None
 
 
 def _restart_linux_server():
@@ -223,6 +234,9 @@ class Daemon(dictation.DictationCore):
 
     def _clip_copy(self, text):
         return clip_copy(text)
+
+    def _clip_read(self):
+        return clip_read()
 
     def _level_target(self):
         # Pegel über state.json an die Pille (eigener Prozess); level_set
@@ -405,10 +419,20 @@ class Daemon(dictation.DictationCore):
         if not hasattr(signal, "SIGUSR2"):
             return
         try:
-            signal.signal(signal.SIGUSR2, lambda *_: self.panic_stop())
+            signal.signal(signal.SIGUSR2, self._on_panic_signal)
         except (OSError, ValueError):   # nicht im Haupt-Thread -> kein Handler
             log("daemon: SIGUSR2-Handler nicht installierbar (Not-Aus nur übers Menü)")
         self._install_raw_back_signal()
+
+    def _on_panic_signal(self, *_):
+        """Den Not-Aus in einem eigenen Thread ausführen: Python ruft den
+        Handler auf dem Hauptthread zwischen zwei Bytecodes auf. Hält der
+        gerade die Zustands- oder Recorder-Sperre, wartete panic_stop() hier
+        auf seinen eigenen Thread. Der Handler wartet höchstens kurz auf das
+        Ende, damit ein ungestörter Not-Aus wie bisher sofort fertig ist."""
+        worker = threading.Thread(target=self.panic_stop, name="panic", daemon=True)
+        worker.start()
+        worker.join(PANIC_SIGNAL_WAIT)
 
     def _install_raw_back_signal(self):
         """„Rohtext zurück" per SIGHUP: das Kontrollzentrum (eigener Prozess
