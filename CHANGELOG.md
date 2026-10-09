@@ -118,7 +118,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   transcribed goes into your window as usual. If the question closed before
   your answer was ready, the answer is put on the clipboard instead of
   being lost. With the wake phrase, only a question that was already waiting
-  when you started speaking takes your words.
+  when you started speaking takes your words. When the agent cancels
+  `ask_user` or disconnects, the question disappears at once instead of
+  waiting for your next dictation.
 - German "ß" is restored where spelling needs it when a German fine-tuned
   speech model is in use (it writes "grosses" instead of "großes"); "dass",
   "Masse" and English words stay as they are. Setting `[speech] eszett`

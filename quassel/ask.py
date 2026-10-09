@@ -235,13 +235,17 @@ def open_request(question, timeout=DEFAULT_TIMEOUT, program="", pid=None, now=No
         _remove(staging)
 
 
-def wait_answer(doc, poll=0.1, sleep=time.sleep, clock=time.time, rundir=None):
+def wait_answer(doc, poll=0.1, sleep=time.sleep, clock=time.time, rundir=None, stop=None):
     """Wait for the answer to request doc. Returns the text. Raises AskError
-    with reason timeout (nobody answered), canceled (emergency stop, or the
-    request vanished) or busy (another asker replaced it)."""
+    with reason timeout (nobody answered), canceled (emergency stop, the
+    request vanished, or stop() turned true: the asker itself gave up) or
+    busy (another asker replaced it)."""
     request, _, answer = _paths(rundir)
     token = doc["token"]
     while True:
+        if stop is not None and stop():
+            close_request(doc, rundir)
+            raise AskError("canceled", "the question was canceled")
         reply = _read_json(answer)
         if reply and reply.get("token") == token:
             _remove(answer)

@@ -278,3 +278,14 @@ def test_racing_askers_do_not_remove_each_others_request(tmp_path, monkeypatch):
     assert err.value.reason == "busy"
     monkeypatch.undo()
     assert ask.pending(rundir=rundir)["token"] == winner["doc"]["token"]
+
+
+def test_stop_ends_the_wait_as_canceled_and_cleans_up(tmp_path):
+    rundir = str(tmp_path)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    calls = []
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=lambda s: calls.append(s), rundir=rundir,
+                        stop=lambda: len(calls) >= 2)
+    assert err.value.reason == "canceled"
+    assert os.listdir(tmp_path) == []

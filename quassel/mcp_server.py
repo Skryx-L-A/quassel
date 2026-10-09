@@ -8,6 +8,7 @@ themselves (quassel/ask.py).
 import json
 import os
 import sys
+import threading
 
 from . import cli, config
 
@@ -78,7 +79,7 @@ def _content(value, error=False):
             "isError": error}
 
 
-def _ask_user(arguments):
+def _ask_user(arguments, cancel=None):
     from . import ask, i18n
     if not _ask_allowed():
         return _content({"error": "ask_user is disabled; set [mcp] mcp_ask = true"}, True)
@@ -97,15 +98,16 @@ def _ask_user(arguments):
     except Exception:   # noqa: BLE001 — only the language of the notification
         pass
     try:
-        answer = ask.ask(question, timeout, _client["name"] or "MCP", notify=ask.notify_user)
+        answer = ask.ask(question, timeout, _client["name"] or "MCP", notify=ask.notify_user,
+                         stop=cancel.is_set if cancel is not None else None)
     except ask.AskError as exc:
         return _content({"error": str(exc), "reason": exc.reason}, True)
     return _content({"answer": answer})
 
 
-def _call(name, arguments):
+def _call(name, arguments, cancel=None):
     if name == "ask_user":
-        return _ask_user(arguments)
+        return _ask_user(arguments, cancel)
     if name == "status":
         return _content(cli.status_data())
     if name == "dictionary_list":
@@ -148,7 +150,9 @@ def _error(request_id, code, message):
             "error": {"code": code, "message": message}}
 
 
-def handle(message):
+def handle(message, cancel=None):
+    """One JSON-RPC message. cancel: threading.Event that ends a waiting
+    ask_user early (see serve)."""
     if not isinstance(message, dict):
         return _error(None, -32600, "invalid request")
     request_id = message.get("id")
@@ -174,23 +178,79 @@ def handle(message):
         if not isinstance(arguments, dict):
             return _error(request_id, -32602, "tool arguments must be an object")
         return {"jsonrpc": "2.0", "id": request_id,
-                "result": _call(params["name"], arguments)}
+                "result": _call(params["name"], arguments, cancel)}
     if request_id is None:
         return None
     return _error(request_id, -32601, "method not found")
 
 
+def _is_ask_call(message):
+    params = message.get("params") if isinstance(message, dict) else None
+    return (message.get("method") == "tools/call" and isinstance(params, dict)
+            and params.get("name") == "ask_user")
+
+
 def serve(stdin=sys.stdin, stdout=sys.stdout):
-    for raw in stdin:
+    """Read requests until EOF. ask_user waits up to minutes for the user, so
+    it runs on its own thread while this loop keeps reading: a client that
+    cancels the call (notifications/cancelled) or closes stdin ends the
+    question at once. Otherwise the request would stay open and take the
+    user's next dictation, with nobody left to read the answer."""
+    lock = threading.Lock()
+    waiting = {}            # JSON-RPC id of a running ask_user -> its cancel event
+    threads = []
+
+    def write(reply):
+        if reply is None:
+            return
+        with lock:
+            try:
+                stdout.write(json.dumps(reply, ensure_ascii=False) + "\n")
+                stdout.flush()
+            except (OSError, ValueError):
+                pass            # client gone; the request is closed regardless
+
+    def run_ask(message, cancel):
         try:
-            message = json.loads(raw)
-        except (TypeError, ValueError):
-            reply = _error(None, -32700, "parse error")
-        else:
-            reply = handle(message)
-        if reply is not None:
-            stdout.write(json.dumps(reply, ensure_ascii=False) + "\n")
-            stdout.flush()
+            reply = handle(message, cancel)
+        finally:
+            with lock:
+                waiting.pop(message.get("id"), None)
+        if not cancel.is_set():         # a canceled call gets no response (MCP)
+            write(reply)
+
+    try:
+        for raw in stdin:
+            try:
+                message = json.loads(raw)
+            except (TypeError, ValueError):
+                write(_error(None, -32700, "parse error"))
+                continue
+            if isinstance(message, dict) and message.get("method") == "notifications/cancelled":
+                params = message.get("params")
+                request_id = params.get("requestId") if isinstance(params, dict) else None
+                with lock:
+                    cancel = waiting.get(request_id) if request_id is not None else None
+                if cancel is not None:
+                    cancel.set()
+                continue
+            if _is_ask_call(message):
+                cancel = threading.Event()
+                with lock:
+                    waiting[message.get("id")] = cancel
+                thread = threading.Thread(target=run_ask, args=(message, cancel),
+                                          name="mcp-ask_user", daemon=True)
+                threads.append(thread)
+                thread.start()
+                continue
+            write(handle(message))
+    finally:
+        # EOF (or a broken stdin): nobody reads a later answer.
+        with lock:
+            for cancel in waiting.values():
+                cancel.set()
+        for thread in threads:
+            thread.join(5)
     return 0
 
 
