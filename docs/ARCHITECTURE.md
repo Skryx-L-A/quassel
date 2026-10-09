@@ -31,14 +31,20 @@ all three platforms. A dictation always runs like this:
 5. **Post-process** (`textproc.py`, `textreplace.py`, `progmode.py`, `itn.py`,
    `cleanup.py`, `aimodes.py`). In order: drop known silence hallucinations,
    spoken punctuation and voice commands, the programmer mode, text
-   replacements, then either the opt-in clean-up or the opt-in AI mode. A
-   per-app profile (`profiles.py`) can change several of these for the one
-   dictation that goes into that application.
+   replacements, German "ß" for a German fine-tuned model (`eszett.py`), then
+   either the opt-in clean-up or the opt-in AI mode. The clean-up guard rejects
+   any LLM answer that changes entities, numbers, negations, questions or the
+   language, adds markup, or (at the medium level) adds a word; Quassel then
+   inserts the rule-based text. A per-app profile (`profiles.py`) can change
+   several of these for the one dictation that goes into that application; its
+   Enter lock is checked again against the application in front at insertion.
 6. **Insert once.** The text goes to the target window through the clipboard
    and a paste keystroke, so every keyboard layout works. The previous
    clipboard content is saved first and restored afterwards, but only if the
    clipboard still holds Quassel's own text. Slow steps (clean-up, AI) finish
-   before this insertion; Quassel never inserts text and then replaces it.
+   before this insertion; Quassel never inserts text and then replaces it. If
+   the insertion fails, the pill says the text is on the clipboard only when it
+   really is; otherwise the recording is rescued and the text goes to the history.
 7. **After.** History (`config.py`), local statistics (`stats.py`) and
    auto-learned dictionary words are updated according to their switches. The
    text shown in the pill is removed from `state.json` after four seconds.
@@ -89,11 +95,15 @@ HTTP to the local `whisper-server` of whisper.cpp:
   (`dictprompt.py`) because whisper.cpp keeps only the last 224 prompt tokens.
 - `selfheal.py` runs after a failed transcription: it sends a tiny silent clip
   as a real inference request. If the server does not answer, it is restarted
-  once and the transcription is retried once. The restart exists on macOS only,
-  where the server is a child process of the app.
+  once and the transcription is retried once. Only Quassel's own server is
+  restarted: on macOS the app restarts its child after a request bound to the
+  daemon's and the app's process IDs, on Linux the systemd unit of the same
+  profile, on Windows the server process the app started.
 
-`backends/transcribe_cpp.py` is a stub for a possible second engine and is
-inactive without an explicit binary path.
+`backends/transcribe_cpp.py` runs `transcribe.cpp` (Cohere, Parakeet, Qwen3-ASR,
+Canary and others) for the benchmark only; the dictation path does not use it
+yet. Before it does, it needs a voice-activity gate in front: Cohere invented
+sentences on every silence clip (`docs/measurements/2026-10-09-transcribe-cpp-vier-modelle/`).
 
 ## Platform layers
 
@@ -107,6 +117,12 @@ inactive without an explicit binary path.
 | Pill | GTK4 layer-shell pill (`pill.py`) as `quassel-pill.service`, or the Qt pill (`pill_qt.py`) | Qt pill plus menu-bar icon (`traymac.py`) | Qt pill plus tray icon, inside the app |
 | Active-app lookup (profiles) | `xprop` on X11, `hyprctl` or `swaymsg` on Wayland | NSWorkspace | Win32 foreground window |
 | Logs | systemd journal | `~/Library/Logs/Quassel/daemon.log` | `%LOCALAPPDATA%\Quassel\debug.log`, `crash.log` |
+
+A second Quassel can run next to the installed one with `QUASSEL_PROFILE=<name>`:
+own configuration, data and runtime folders, own port (8766 to 8865), shared
+models. On Linux it has its own units (`quassel-server@<name>`, `quasseld@<name>`,
+`quassel-pill@<name>`) and never stops the shared `ydotoold`. An invalid name or
+port 8765 stops the start instead of falling back to the installed instance.
 
 The pieces that differ per platform are small: recording, insertion, ducking,
 notification and the hotkey source. `DictationCore` exposes them as a short
