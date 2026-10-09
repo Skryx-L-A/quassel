@@ -120,7 +120,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   being lost. With the wake phrase, only a question that was already waiting
   when you started speaking takes your words. When the agent cancels
   `ask_user` or disconnects, the question disappears at once instead of
-  waiting for your next dictation.
+  waiting for your next dictation. The live preview stays empty while you
+  answer, so the answer never shows in the pill.
 - German "ß" is restored where spelling needs it when a German fine-tuned
   speech model is in use (it writes "grosses" instead of "großes"); "dass",
   "Masse" and English words stay as they are. Setting `[speech] eszett`

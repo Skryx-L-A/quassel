@@ -239,6 +239,11 @@ class PartialLoop(threading.Thread):
                 # (spart auf schwacher CPU viel Last, die sonst das Finale bremst).
                 if self.owner.streamer is None and not self.cfg.pill_preview:
                     continue
+                # Eine Antwort an ein Programm (G104) erscheint nie in Pille
+                # oder state.json, auch nicht als Vorschau; Streaming läuft
+                # dabei ohnehin nicht (enable_streaming).
+                if getattr(self.owner, "_ask", None) is not None:
+                    continue
                 if not getattr(self.owner, "_handsfree", False) and \
                         time.monotonic() - self.rec.started < PREVIEW_HOLD_MIN:
                     continue

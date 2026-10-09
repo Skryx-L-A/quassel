@@ -431,3 +431,24 @@ def test_next_wake_cycle_releases_a_claim_left_behind(env, monkeypatch):
     env.core._wake_ask = env.core._ask_claim()
     env.core._wake_record_utterance()
     assert not ask._claimed(doc["token"], env.rundir)
+
+
+def test_answer_gets_no_live_preview(monkeypatch):
+    # N1: the pill and state.json never show an answer, also not as preview.
+    from quassel.audio import RATE, SAMPLE_BYTES
+    calls = []
+    monkeypatch.setattr(dictation.whisperclient, "ensure_server", lambda: None)
+    monkeypatch.setattr(dictation.whisperclient, "transcribe_result",
+                        lambda *a, **k: calls.append(1) or dictation.SpeechResult("geheim"))
+    monkeypatch.setattr(dictation.textproc, "postprocess", lambda raw, cfg: ("text", raw))
+    rec = SimpleNamespace(active=True, started=0.0,
+                          raw_bytes=lambda: b"\x00" * (RATE * SAMPLE_BYTES * 2))
+    owner = SimpleNamespace(streamer=None, _handsfree=True, _ask={"token": "a" * 32},
+                            states=[], _wav_from_raw=lambda data, path: None)
+    owner._state = lambda s, text="": owner.states.append((s, text))
+    loop = dictation.PartialLoop(rec, SimpleNamespace(pill_preview=True), owner)
+    waits = []
+    loop.stop_event = SimpleNamespace(wait=lambda t: waits.append(t) or len(waits) > 2,
+                                      is_set=lambda: len(waits) > 2)
+    loop._loop("unused.wav")
+    assert owner.states == [] and calls == []
