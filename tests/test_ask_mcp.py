@@ -198,3 +198,23 @@ def test_end_of_input_ends_the_question_at_once():
     mcp_server.serve(_lines(ASK_CALL, _request_waits), out)
     assert time.monotonic() - started < 2
     assert os.listdir(state.RUNDIR) == []
+
+
+def test_malformed_id_does_not_break_the_server():
+    import io
+    enable()
+    out = io.StringIO()
+    call = dict(ASK_CALL, id=[1, 2])
+    started = time.monotonic()
+    mcp_server.serve(_lines(call, _request_waits,
+                            {"jsonrpc": "2.0", "method": "notifications/cancelled",
+                             "params": {"requestId": [1, 2]}}), out)
+    assert time.monotonic() - started < 2
+    assert os.listdir(state.RUNDIR) == []
+
+
+def test_non_object_messages_get_an_error_reply():
+    import io
+    out = io.StringIO()
+    mcp_server.serve(_lines([1, 2], "text"), out)
+    assert [reply["error"]["code"] for reply in _replies(out)] == [-32600, -32600]

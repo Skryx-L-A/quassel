@@ -184,8 +184,18 @@ def handle(message, cancel=None):
     return _error(request_id, -32601, "method not found")
 
 
+def _id_key(value):
+    """A JSON-RPC id as dictionary key; ids that are no string or number
+    (malformed input) cannot be canceled."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return None
+    return value
+
+
 def _is_ask_call(message):
-    params = message.get("params") if isinstance(message, dict) else None
+    if not isinstance(message, dict):
+        return False
+    params = message.get("params")
     return (message.get("method") == "tools/call" and isinstance(params, dict)
             and params.get("name") == "ask_user")
 
@@ -215,7 +225,7 @@ def serve(stdin=sys.stdin, stdout=sys.stdout):
             reply = handle(message, cancel)
         finally:
             with lock:
-                waiting.pop(message.get("id"), None)
+                waiting.pop(_id_key(message.get("id")), None)
         if not cancel.is_set():         # a canceled call gets no response (MCP)
             write(reply)
 
@@ -228,7 +238,7 @@ def serve(stdin=sys.stdin, stdout=sys.stdout):
                 continue
             if isinstance(message, dict) and message.get("method") == "notifications/cancelled":
                 params = message.get("params")
-                request_id = params.get("requestId") if isinstance(params, dict) else None
+                request_id = _id_key(params.get("requestId")) if isinstance(params, dict) else None
                 with lock:
                     cancel = waiting.get(request_id) if request_id is not None else None
                 if cancel is not None:
@@ -236,19 +246,21 @@ def serve(stdin=sys.stdin, stdout=sys.stdout):
                 continue
             if _is_ask_call(message):
                 cancel = threading.Event()
-                with lock:
-                    waiting[message.get("id")] = cancel
+                key = _id_key(message.get("id"))
+                if key is not None:
+                    with lock:
+                        waiting[key] = cancel
                 thread = threading.Thread(target=run_ask, args=(message, cancel),
                                           name="mcp-ask_user", daemon=True)
+                thread.cancel = cancel
                 threads.append(thread)
                 thread.start()
                 continue
             write(handle(message))
     finally:
         # EOF (or a broken stdin): nobody reads a later answer.
-        with lock:
-            for cancel in waiting.values():
-                cancel.set()
+        for thread in threads:
+            thread.cancel.set()
         for thread in threads:
             thread.join(5)
     return 0
