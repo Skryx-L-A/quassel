@@ -117,7 +117,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers a question: one you start while the answer is still being
   transcribed goes into your window as usual. If the question closed before
   your answer was ready, the answer is put on the clipboard instead of
-  being lost.
+  being lost. With the wake phrase, only a question that was already waiting
+  when you started speaking takes your words.
 - German "ß" is restored where spelling needs it when a German fine-tuned
   speech model is in use (it writes "grosses" instead of "großes"); "dass",
   "Masse" and English words stay as they are. Setting `[speech] eszett`

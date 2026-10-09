@@ -270,8 +270,20 @@ def test_canceled_recording_leaves_the_question_waiting(env):
     assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == "die antwort ist zwölf"
 
 
-def test_wake_phrase_dictation_answers_a_waiting_question(env):
+def _wake_capture(env, monkeypatch, during=None, pcm=b"\x01\x00" * 8000):
+    """Stand-in for the wake recorder: runs during() while "recording"."""
+    def capture(*a, **k):
+        if during is not None:
+            during()
+        return pcm
+    monkeypatch.setattr(dictation.wakeword, "capture_utterance", capture)
+    env.core._new_recorder = lambda raw_path: SimpleNamespace(raw_path=raw_path)
+
+
+def test_wake_phrase_dictation_answers_a_waiting_question(env, monkeypatch):
     doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch)
+    env.core._wake_record_utterance()
     env.core._wake_insert("die antwort ist zwölf")
     assert env.core.pasted == []
     assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == "die antwort ist zwölf"
@@ -346,3 +358,76 @@ def test_emergency_stop_before_a_wake_answer_drops_it(env):
     env.core.panic_stop()
     env.core._answer(doc, "text", "die antwort ist zwölf")
     assert copied == [] and env.core.pasted == []
+
+
+def test_question_arriving_during_a_wake_utterance_does_not_take_it(env, monkeypatch):
+    # H2: phrase and text in one utterance; the question came while speaking.
+    created = {}
+    _wake_capture(env, monkeypatch, during=lambda: created.update(
+        doc=ask.open_request("Name?", 30, now=time.time() + 0.01, rundir=env.rundir)))
+    env.core._wake_record_utterance()
+    env.core._wake_insert("die antwort ist zwölf")
+    assert env.core.pasted == ["die antwort ist zwölf"]
+    assert ask.pending(rundir=env.rundir)["token"] == created["doc"]["token"]
+
+
+def test_wake_followup_binds_at_its_start(env, monkeypatch):
+    # H2: only the phrase was said; the follow-up recording answers the
+    # question that waited when it started, and holds the claim meanwhile.
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    seen = {}
+    _wake_capture(env, monkeypatch, during=lambda: seen.update(
+        claimed=ask._claimed(doc["token"], env.rundir)))
+    assert env.core._wake_record_followup()
+    assert seen == {"claimed": True}
+    env.core._wake_insert("die antwort ist zwölf")
+    assert env.core.pasted == []
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == "die antwort ist zwölf"
+
+
+def test_question_arriving_during_a_wake_followup_does_not_take_it(env, monkeypatch):
+    created = {}
+    _wake_capture(env, monkeypatch, during=lambda: created.update(
+        doc=ask.open_request("Name?", 30, now=time.time() + 0.01, rundir=env.rundir)))
+    assert env.core._wake_record_followup()
+    env.core._wake_insert("die antwort ist zwölf")
+    assert env.core.pasted == ["die antwort ist zwölf"]
+    assert ask.pending(rundir=env.rundir)["token"] == created["doc"]["token"]
+
+
+def test_empty_wake_followup_releases_the_claim(env, monkeypatch):
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch, pcm=None)
+    assert env.core._wake_record_followup() is None
+    assert not ask._claimed(doc["token"], env.rundir)
+    assert ask.pending(rundir=env.rundir)["token"] == doc["token"]
+
+
+def test_unheard_wake_followup_releases_the_claim(env, monkeypatch):
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch)
+    env.core._wake_transcribe = lambda pcm: None      # platforms override it
+    pcm = env.core._wake_record_followup()
+    assert env.core._wake_transcribe_checked(pcm) is None
+    assert not ask._claimed(doc["token"], env.rundir)
+
+
+def test_wake_followup_with_a_spoken_command_releases_the_claim(env, monkeypatch):
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch)
+    env.core._wake_record_followup()
+    env.core._wake_insert("press enter")
+    assert env.core.pasted == []
+    assert env.core.states[-1] == ("error", i18n.tr("ask_no_answer"))
+    assert not ask._claimed(doc["token"], env.rundir)
+    assert ask.pending(rundir=env.rundir)["token"] == doc["token"]
+
+
+def test_next_wake_cycle_releases_a_claim_left_behind(env, monkeypatch):
+    # The listener dropped the follow-up (a keyboard dictation ran): the next
+    # cycle must not keep the asker waiting past its deadline.
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch, pcm=None)
+    env.core._wake_ask = env.core._ask_claim()
+    env.core._wake_record_utterance()
+    assert not ask._claimed(doc["token"], env.rundir)

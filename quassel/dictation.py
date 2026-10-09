@@ -334,6 +334,10 @@ class DictationCore:
     # beantwortet. Gebunden beim START der Aufnahme, nie erst am Ende.
     _ask = None
     _panic_epoch = 0            # zählt Not-Aus; eine Antwort von davor verfällt
+    # Dasselbe für den Wake-Pfad (nur dessen Thread): die beim Start der
+    # Folgeaufnahme gebundene Anfrage und der Beginn der laufenden Aufnahme.
+    _wake_ask = None
+    _wake_started = None
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -1280,7 +1284,7 @@ class DictationCore:
         """Listener nach Konfig starten/stoppen (idempotent)."""
         if self.cfg.wakeword_enabled and self.wake is None:
             self.wake = wakeword.WakeListener(
-                self.cfg, self._wake_record_utterance, self._wake_transcribe,
+                self.cfg, self._wake_record_utterance, self._wake_transcribe_checked,
                 self._wake_insert, is_busy=self._wake_busy,
                 record_followup=self._wake_record_followup,
                 trust_capture=bool(wakeword.wake_settings(self.cfg).spotter_model))
@@ -1288,6 +1292,7 @@ class DictationCore:
         elif not self.cfg.wakeword_enabled and self.wake is not None:
             self.wake.stop()
             self.wake = None
+            self._wake_release()
 
     def _wake_record_utterance(self, spot=True):
         """Eine Äußerung für den Wake-Listener aufnehmen
@@ -1297,6 +1302,13 @@ class DictationCore:
         mit Silero-Modell entscheidet stattdessen das. Ist ein Keyword-Modell
         eingetragen ([wakeword] spotter_model), hört zuerst nur dieses mit und
         gibt die Aufnahme erst nach einem Treffer an Whisper weiter."""
+        if spot:
+            # Neuer Zyklus: eine Bindung, die der Listener liegen ließ (die
+            # Folgeaufnahme kam nicht bis zum Einfügen), gilt nicht mehr.
+            self._wake_release()
+        # Nur eine Anfrage, die schon VOR diesem Zeitpunkt wartete, darf die
+        # Äußerung beantworten (siehe _wake_insert_with).
+        self._wake_started = time.time()
         rec = self._new_recorder(WAKE_RAW)
         spotter = wakeword.load_spotter(self.cfg, log=self._log) if spot else None
         try:
@@ -1320,13 +1332,21 @@ class DictationCore:
         if self._busy():
             self._log("wake: Folgeaufnahme übersprungen (Tastatur-Diktat läuft)")
             return None
+        # Wie beim Hotkey: die Folgeaufnahme beginnt der Nutzer selbst (mit
+        # der Phrase), also wird hier gebunden, nicht erst nach der Transkription.
+        self._wake_release()
+        self._wake_ask = self._ask_claim()
         self._state("recording", tr("wake_listening"))
         if self.cfg.beep:
             beep.start()
         self._start_wake_level()
+        pcm = None
         try:
-            return self._wake_record_utterance(spot=False)
+            pcm = self._wake_record_utterance(spot=False)
+            return pcm
         finally:
+            if not pcm:
+                self._wake_release()        # nichts gesagt: die Frage wartet weiter
             pump, self._wake_pump = self._wake_pump, None
             if pump is not None:
                 pump.stop()
@@ -1356,6 +1376,35 @@ class DictationCore:
         return wake_transcribe(self.cfg, pcm, scratch_wav("wake"),
                                self._wav_from_raw, self._log)
 
+    def _wake_transcribe_checked(self, pcm):
+        """_wake_transcribe (Plattformen ersetzen es) plus Freigabe: ohne
+        verstandenen Text ruft der Listener _wake_insert gar nicht erst auf."""
+        text = None
+        try:
+            text = self._wake_transcribe(pcm)
+            return text
+        finally:
+            if not (text or "").strip():
+                self._wake_release()
+
+    def _wake_release(self):
+        doc, self._wake_ask = self._wake_ask, None
+        self._ask_release(doc)
+
+    def _wake_claim_older(self):
+        """Phrase und Text in EINER Äußerung (ohne Folgeaufnahme): gebunden
+        wird nur eine Anfrage, die schon vor Beginn der Aufnahme wartete.
+        Eine, die erst während des Sprechens kam, beantwortet das nächste Diktat."""
+        started = self._wake_started
+        doc = self._ask_pending()
+        if started is None or doc is None or not doc.get("created", started) < started:
+            return None
+        claimed = self._ask_claim()
+        if claimed is not None and claimed.get("token") != doc.get("token"):
+            self._ask_release(claimed)
+            return None
+        return claimed
+
     def _wake_insert(self, raw_text):
         cfg = self._run.cfg = self._profile_cfg()
         try:
@@ -1365,11 +1414,17 @@ class DictationCore:
 
     def _wake_insert_with(self, cfg, raw_text):
         kind, value = postprocess_transcript(raw_text, cfg)
+        # Auch ein per Wake-Phrase begonnenes Diktat beantwortet eine wartende
+        # Frage, statt einzufügen: die beim Start der Folgeaufnahme gebundene
+        # (dann auch bei Stille oder Sprachbefehl, das gibt die Frage frei) ...
+        waiting, self._wake_ask = self._wake_ask, None
+        if waiting is not None:
+            self._answer(waiting, kind, value)
+            return
         if kind != "text" or not value.strip():
             return
-        # Auch ein per Wake-Phrase begonnenes Diktat beantwortet eine wartende
-        # Frage, statt einzufügen.
-        waiting = self._ask_pending()
+        # ... oder eine, die schon vor Beginn der Äußerung wartete.
+        waiting = self._wake_claim_older()
         if waiting is not None:
             self._answer(waiting, kind, value)
             return
