@@ -1789,7 +1789,8 @@ class Center(QMainWindow):
             return
         try:
             # Atomar: eine vorhandene Datei ist danach ganz alt oder ganz neu.
-            fsutil.atomic_write(path, text if text.endswith("\n") else text + "\n")
+            fsutil.atomic_write(path, text if text.endswith("\n") else text + "\n",
+                                mode=0o600)
         except OSError:
             self.file_status.setText("✕ " + tr("file_save_failed"))
             return

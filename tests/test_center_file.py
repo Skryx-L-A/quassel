@@ -43,6 +43,8 @@ def test_save_as_writes_the_chosen_format(c, fake_tf, monkeypatch, tmp_path, fmt
     assert ("*" + ext) in asked["filters"]
     assert target.read_text(encoding="utf-8").startswith(start)
     assert target.read_text(encoding="utf-8").endswith("\n")
+    if os.name != "nt":
+        assert target.stat().st_mode & 0o777 == 0o600
     assert c.file_status.text() == "✓ " + i18n.tr("file_saved", name="out" + ext)
 
 

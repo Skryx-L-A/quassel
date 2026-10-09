@@ -15,6 +15,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Saved transcripts and subtitles now use private file permissions.
 - Profile settings on macOS and Windows no longer change the installed app's
   login startup setting; profile startup is unavailable on those platforms.
 - Changing a model in a Linux profile now restarts that profile's speech
