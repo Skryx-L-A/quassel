@@ -17,7 +17,7 @@ import time
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from quassel import ai  # noqa: E402
+from quassel import ai, decider  # noqa: E402
 from quassel.cleanup import cleanup  # noqa: E402
 
 
@@ -30,7 +30,8 @@ def percentile(values: list[float], fraction: float) -> float:
 
 
 def run(endpoint: str, model: str, level: str, timeout: float,
-        cases_path: Path | None = None, show_unsafe: bool = False) -> dict:
+        cases_path: Path | None = None, show_unsafe: bool = False,
+        decider_url: str = "") -> dict:
     if not ai.is_loopback(endpoint) or ai.endpoint_warning(endpoint) == "invalid":
         raise ValueError("endpoint must be an explicit loopback URL")
     cases = [json.loads(line) for line in CORPUS.read_text(encoding="utf-8").splitlines()]
@@ -45,7 +46,9 @@ def run(endpoint: str, model: str, level: str, timeout: float,
     for case in cases:
         cfg = SimpleNamespace(cleanup_enabled=True, cleanup_terms=case["terms"],
                               cleanup_replacements={}, ai_model=model,
-                              ai_endpoint=endpoint, ai_timeout=timeout)
+                              ai_endpoint=endpoint, ai_timeout=timeout,
+                              cleanup_decider_url=decider_url,
+                              cleanup_decider_timeout=2.0)
         start = time.monotonic()
         result = cleanup(case["raw"], level, cfg)
         used_llm += result.used_llm
@@ -93,6 +96,9 @@ def main() -> int:
     parser.add_argument("--level", choices=("mittel", "stark"), default="mittel")
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--cases", type=Path, help="optional JSONL with per-case metadata only")
+    parser.add_argument("--decider", default="",
+                        help="local decision service (Jev format) as second meaning check, "
+                             "e.g. http://127.0.0.1:8095")
     parser.add_argument("--show-unsafe", action="store_true",
                         help="also write raw, output and expected text of unsafe cases to --cases "
                              "(synthetic corpus only)")
@@ -100,8 +106,10 @@ def main() -> int:
     if not 0 < args.timeout <= 3600:
         parser.error("--timeout must be between 0 and 3600 seconds")
     try:
+        if args.decider and not decider.usable(args.decider):
+            raise ValueError("--decider must be an explicit loopback URL")
         summary = run(args.endpoint, args.model, args.level, args.timeout, args.cases,
-                      show_unsafe=args.show_unsafe)
+                      show_unsafe=args.show_unsafe, decider_url=args.decider)
     except ValueError as exc:
         parser.error(str(exc))
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))

@@ -54,3 +54,18 @@ def test_show_unsafe_adds_corpus_text_only_for_unsafe_cases(monkeypatch, tmp_pat
     assert first["output"] == "Öffnen Sie https://example.com/a."
     assert first["raw"] == "Öffne https://example.com/a."
     assert "output" not in second and "raw" not in second
+
+
+def test_decider_address_reaches_the_cleanup_config(monkeypatch, tmp_path):
+    corpus = tmp_path / "corpus.jsonl"
+    corpus.write_text(json.dumps({"id": "C001", "language": "en", "raw": "a", "expected_rule": "a",
+                                  "expected_guard": "a", "terms": []}) + "\n", encoding="utf-8")
+    monkeypatch.setattr(cleanup_bench, "CORPUS", corpus)
+    seen = []
+    monkeypatch.setattr(cleanup_bench, "cleanup",
+                        lambda raw, level, cfg: seen.append(cfg) or CleanupResult(raw))
+    cleanup_bench.run("http://127.0.0.1:9", "fake", "stark", 1,
+                      decider_url="http://127.0.0.1:8095")
+    assert seen[0].cleanup_decider_url == "http://127.0.0.1:8095"
+    cleanup_bench.run("http://127.0.0.1:9", "fake", "stark", 1)
+    assert seen[1].cleanup_decider_url == ""
