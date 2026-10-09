@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- AI modes ("as an email …") now also work with OpenAI-compatible servers such
+  as llama-server or LM Studio; before, they silently inserted the raw text there.
 - Linux dictation now inserts text when the clipboard was empty. After a
   browser text copy that cannot be fully preserved, it leaves the dictated
   text available to paste and warns that the copied formatting was lost.
