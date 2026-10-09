@@ -25,6 +25,11 @@ Schutzprüfung, sonst Rohtext.
 | 04:04 (plus „Sprache behalten, nie übersetzen", `de0ceff`) | SmolLM3, mittel | 40,0 % | 63 / 17 | 10 |
 | 04:04 | SmolLM3, stark | 45,5 % | 75 / 16 | 12 |
 | 04:04 | qwen2.5-coder:3b, mittel | 28,0 % | 26 / 30 | 3 |
+| 04:17 (Stand `ad014fa`, Apache-Kandidaten) | Qwen3-4B-Instruct-2507 Q4_K_M, mittel | 27,0 % | 34 / 20 | 18 |
+| 04:17 | Qwen3-4B-Instruct-2507, stark | 50,5 % | 88 / 13 | 10 |
+| 04:17 | Granite 4 micro, mittel | 31,5 % | 34 / 29 | 13 |
+| 04:17 | Granite 4 micro, stark | 43,0 % | 61 / 25 | 11 |
+| 04:17 | SmolLM3, mittel (Wiederholung) | 40,0 % | 63 / 17 | 10 |
 
 Gründe für den Rückfall im Lauf 04:04 (SmolLM3 mittel / qwen mittel): Wortabweichung 48 / 23,
 geschützte Eingabe verändert (Frage oder Injection umgeschrieben) 18 / 24, Entität verändert
@@ -39,13 +44,20 @@ qwen2.5-coder:3b 0,54 s.
 - Die englische Stufen-Anweisung vor dem deutschen Diktat ließ SmolLM3 auf Englisch antworten.
   Der Schutz verwarf das jedes Mal, es kam also kein falscher Text heraus, aber auch keine
   Bereinigung. Die Sprachregel holt einen Teil zurück; auf Deutsch bleibt SmolLM3 schwach.
-- Alle unsicheren SmolLM3-Fälle sind deutsche URL-Sätze („Öffne https://example.com/…").
-  Was es dort ändert, zeigt der nächste Lauf mit `--show-unsafe`.
+- Unsicher waren bei allen drei Modellen vor allem deutsche URL-Sätze: Lauf 04:17 mit
+  `--show-unsafe` zeigt „Öffne https://example.com/alpha." → „Open https://example.com/alpha.".
+  Der Schutz ließ das durch, weil die URL in vier Wörter zerfiel und die Ähnlichkeit genau
+  0,80 erreichte. Behoben in `2763980` (Wortvergleich ohne Entitäten, `mittel` fügt nie ein
+  Wort hinzu). Die Zahlen der Spalte „Unsicher" gelten für den Stand davor; ein neuer Lauf
+  steht aus.
 - qwen2.5-coder:3b ist auf Deutsch besser und sicherer (26 % Rückfall, 3 unsicher), steht aber
   unter der Qwen Research License (Hugging Face `license_name: qwen-research`, am 2026-10-09
   abgefragt), also nicht für kommerzielle Nutzung. Es bleibt Vergleichswert, keine Empfehlung.
   SmolLM3 ist 2,7-mal schneller, auf Deutsch aber nicht brauchbar. Als Startkandidat fällt
-  SmolLM3 damit weg; als Nächstes messen: Qwen3-4B ohne Denkmodus und Granite (beide Apache-2.0).
+  SmolLM3 damit weg. Qwen3-4B-Instruct (Apache-2.0) ist auf `mittel` am besten (27 % Rückfall),
+  übersetzt auf `stark` aber fast jedes deutsche Diktat (88 von 100 Rückfällen); Granite 4 micro
+  (Apache-2.0) liegt dazwischen. Ein Startkandidat steht damit noch nicht fest: erst nach dem
+  Schutz-Fix neu messen, `stark` braucht vermutlich eine deutsche Anweisung für deutsche Diktate.
 - `mittel` und `stark` unterscheiden sich seit dem Stufen-Prompt tatsächlich (vorher identisch).
 
 Dateien: je Lauf die Summen-JSONs, ab 03:36 auch die Falldateien (`*-cases.jsonl`, nur
