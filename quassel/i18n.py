@@ -100,6 +100,8 @@ STRINGS = {
                        "Der Sprach-Server konnte diese Aufnahme nicht umwandeln."),
     "err_mic_denied": ("Quassel isn't allowed to use the microphone. Allow it in System Settings → Privacy & Security → Microphone.",
                        "Quassel darf das Mikrofon nicht benutzen. Freigabe in Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon."),
+    "err_audio_stuck": ("The audio driver stopped responding. Restart Quassel to record again.",
+                        "Der Audiotreiber reagiert nicht mehr. Starte Quassel neu, um wieder aufzunehmen."),
     "err_mic_open": ("The microphone couldn't be opened. Another app may be using it, or it was unplugged.",
                      "Das Mikrofon ließ sich nicht öffnen. Vielleicht nutzt es eine andere App, oder es wurde abgezogen."),
     "err_mic_lost": ("The microphone stopped delivering sound during the recording. It may have been unplugged or disconnected.",

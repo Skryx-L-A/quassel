@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Windows: when the audio driver stops responding while a recording ends,
+  Quassel now says to restart it instead of claiming the microphone is busy.
 - Model downloads from Hugging Face show real progress instead of jumping to
   100 % at once, and cancelling a download waits for it to stop before the
   partial file is removed.

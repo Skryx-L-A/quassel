@@ -45,3 +45,13 @@ def test_healthy_recording_reports_nothing(pumps):
     assert core._finish_capture() is None
     assert core.states[-1] == ("done", i18n.tr("too_short"))
     assert core.notes == []
+
+
+def test_a_stuck_audio_driver_asks_for_a_restart():
+    from types import SimpleNamespace
+    from quassel import dictation, i18n
+    core = dictation.DictationCore.__new__(dictation.DictationCore)
+    core.rec = SimpleNamespace(stream_abandoned=True)
+    assert core._mic_error_text() == i18n.tr("err_audio_stuck")
+    core.rec = SimpleNamespace(stream_abandoned=False)
+    assert core._mic_error_text() == i18n.tr("err_mic_open")

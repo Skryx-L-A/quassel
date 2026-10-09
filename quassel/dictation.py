@@ -386,6 +386,10 @@ class DictationCore:
         self._notify(text)
 
     def _mic_error_text(self):
+        if getattr(self.rec, "stream_abandoned", False):
+            # Windows: ein Stopp hing am Audiotreiber; der Recorder nimmt bis
+            # zum Neustart nicht mehr auf, statt halbe Dateien zu liefern (D66).
+            return tr("err_audio_stuck")
         return tr("err_mic_open")
 
     def _report_mic_lost(self):
