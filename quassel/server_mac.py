@@ -272,7 +272,11 @@ def kill_orphans():
             ps = subprocess.run(["ps", "-o", "command=", "-p", pid],
                                 capture_output=True, text=True, check=False)
             argv = ps.stdout.strip()
-            if argv.startswith(binpath) and ("--port " + PORT) in argv:
+            words = argv[len(binpath):].split()
+            # Port als eigenes Argument, nicht als Teilstring: ein Profil auf
+            # einem anderen Port darf nie den Server der installierten App treffen.
+            own_port = any(a == "--port" and b == str(PORT) for a, b in zip(words, words[1:]))
+            if argv.startswith(binpath) and own_port:
                 os.kill(int(pid), signal.SIGTERM)
     except (OSError, ValueError):
         pass

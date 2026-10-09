@@ -340,11 +340,12 @@ def test_kill_orphans_matches_only_exact_bin_and_port(monkeypatch):
         "111": binpath + " -m model.bin --host 127.0.0.1 --port 8765 -nt",
         "222": "tail -f whisper-server.log --port 8765",     # fremder Prozess
         "333": binpath + " -m model.bin --port 9999",        # anderer Port
+        "444": binpath + " -m model.bin --port 87651",       # Port mit gleichem Anfang
     }
 
     def fake_run(args, **kw):
         if args[0] == "pgrep":
-            return MagicMock(stdout="111\n222\n333\n")
+            return MagicMock(stdout="111\n222\n333\n444\n")
         if args[0] == "ps":
             return MagicMock(stdout=argv_by_pid[args[-1]] + "\n")
         raise AssertionError(args)
