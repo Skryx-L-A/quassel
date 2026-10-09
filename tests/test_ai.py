@@ -412,3 +412,11 @@ def test_chat_unknown_level_uses_the_careful_instruction(monkeypatch):
                         or (_ for _ in ()).throw(TimeoutError()))
     ai.chat_cleanup("hallo", model="m", endpoint="http://127.0.0.1:8080", timeout=2, level="wild")
     assert seen[0]["messages"][1]["content"].startswith(ai.LEVEL_INSTRUCTIONS["mittel"] + "\n")
+
+
+def test_every_cleanup_prompt_forbids_translating():
+    """Ohne diese Regel antwortete SmolLM3-3B auf die englische Stufen-Anweisung
+    bei 90 von 100 deutschen Fällen auf Englisch (Messung 2026-10-09 03:36)."""
+    assert "never translate" in ai.CHAT_SYSTEM
+    for level, text in ai.LEVEL_INSTRUCTIONS.items():
+        assert "own language" in text, level
