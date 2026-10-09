@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- macOS: a dictation no longer waits 2 seconds when the microphone stream
+  hangs while closing. In the installed app's log this hit about one dictation
+  in sixty. The recording is complete before the stream closes, so the text is
+  transcribed at once; the stream closes in the background, and Quassel still
+  restarts itself afterwards when CoreAudio got stuck.
 - AI modes ("as an email …") now also work with OpenAI-compatible servers such
   as llama-server or LM Studio; before, they silently inserted the raw text there.
 - Linux dictation now inserts text when the clipboard was empty. After a

@@ -425,6 +425,9 @@ class _MacStream:
         self.first_block = None    # monotonic-Zeit des ersten Audioblocks
         self.last_block = None     # monotonic-Zeit des letzten Audioblocks
         self._abandoned = False    # Stream aufgegeben -> Callback liefert nichts mehr
+        self._stopping = False     # stop() gerufen -> Callback liefert nichts mehr
+        self._closer = None        # Thread, der den Stream im Hintergrund schließt
+        self._closer_started = 0.0
 
     @property
     def active(self):
@@ -450,7 +453,7 @@ class _MacStream:
             # Aufgegebener Stream: sein Callback kann weiterlaufen, obwohl der
             # Writer-Thread längst beendet ist — was er einreiht, holt niemand
             # mehr ab, die Queue würde also unbegrenzt wachsen.
-            if self._abandoned:
+            if self._abandoned or self._stopping:
                 return
             if status and getattr(status, "input_overflow", False):
                 self.overflows += 1
@@ -498,27 +501,21 @@ class _MacStream:
                 self.outfile.write(block)
                 self.outfile.flush()
 
-    def _halt_stream(self, stream):
-        """Stream anhalten und schließen, aber mit harter Frist: kehrt
-        CoreAudio nicht zurück, wird der Stream aufgegeben (Referenz fallen
-        lassen, nie wieder anfassen) statt den Aufrufer zu blockieren. Die
-        Rohdatei liegt vollständig auf der Platte — die Aufnahme ist also
-        nicht verloren, nur der Stream bleibt liegen."""
-        t = threading.Thread(target=_close_stream_quiet, args=(stream,),
-                             daemon=True, name="mac-stream-stop")
-        t.start()
-        t.join(timeout=MAC_STOP_TIMEOUT)
-        if t.is_alive():
-            # Der Callback darf ab jetzt nichts mehr einreihen; was schon in der
-            # Queue liegt, schreibt der Writer-Thread noch zu Ende.
-            self._abandoned = True
-            _log("audio: CoreAudio-Stream reagiert nicht (>%.1fs) -> aufgegeben"
-                 % MAC_STOP_TIMEOUT)
-
     def stop(self):
+        """Aufnahme beenden, ohne auf CoreAudio zu warten.
+
+        Der Callback nimmt ab sofort nichts mehr an, der Writer schreibt die
+        Queue zu Ende, die Rohdatei ist danach vollständig. Den Stream schließt
+        ein Hintergrund-Thread: auf einem verklemmten Gerät kehrt PortAudio
+        dort nicht zurück (28 von 1677 Diktaten im Live-Log vom 09.10. warteten
+        deshalb 2 s). Ob er aufgegeben werden musste, sagt wait_closed()."""
         stream, self.stream = self.stream, None
         if stream is not None:
-            self._halt_stream(stream)
+            self._stopping = True
+            t = threading.Thread(target=_close_stream_quiet, args=(stream,),
+                                 daemon=True, name="mac-stream-stop")
+            self._closer, self._closer_started = t, time.monotonic()
+            t.start()
         if self.thread is not None:
             self.queue.put(None)
             self.thread.join(timeout=5)
@@ -526,6 +523,23 @@ class _MacStream:
         if self.outfile is not None:
             self.outfile.close()
             self.outfile = None
+
+    def wait_closed(self):
+        """Auf das Schließen aus stop() warten, höchstens bis MAC_STOP_TIMEOUT
+        nach dem Stopp. True, wenn der Stream aufgegeben werden musste: dann
+        steckt ein CoreAudio-Mutex fest, und der Daemon startet sich neu."""
+        t = self._closer
+        if t is not None:
+            t.join(timeout=max(0.0, self._closer_started + MAC_STOP_TIMEOUT
+                                - time.monotonic()))
+            if t.is_alive():
+                if not self._abandoned:
+                    self._abandoned = True
+                    _log("audio: CoreAudio-Stream reagiert nicht (>%.1fs) -> aufgegeben"
+                         % MAC_STOP_TIMEOUT)
+            else:
+                self._closer = None
+        return self._abandoned
 
 
 class _PrerollCapture:
@@ -738,6 +752,7 @@ class Recorder:
         self.started = 0.0
         self._bt_before = {}
         self._abandoned = False  # macOS: ein Stream musste aufgegeben werden
+        self._closing_mac = None  # macOS: zuletzt gestoppter Stream, schließt noch
         # Grund, warum die zuletzt beendete Aufnahme vor stop() abriss
         # ("ended"/"stalled", siehe capture_interrupted), sonst None.
         self.interrupted = None
@@ -763,8 +778,21 @@ class Recorder:
         """macOS: Musste ein Aufnahme-Stream aufgegeben werden? Dann steckt ein
         CoreAudio-Mutex fest, und der nächste Start liefe mit hoher
         Wahrscheinlichkeit in dieselbe Verklemmung — der Daemon startet sich
-        deshalb neu. Auf Linux und Windows immer False."""
+        deshalb neu. Auf Linux und Windows immer False.
+
+        Wartet, falls der zuletzt gestoppte Stream noch schließt: das fragt
+        der Daemon erst nach dem Einfügen, das Diktat selbst wartet nicht."""
+        self._settle_closing()
         return self._abandoned
+
+    def _settle_closing(self):
+        mac = self._closing_mac
+        if mac is None:
+            return
+        if mac.wait_closed():
+            self._abandoned = True
+        if mac._closer is None or mac._abandoned:
+            self._closing_mac = None
 
     def capture_interrupted(self, now=None):
         """Liefert die laufende Aufnahme noch Audio? Grund, falls nicht:
@@ -837,6 +865,9 @@ class Recorder:
                 self.started = time.monotonic()
             return True
         if sys.platform == "darwin" and mac_backend() != "ffmpeg":
+            # PortAudio ist nicht threadsicher: erst den alten Stream zu Ende
+            # schließen (oder aufgeben), dann den neuen öffnen.
+            self._settle_closing()
             mac = _MacStream(self.raw_path, native=mac_backend() == "sdnative")
             if not mac.start(mic):
                 return False
@@ -933,8 +964,7 @@ class Recorder:
             return path
         if mac is not None:
             mac.stop()
-            if mac._abandoned:
-                self._abandoned = True
+            self._closing_mac = mac
             return path
         if proc is None:
             return path

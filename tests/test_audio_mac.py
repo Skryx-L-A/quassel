@@ -98,6 +98,7 @@ def test_stop_prefers_abort_over_stop(tmp_path):
     st = FakeStream()
     ms = make(tmp_path, st)
     ms.stop()
+    ms.wait_closed()                  # das Schließen läuft im Hintergrund
     assert st.calls == ["abort", "close"]
     assert ms.stream is None
 
@@ -108,11 +109,13 @@ def test_stop_falls_back_to_stop_without_abort(tmp_path):
     st = OldStream()
     ms = make(tmp_path, st)
     ms.stop()
+    ms.wait_closed()
     assert st.calls == ["stop", "close"]
     st2 = OldStream()
     st2.abort = None
     ms2 = make(tmp_path, st2)
     ms2.stop()
+    ms2.wait_closed()
     assert st2.calls == ["stop", "close"]
 
 
@@ -125,6 +128,7 @@ def test_stop_gives_up_on_a_hanging_stream(tmp_path, monkeypatch):
     t0 = time.monotonic()
     try:
         ms.stop()
+        assert ms.wait_closed() is True          # erst hier wird aufgegeben
         took = time.monotonic() - t0
         assert took < 2.0, took
         assert ms.stream is None                 # Referenz fallen gelassen
@@ -168,6 +172,7 @@ def test_abandoned_stream_stops_feeding_the_queue(tmp_path, monkeypatch):
     st.callback(b"\x01\x02", 1, None, None)      # regulärer Block
     try:
         ms.stop()                                 # abort hängt -> aufgegeben
+        assert ms.wait_closed() is True
         assert ms._abandoned is True
         assert ms.queue.qsize() == 0
         st.callback(b"\x03\x04", 1, None, None)   # Callback des toten Streams
@@ -197,6 +202,7 @@ def test_stop_is_idempotent(tmp_path):
     ms = make(tmp_path, st)
     ms.stop()
     ms.stop()                                    # zweiter Aufruf fasst nichts an
+    ms.wait_closed()
     assert st.calls == ["abort", "close"]
 
 
