@@ -13,6 +13,10 @@ from . import config, profile, state, whisperclient
 EXIT_USAGE = 2
 EXIT_FAILED = 1
 EXIT_UNAVAILABLE = 5
+# dictate --once (G103): own codes, so a script can tell why there is no answer.
+EXIT_BUSY = 75          # another question is already waiting (EX_TEMPFAIL)
+EXIT_TIMEOUT = 124      # nobody answered before the deadline (as timeout(1))
+EXIT_CANCELED = 130     # dismissed with the emergency stop, or interrupted
 
 
 def _model_name(path):
@@ -104,6 +108,50 @@ def _raw_last():
         return EXIT_FAILED
     print("requested: the raw text goes to the clipboard if the cleanup changed the last dictation")
     return 0
+
+
+def _dictate_once(prompt, timeout, program):
+    """Wait for the user's next dictation and print it instead of inserting
+    it. Never starts the microphone: the user starts the dictation with the
+    hotkey (or the wake phrase); without that the request ends empty."""
+    from . import ask, i18n
+    if _daemon_status() == "stopped":
+        print("Quassel is not running: start it, then ask again", file=sys.stderr)
+        return EXIT_UNAVAILABLE
+    try:
+        cfg = config.Cfg()
+        i18n.set_language(None if cfg.ui_language == "auto" else cfg.ui_language)
+    except Exception:   # noqa: BLE001 — only the language of the notification
+        pass
+    timeout = ask.clamp_timeout(timeout)
+    program = program if program is not None else ask.program_name()
+
+    def announce(doc):
+        ask.notify_user(doc)
+        print("waiting up to %d s: hold the Quassel hotkey and speak your answer"
+              % round(timeout), file=sys.stderr)
+
+    try:
+        text = ask.ask(prompt or "", timeout, program, notify=announce)
+    except ask.AskError as exc:
+        print(str(exc), file=sys.stderr)
+        return {"busy": EXIT_BUSY, "timeout": EXIT_TIMEOUT,
+                "canceled": EXIT_CANCELED}.get(exc.reason, EXIT_FAILED)
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        return EXIT_CANCELED
+    print(text)
+    return 0
+
+
+def _timeout_arg(value):
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("--timeout must be a number of seconds")
+    if not 0 < seconds <= 600:
+        raise argparse.ArgumentTypeError("--timeout must be between 1 and 600 seconds")
+    return seconds
 
 
 def _dict_add(word):
@@ -205,7 +253,16 @@ def parser():
     status = sub.add_parser("status", help="show daemon, server, model, and profile")
     status.add_argument("--json", action="store_true")
     sub.add_parser("toggle", help="toggle the existing daemon service")
-    sub.add_parser("panic", help="stop an active dictation")
+    sub.add_parser("panic", help="stop an active dictation (also dismisses a waiting question)")
+    dictate = sub.add_parser("dictate", help="print your next dictation instead of inserting it; "
+                                             "you start it with the hotkey, never this command")
+    dictate.add_argument("--once", action="store_true", required=True,
+                         help="answer exactly one question (the only mode)")
+    dictate.add_argument("--prompt", default="", help="question shown in the pill and notification")
+    dictate.add_argument("--timeout", type=_timeout_arg, default=120,
+                         help="seconds to wait for you to start the dictation (default 120, max 600)")
+    dictate.add_argument("--from", dest="program", default=None,
+                         help="name shown as the asker (default: the calling program)")
     sub.add_parser("raw-last", help="put the raw text of the last dictation on the clipboard "
                                     "(kept only in the daemon's memory)")
     transcribe = sub.add_parser("transcribe", help="transcribe an existing media file")
@@ -253,6 +310,8 @@ def main(argv=None):
         return _control(args.command)
     if args.command == "raw-last":
         return _raw_last()
+    if args.command == "dictate":
+        return _dictate_once(args.prompt, args.timeout, args.program)
     if args.command == "transcribe":
         return _transcribe(args.file, args.output or "text")
     if args.command == "model":

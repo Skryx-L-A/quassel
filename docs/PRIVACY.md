@@ -12,6 +12,7 @@ each statement is named so that you can check it.
 |---|---|---|---|
 | Recording while you speak | runtime folder: `rec.raw`, `rec-b.raw`, `partial.wav`, `rec.wav`, `wake.raw` | Raw audio of the dictation in progress | Deleted when the dictation has been transcribed (`dictation.discard`). A crash can leave one file behind; it is overwritten by the next recording. On Linux the runtime folder is in memory (`/run/user/<uid>`) and disappears at logout. |
 | Rescued recording | runtime folder: `rescued-<timestamp>.wav` | Audio of a dictation whose transcription or insertion failed, so it is not lost | Only created on failure. The five newest are kept; older ones are removed when a new one is saved. Delete them by hand when you no longer need them. |
+| Question from a program | runtime folder: `ask.request`, `ask.claim`, `ask.answer`, mode 0600 | While a program waits for your spoken answer (`dictate --once`, MCP `ask_user`): the shortened question, the program's name and process id, the deadline; then your answer | The question is removed when it is answered, dismissed or past its deadline. The answer is deleted as soon as the program has read it; an answer nobody picks up is deleted after 30 seconds. |
 | Status for the pill | runtime folder: `state.json` | State, the level of the microphone, and for four seconds the last text the pill shows | The text is removed from the file after four seconds. |
 | History | data folder: `history.jsonl`, mode 0600 | The text of your last dictations, newest 50 at most | Entries older than 7 days are deleted (setting `history_days`; `0` keeps them until you clear the history). Turn it off with `[history] enabled = false` or in the control center, or press "Clear history". |
 | Statistics | data folder: `stats.json` | Counts only: words, characters, seconds spoken and saved, and a per-day tally. No text. | Until you reset it in the control center. Turn it off with `[behavior] stats_enabled = false`. |
@@ -103,9 +104,17 @@ Everything else stays on the machine:
   that started it. It has no recording tool. It reads only the file path the
   client names. Dictation history is not offered unless you set
   `[mcp] mcp_history = true` and the history itself is on; entries left on disk
-  after you turned the history off are never shared.
+  after you turned the history off are never shared. A spoken answer to
+  `ask_user` goes only to the program that asked.
 - The pill tells screen readers about errors. The text of a finished dictation
   goes to the accessibility interface only when the pill preview is on.
+- The microphone runs only after you start a dictation with the hotkey, or
+  after the wake phrase if you turned the wake word on. No command and no MCP
+  tool starts it. `dictate --once` and `ask_user` (off by default,
+  `[mcp] mcp_ask = true`) only wait for your next dictation; the pill and a
+  notification show the question while they wait, so you know your next
+  dictation goes to that program and not into a window. The emergency stop
+  dismisses the question.
 - Keyboard events are read to detect the hotkey. Quassel does not store keys
   and does not log them.
 - The wake word, if you turn it on, makes the microphone listen continuously.
