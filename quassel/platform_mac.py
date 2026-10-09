@@ -241,11 +241,13 @@ def _paste_keycode():
 
 
 def paste(text):
-    global _last_written
+    global _saved_original, _last_written
     with _clip_lock:
         _cancel_restore_locked()
         _save_original_locked()
         if _saved_original is UNSAFE:
+            _saved_original = None
+            _last_written = None
             return _type_unicode(text)
         clip_copy(text, concealed=True)
         _last_written = text
@@ -282,9 +284,15 @@ def streaming_begin():
 def streaming_restore(old):
     """Wiederherstellung planen. Maßgeblich ist der Slot, nicht der Token —
     so stellt kein Pfad je ein eigenes Diktat 'wieder her'."""
-    global _saved_original
+    global _saved_original, _last_written
     with _clip_lock:
         _cancel_restore_locked()
+        if _saved_original is UNSAFE:
+            # Unicode typing never touched the pasteboard; there is nothing
+            # to restore, and the next dictation must take a new snapshot.
+            _saved_original = None
+            _last_written = None
+            return
         if _saved_original is None:
             _saved_original = old or ""
         _schedule_restore_locked(STREAM_RESTORE_DELAY)

@@ -21,7 +21,7 @@ def _run(args, **kwargs):
     try:
         return subprocess.run(args, timeout=SUBPROCESS_TIMEOUT, **kwargs)
     except (OSError, subprocess.TimeoutExpired):
-        return SimpleNamespace(returncode=1, stdout="", stderr="")
+        return SimpleNamespace(returncode=1, stdout="", stderr="", transport_error=True)
 
 XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR",
     f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else "")
@@ -121,7 +121,11 @@ _generation = 0
 _prepared = None
 _prepare_id = 0
 _TEXT_TYPES = {"text", "TEXT", "STRING", "UTF8_STRING", "COMPOUND_TEXT",
-               "text/plain", "text/plain;charset=utf-8", "TARGETS", "TIMESTAMP", "MULTIPLE"}
+               "text/plain", "text/plain;charset=utf-8", "TARGETS", "TIMESTAMP", "MULTIPLE",
+               "SAVE_TARGETS"}
+_RICH_TEXT_TYPES = {"text/html", "text/_moz_htmlcontext", "text/_moz_htmlinfo",
+                    "text/x-moz-url-priv", "chromium/x-source-url"}
+RICH_TEXT_ONLY = object()
 
 
 def _snapshot():
@@ -130,11 +134,23 @@ def _snapshot():
             ["xclip", "-selection", "clipboard", "-o", "-t", "TARGETS"])
     result = _run(args, capture_output=True, text=True, check=False)
     if result.returncode != 0:
-        return None
+        # Clipboard tools return a nonzero status when there is no owner. A
+        # failed tool launch or timeout, however, tells us nothing about the
+        # clipboard and must remain unsafe.
+        return "" if not getattr(result, "transport_error", False) and not result.stdout.strip() else None
     types = {value.strip() for value in result.stdout.splitlines() if value.strip()}
-    if not types or not types <= _TEXT_TYPES:
+    if not types:
         return None
-    return clip_read()
+    if types <= _TEXT_TYPES:
+        return clip_read()
+    # wl-copy and xclip cannot re-offer all browser MIME variants together.
+    # This narrow case still contains plain text; binary/unknown formats must
+    # remain untouched.
+    if types <= _TEXT_TYPES | _RICH_TEXT_TYPES and types & _RICH_TEXT_TYPES and \
+            types & {"text", "TEXT", "STRING", "UTF8_STRING", "text/plain",
+                     "text/plain;charset=utf-8"}:
+        return RICH_TEXT_ONLY
+    return None
 
 
 def prepare_clipboard():
@@ -201,8 +217,23 @@ def _restore_if_ours(delay, generation):
 
 
 def paste(text):
-    global _last_written, _generation
+    global _original, _last_written, _generation
     old = _begin()
+    if old is RICH_TEXT_ONLY:
+        if _type_direct(text):
+            with _clip_lock:
+                _original = None
+            return True
+        if not clip_copy(text, private=True):
+            return False
+        with _clip_lock:
+            _original = None
+            _last_written = None
+            _generation += 1
+        notify("Rich clipboard formatting could not be restored; dictated text is in the clipboard")
+        time.sleep(0.25)
+        return _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"],
+                    check=False).returncode == 0
     if old is None:
         if _type_direct(text):
             return True
@@ -228,7 +259,20 @@ def type_chunk(text):
     if not text:
         return
     global _last_written, _generation
-    if _begin() is None:
+    old = _begin()
+    if old is RICH_TEXT_ONLY:
+        if _type_direct(text):
+            return True
+        if not clip_copy(text, private=True):
+            return False
+        with _clip_lock:
+            _last_written = text
+            _generation += 1
+        notify("Rich clipboard formatting could not be restored; dictated text is in the clipboard")
+        time.sleep(0.12)
+        return _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"],
+                    check=False).returncode == 0
+    if old is None:
         if not _type_direct(text):
             notify("Clipboard format cannot be preserved; dictation was not inserted")
             return False
@@ -248,6 +292,12 @@ def streaming_begin():
 
 
 def streaming_restore(old):
+    global _original, _last_written
+    if old is RICH_TEXT_ONLY:
+        with _clip_lock:
+            _original = None
+            _last_written = None
+        return
     if old is not None:
         with _clip_lock:
             generation = _generation
