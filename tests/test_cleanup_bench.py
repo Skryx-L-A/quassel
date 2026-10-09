@@ -31,3 +31,26 @@ def test_case_report_and_used_llm_rate(monkeypatch, tmp_path):
          "fallback_reason": "processing_error", "status": "unsicher"},
     ]
     assert "private" not in report.read_text(encoding="utf-8")
+
+
+def test_show_unsafe_adds_corpus_text_only_for_unsafe_cases(monkeypatch, tmp_path):
+    corpus = tmp_path / "corpus.jsonl"
+    rows = [
+        {"id": "C001", "language": "de", "raw": "Öffne https://example.com/a.",
+         "expected_rule": "Öffne https://example.com/a.",
+         "expected_guard": "Öffne https://example.com/a.", "terms": []},
+        {"id": "C002", "language": "de", "raw": "Ähm, ja.", "expected_rule": "ja.",
+         "expected_guard": "ja.", "terms": []},
+    ]
+    corpus.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    monkeypatch.setattr(cleanup_bench, "CORPUS", corpus)
+    results = iter([CleanupResult("Öffnen Sie https://example.com/a.", used_llm=True),
+                    CleanupResult("ja.", used_llm=True)])
+    monkeypatch.setattr(cleanup_bench, "cleanup", lambda *a, **k: next(results))
+    report = tmp_path / "cases.jsonl"
+    cleanup_bench.run("http://127.0.0.1:9", "fake", "mittel", 1, report, show_unsafe=True)
+    first, second = [json.loads(line) for line in report.read_text(encoding="utf-8").splitlines()]
+    assert first["status"] == "unsicher"
+    assert first["output"] == "Öffnen Sie https://example.com/a."
+    assert first["raw"] == "Öffne https://example.com/a."
+    assert "output" not in second and "raw" not in second

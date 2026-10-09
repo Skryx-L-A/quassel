@@ -1,7 +1,8 @@
 """Measure the offline cleanup corpus against an explicitly chosen local /v1 API.
 
 No audio, GUI, paste, model start or download. This script is not run by tests.
-It prints aggregates only; transcripts and generated text are never logged.
+It prints aggregates only; transcripts and generated text are never logged,
+except that --show-unsafe writes the synthetic corpus text of unsafe cases to --cases.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ def percentile(values: list[float], fraction: float) -> float:
 
 
 def run(endpoint: str, model: str, level: str, timeout: float,
-        cases_path: Path | None = None) -> dict:
+        cases_path: Path | None = None, show_unsafe: bool = False) -> dict:
     if not ai.is_loopback(endpoint) or ai.endpoint_warning(endpoint) == "invalid":
         raise ValueError("endpoint must be an explicit loopback URL")
     cases = [json.loads(line) for line in CORPUS.read_text(encoding="utf-8").splitlines()]
@@ -65,6 +66,11 @@ def run(endpoint: str, model: str, level: str, timeout: float,
                               "used_llm": result.used_llm,
                               "fallback_reason": result.fallback_reason,
                               "status": "unsicher" if unsafe else "ok"})
+            if unsafe and show_unsafe:
+                # Nur das synthetische Korpus, nie ein echtes Diktat: die
+                # abweichende Ausgabe zeigt, was der Schutz übersehen hat.
+                case_rows[-1].update(raw=case["raw"], output=result.text,
+                                     expected=case["expected_rule"])
     if cases_path is not None:
         cases_path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n"
                                       for row in case_rows), encoding="utf-8")
@@ -87,11 +93,15 @@ def main() -> int:
     parser.add_argument("--level", choices=("mittel", "stark"), default="mittel")
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--cases", type=Path, help="optional JSONL with per-case metadata only")
+    parser.add_argument("--show-unsafe", action="store_true",
+                        help="also write raw, output and expected text of unsafe cases to --cases "
+                             "(synthetic corpus only)")
     args = parser.parse_args()
     if not 0 < args.timeout <= 3600:
         parser.error("--timeout must be between 0 and 3600 seconds")
     try:
-        summary = run(args.endpoint, args.model, args.level, args.timeout, args.cases)
+        summary = run(args.endpoint, args.model, args.level, args.timeout, args.cases,
+                      show_unsafe=args.show_unsafe)
     except ValueError as exc:
         parser.error(str(exc))
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
