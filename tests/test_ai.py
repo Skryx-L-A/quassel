@@ -244,7 +244,8 @@ def test_chat_schema_and_fixed_prompt(monkeypatch):
     url, body, _, _ = seen[0]
     assert url.endswith("/v1/chat/completions")
     assert body["messages"][0]["content"] == ai.CHAT_SYSTEM
-    assert body["messages"][1]["content"].startswith(ai.LEVEL_INSTRUCTIONS["mittel"] + "\n")
+    assert body["messages"][1]["content"].startswith(
+        ai.level_instruction("mittel", "Wie spät ist es?") + "\n")
     assert body["messages"][1]["content"].endswith("<TRANSCRIPT>\nWie spät ist es?\n</TRANSCRIPT>")
     assert body["response_format"]["type"] == "json_schema"
     assert body["temperature"] == 0 and body["think"] is False
@@ -398,11 +399,12 @@ def test_chat_level_changes_the_instruction_not_the_fixed_prefix(monkeypatch):
     m_user, s_user = medium["messages"][1]["content"], strong["messages"][1]["content"]
     assert m_user != s_user
     tagged = "<TRANSCRIPT>\naehm also wir wir liefern am Freitag\n</TRANSCRIPT>"
-    assert m_user == ai.LEVEL_INSTRUCTIONS["mittel"] + "\n" + tagged
-    assert s_user == ai.LEVEL_INSTRUCTIONS["stark"] + "\n" + tagged
+    # Deutsches Diktat: deutsche Stufenanweisung (sonst antworteten Modelle englisch).
+    assert m_user == ai.LEVEL_INSTRUCTIONS_DE["mittel"] + "\n" + tagged
+    assert s_user == ai.LEVEL_INSTRUCTIONS_DE["stark"] + "\n" + tagged
     assert "filler" in ai.LEVEL_INSTRUCTIONS["mittel"].lower()
     assert "sentence" in ai.LEVEL_INSTRUCTIONS["stark"].lower()
-    for text in ai.LEVEL_INSTRUCTIONS.values():
+    for text in [*ai.LEVEL_INSTRUCTIONS.values(), *ai.LEVEL_INSTRUCTIONS_DE.values()]:
         assert "{" not in text and "TRANSCRIPT" not in text   # nichts Variables vor dem Diktat
 
 
@@ -420,3 +422,15 @@ def test_every_cleanup_prompt_forbids_translating():
     assert "never translate" in ai.CHAT_SYSTEM
     for level, text in ai.LEVEL_INSTRUCTIONS.items():
         assert "own language" in text, level
+
+
+@pytest.mark.parametrize("transcript,german", [
+    ("äh wir liefern das am Freitag", True),
+    ("Ich sende den Bericht morgen.", True),
+    ("um we ship the report on Friday", False),
+    ("Please check FastAPI tomorrow.", False),
+])
+def test_level_instruction_follows_the_dictation_language(transcript, german):
+    table = ai.LEVEL_INSTRUCTIONS_DE if german else ai.LEVEL_INSTRUCTIONS
+    for level in ("mittel", "stark"):
+        assert ai.level_instruction(level, transcript) == table[level]

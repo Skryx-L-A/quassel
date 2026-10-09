@@ -40,6 +40,37 @@ LEVEL_INSTRUCTIONS = {
               "change the content: keep every fact, name, number, link and the meaning. "
               "Answer in the transcript's own language."),
 }
+# Dieselben Anweisungen auf Deutsch, für deutsche Diktate: mit der englischen
+# Anweisung direkt vor einem deutschen Diktat antworteten SmolLM3, Qwen3-4B und
+# Granite auf Stufe „stark" fast immer auf Englisch (Messung 2026-10-09 04:39).
+LEVEL_INSTRUCTIONS_DE = {
+    "mittel": ("Stufe mittel: Entferne nur Füllwörter, Wortwiederholungen und "
+               "abgebrochene Satzanfänge und korrigiere die Zeichensetzung. Wortlaut "
+               "und Satzbau bleiben. Antworte auf Deutsch."),
+    "stark": ("Stufe stark: Entferne Füllwörter, Wiederholungen und abgebrochene "
+              "Satzanfänge, korrigiere die Zeichensetzung und glätte auch Satzbau und "
+              "Grammatik. Der Inhalt bleibt: jede Tatsache, jeder Name, jede Zahl, "
+              "jeder Link und der Sinn. Antworte auf Deutsch."),
+}
+_DE_HINTS = {"der", "die", "das", "den", "dem", "und", "ist", "nicht", "ich", "wir",
+             "mit", "für", "auf", "ein", "eine", "zu", "im", "es", "sie", "wird"}
+_EN_HINTS = {"the", "and", "is", "not", "we", "with", "for", "on", "a", "an", "to",
+             "of", "it", "this", "that", "you", "are", "will"}
+
+
+def _looks_german(text):
+    """Grob, aber ohne Modell: überwiegen deutsche Funktionswörter?"""
+    words = re.findall(r"[a-zäöüß]+", text.lower())
+    de = sum(w in _DE_HINTS for w in words) + sum(ch in "äöüß" for ch in text.lower())
+    en = sum(w in _EN_HINTS for w in words)
+    return de > en
+
+
+def level_instruction(level, transcript):
+    table = LEVEL_INSTRUCTIONS_DE if _looks_german(transcript) else LEVEL_INSTRUCTIONS
+    return table.get(level, table["mittel"])
+
+
 _CHAT_SCHEMA = {"type": "object", "properties": {"cleaned": {"type": "string"}},
                 "required": ["cleaned"], "additionalProperties": False}
 _THINK = re.compile(r"<think>.*?</think>", re.I | re.S)
@@ -361,7 +392,7 @@ def chat_cleanup(transcript: str, *, model: str, endpoint: str = OLLAMA_DEFAULT,
         return None, "unconfigured"
     if endpoint_warning(endpoint) == "invalid" or not 0 < timeout <= 3600:
         return None, "invalid_endpoint"
-    instruction = LEVEL_INSTRUCTIONS.get(level, LEVEL_INSTRUCTIONS["mittel"])
+    instruction = level_instruction(level, transcript)
     tagged = instruction + "\n<TRANSCRIPT>\n" + transcript + "\n</TRANSCRIPT>"
     max_tokens = min(4096, max(48, math.ceil(len(transcript) / 4 * 1.3) + 32))
     payload = {
