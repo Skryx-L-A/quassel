@@ -13,8 +13,8 @@ Files (both mode 0600, written atomically):
   is refused while a valid one waits.
 * ask.claim: token of the request a running dictation answers. It lets the
   asker wait a little past the deadline while the user is still speaking.
-* ask.answer: token plus the answer text, or token plus canceled. The asker
-  reads it and deletes it at once.
+* ask.answer: token plus the answer text, or token plus canceled or failed.
+  The asker reads it and deletes it at once.
 
 The pattern follows the server restart request in daemon.py
 (_request_mac_server_restart) and mac_app.py (handle_server_restart).
@@ -251,6 +251,8 @@ def wait_answer(doc, poll=0.1, sleep=time.sleep, clock=time.time, rundir=None, s
             _remove(answer)
             if reply.get("canceled"):
                 raise AskError("canceled", "the question was dismissed")
+            if reply.get("failed"):
+                raise AskError("failed", "the spoken answer could not be transcribed")
             text = reply.get("text")
             return text if isinstance(text, str) else ""
         current = _token_of(request)
@@ -357,6 +359,25 @@ def deliver(token, text, now=None, rundir=None):
         return False
     # Only this request's files: the asker may have ended meanwhile and a
     # new one asked.
+    _remove_token(request, token)
+    _remove_token(claim_path, token)
+    return True
+
+
+def fail(token, now=None, rundir=None):
+    """The dictation that claimed token could not turn the answer into text
+    (speech server down, transcription failed): end the question with an
+    error at once, instead of letting the asker wait until its deadline.
+    False if that request no longer waits."""
+    request, claim_path, answer = _paths(rundir)
+    doc = pending(now, rundir)
+    if doc is None or doc.get("token") != token:
+        return False
+    try:
+        fsutil.atomic_write(answer, json.dumps({"token": token, "failed": True}), mode=0o600)
+    except OSError:
+        release(token, rundir)          # the asker still ends at its deadline
+        return False
     _remove_token(request, token)
     _remove_token(claim_path, token)
     return True

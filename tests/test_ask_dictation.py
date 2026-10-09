@@ -452,3 +452,52 @@ def test_answer_gets_no_live_preview(monkeypatch):
                                       is_set=lambda: len(waits) > 2)
     loop._loop("unused.wav")
     assert owner.states == [] and calls == []
+
+
+def _must_not_wait(seconds):
+    raise AssertionError("the asker had to keep waiting")
+
+
+def _no_rescue(env):
+    return not any(name.startswith("rescued") for name in os.listdir(env.rundir))
+
+
+def test_transcription_failure_during_an_answer_fails_the_question_at_once(env, monkeypatch):
+    # N2: the asker learns it at once, the claim is gone and the answer audio
+    # is not kept (it was meant for another program).
+    monkeypatch.setattr(dictation.whisperclient, "transcribe_result",
+                        lambda wav, cfg: dictation.SpeechResult(None))
+    monkeypatch.setattr(dictation.selfheal, "recover", lambda: False)
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _dictate(env.core)
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=_must_not_wait, rundir=env.rundir)
+    assert err.value.reason == "failed"
+    assert env.core.states[-1][0] == "error"
+    assert i18n.tr("ask_failed") in env.core.states[-1][1]
+    assert _no_rescue(env) and env.core.pasted == []
+    assert not os.path.exists(env.core.rec.path)
+    assert ask.pending(rundir=env.rundir) is None
+
+
+def test_server_down_during_an_answer_fails_the_question(env, monkeypatch):
+    monkeypatch.setattr(dictation.whisperclient, "ensure_server", lambda deadline=600: False)
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _dictate(env.core)
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=_must_not_wait, rundir=env.rundir)
+    assert err.value.reason == "failed"
+    assert _no_rescue(env)
+
+
+def test_crash_during_an_answer_fails_the_question_without_rescue(env, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("x")
+    monkeypatch.setattr(dictation, "postprocess_transcript", boom)
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _dictate(env.core)
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=_must_not_wait, rundir=env.rundir)
+    assert err.value.reason == "failed"
+    assert _no_rescue(env)
+    assert env.core.states[-1][0] == "error"

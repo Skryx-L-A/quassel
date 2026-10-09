@@ -121,7 +121,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   when you started speaking takes your words. When the agent cancels
   `ask_user` or disconnects, the question disappears at once instead of
   waiting for your next dictation. The live preview stays empty while you
-  answer, so the answer never shows in the pill.
+  answer, so the answer never shows in the pill. If the speech server fails
+  while you answer, the asking program gets an error right away; the
+  recording of the answer is not kept.
 - German "ß" is restored where spelling needs it when a German fine-tuned
   speech model is in use (it writes "grosses" instead of "großes"); "dass",
   "Masse" and English words stay as they are. Setting `[speech] eszett`

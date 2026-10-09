@@ -795,7 +795,14 @@ class DictationCore:
             # Fehlschlag retten und melden, statt auf „transkribiert" stehen
             # zu bleiben. Nur der Typ ins Log, nie der Text.
             self._log("dict: Rest fehlgeschlagen: %s" % type(exc).__name__)
-            keep_raw = not self._fail_safely(data, streamer, clip_backup)
+            if ask_doc is not None:
+                keep_raw = False
+                try:
+                    self._fail_answer(ask_doc, streamer, clip_backup, SpeechResult(None))
+                except Exception as exc2:  # noqa: BLE001
+                    self._log("ask: Fehlermeldung gescheitert: %s" % type(exc2).__name__)
+            else:
+                keep_raw = not self._fail_safely(data, streamer, clip_backup)
         finally:
             if not keep_raw:
                 discard(done_path)
@@ -818,6 +825,8 @@ class DictationCore:
         deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
                     else SERVER_WAIT_COLD)
         if not whisperclient.ensure_server(deadline=deadline):
+            if ask_doc is not None:
+                return self._fail_answer(ask_doc, streamer, clip_backup, None)
             return self._fail_with_rescue(data, streamer, clip_backup, None)
         wav = scratch_wav("rec")
         try:
@@ -829,6 +838,8 @@ class DictationCore:
             discard(wav)
         raw_text = result.text
         if raw_text is None:
+            if ask_doc is not None:
+                return self._fail_answer(ask_doc, streamer, clip_backup, result)
             return self._fail_with_rescue(data, streamer, clip_backup, result)
         if panic.is_set():
             # „Diktat sofort beenden" wurde gedrückt, während transkribiert
@@ -1017,6 +1028,22 @@ class DictationCore:
             text += " · " + tr("rescued").format(path=path)
         self._state("error", text)
         return path is not None
+
+    def _fail_answer(self, ask_doc, streamer, clip_backup, result=None):
+        """Wie _fail_with_rescue, aber für eine Antwort an ein Programm: die
+        Aufnahme wird NICHT gerettet (sie galt dem Fragenden, nicht dem
+        Nutzer), und der Fragende erfährt den Fehler sofort, statt bis zu
+        seiner Frist zu warten. Rückgabe True: die Rohdatei kann weg."""
+        if streamer is not None:
+            self._streaming_restore(clip_backup)
+        try:
+            ask.fail(ask_doc["token"], rundir=self._ask_dir())
+        except Exception as exc:  # noqa: BLE001 — nur die Wartezeit des Fragenden
+            self._log("ask: Fehler nicht übergeben: %s" % type(exc).__name__)
+            self._ask_release(ask_doc)
+        self._log("ask: Antwort nicht transkribiert, Frage mit Fehler beendet")
+        self._state("error", failure_text(result) + " · " + tr("ask_failed"))
+        return True
 
     def _fail_safely(self, data, streamer, clip_backup):
         """_fail_with_rescue nach einer Ausnahme: scheitert auch das, bleibt

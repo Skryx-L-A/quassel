@@ -483,6 +483,8 @@ STRINGS = {
                           "as normal text",
                           "Die Frage ist nicht mehr offen — deine Antwort wurde als "
                           "normaler Text eingefügt"),
+    "ask_failed": ("answer not sent, the question was ended",
+                   "Antwort nicht übergeben, die Frage ist beendet"),
 }
 
 _lang = None

@@ -68,7 +68,9 @@ statistics or the learned words, and it is never logged.
 Exit codes: `0` answer printed, `124` nobody answered in time, `130` you
 dismissed the question with the emergency stop (or pressed Ctrl+C), `75`
 another question is already waiting (only one at a time), `5` Quassel is not
-running (Linux: the systemd unit; macOS and Windows: the PID the service leaves in its runtime folder).
+running (Linux: the systemd unit; macOS and Windows: the PID the service leaves in its runtime folder),
+`1` your answer could not be transcribed (speech server down or failing; the
+recording of the answer is not kept).
 Silence or a spoken command such as "press enter" is not an answer: nothing
 is executed and the question keeps waiting. The question and the answer pass
 through two files in the runtime folder (`ask.request`, `ask.answer`, mode
@@ -114,7 +116,8 @@ Only then does `ask_user` appear in `tools/list`. Arguments: `question`
 (required, shown with the client's name in the pill and a notification) and
 `timeout` (seconds, 1 to 600, default 120). The result is `{"answer": "..."}`;
 a timeout, a dismissed question or a question already waiting come back as an
-error with `reason` `timeout`, `canceled` or `busy`. The tool never starts the
+error with `reason` `timeout`, `canceled`, `busy` or `failed` (the answer
+could not be transcribed). The tool never starts the
 microphone: you answer with your next dictation, started with the hotkey.
 If the client cancels the call (`notifications/cancelled`) or closes the
 server's input, the question is withdrawn at once and no response is sent

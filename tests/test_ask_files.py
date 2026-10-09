@@ -289,3 +289,16 @@ def test_stop_ends_the_wait_as_canceled_and_cleans_up(tmp_path):
                         stop=lambda: len(calls) >= 2)
     assert err.value.reason == "canceled"
     assert os.listdir(tmp_path) == []
+
+
+def test_failed_answer_reaches_the_asker_as_failed(tmp_path):
+    rundir = str(tmp_path)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    ask.claim(rundir=rundir)
+    assert ask.fail(doc["token"], rundir=rundir)
+    assert ask.pending(rundir=rundir) is None
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=lambda s: None, rundir=rundir)
+    assert err.value.reason == "failed"
+    assert os.listdir(tmp_path) == []
+    assert not ask.fail(doc["token"], rundir=rundir)
