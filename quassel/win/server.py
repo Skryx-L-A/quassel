@@ -412,3 +412,29 @@ def stop():
     except OSError:
         pass
     _proc = None
+
+
+def restart_owned():
+    """Restart this profile's live server child, never an unrelated listener."""
+    owned = _proc is not None and _proc.poll() is None
+    if not owned:
+        try:
+            with open(PID_FILE, encoding="utf-8") as source:
+                record = json.load(source)
+            owned = (record.get("port") == profile.port()
+                     and _owned_orphan(record))
+        except (OSError, ValueError, TypeError, AttributeError):
+            return False
+    if not owned:
+        return False
+    stop()
+    start()
+    if _proc is None or _proc.poll() is not None:
+        return False
+    from .. import selfheal
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if selfheal.functional_probe(timeout=2):
+            return True
+        time.sleep(1)
+    return False

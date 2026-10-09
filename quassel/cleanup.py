@@ -32,6 +32,10 @@ _ENTITY = re.compile(
     r"(?<!\w)\d+(?:[.,:/-]\d+)*(?!\w)", re.I
 )
 _ANSWER = re.compile(r"(?i)^\s*(?:(?:sure|certainly)(?:[,!.:]|\b)|here(?:'s| is)\b|hier ist\b|als (?:ki|ai)\b|as an ai\b|the answer is\b|die antwort ist\b)")
+_INSTRUCTION_OVERRIDE = re.compile(
+    r"(?i)\b(?:ignore|disregard)\s+(?:all|previous)\s+instructions\b|"
+    r"\bignorier(?:e|en)?\s+(?:alle|vorherige)\s+anweisungen\b"
+)
 _SENTENCES = re.compile(r"[.!?](?:\s|$)")
 _MEANING_WORDS = {"nicht", "nie", "kein", "keine", "ja", "nein", "not", "never",
                   "no", "yes", "heute", "morgen", "gestern", "today", "tomorrow",
@@ -80,6 +84,11 @@ def _protected_terms(cfg, context) -> list[str]:
     return [v for v in values if isinstance(v, str) and v.strip() and len(v) <= 100]
 
 
+def _guarded_input(raw: str) -> bool:
+    """Do not rewrite dictated questions or instruction-override examples."""
+    return raw.rstrip().endswith("?") or bool(_INSTRUCTION_OVERRIDE.search(raw))
+
+
 def _check(before: str, after: str, level: str, terms: list[str]) -> str | None:
     if not after.strip():
         return "empty"
@@ -122,6 +131,7 @@ def cleanup(raw: str, level: str, cfg, context=None) -> CleanupResult:
     if level == "aus" or not getattr(cfg, "cleanup_enabled", False) or not raw.strip():
         return CleanupResult(raw)
     try:
+        guarded = _guarded_input(raw)
         replacements = getattr(cfg, "cleanup_replacements", {})
         pre = deterministic(_replace_terms(raw, replacements))
         if not pre or not 0.35 <= len(pre) / len(raw) <= 1.3:
@@ -140,12 +150,16 @@ def cleanup(raw: str, level: str, cfg, context=None) -> CleanupResult:
                 timeout=getattr(cfg, "ai_timeout", 30.0), level=level)
             if reason or edited is None:
                 return CleanupResult(raw, used_llm=called, fallback_reason=reason or "schema_error")
+            if guarded and edited != raw:
+                return CleanupResult(raw, used_llm=called, fallback_reason="protected_input_changed")
             rejection = _check(pre, edited, level, terms)
             if rejection:
                 return CleanupResult(raw, used_llm=called, fallback_reason=rejection)
         final = itn.normalize(edited)
         if not final or not 0.20 <= len(final) / max(len(edited), 1) <= 1.6:
             return CleanupResult(raw, used_llm=called, fallback_reason="itn_length")
+        if guarded and final != raw:
+            return CleanupResult(raw, used_llm=called, fallback_reason="protected_input_changed")
         return CleanupResult(final, used_llm=called)
     except Exception:
         return CleanupResult(raw, fallback_reason="processing_error")

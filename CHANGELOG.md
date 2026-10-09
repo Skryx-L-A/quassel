@@ -14,6 +14,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Dictated questions and instruction-override examples now stay exactly as
+  spoken when text cleanup or number formatting would change them.
+
 ### Added
 - Transcribe file: "Save as…" writes the result as a text, SRT or WebVTT file.
   The suggested name is the source file's name with the matching extension.
@@ -28,6 +32,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in /v1 is treated as OpenAI-compatible straight away. "Test" then checks the
   same cleanup call that dictation uses. Local addresses never go through a
   system proxy.
+- Windows now supports the optional pre-roll setting: it keeps up to two seconds of recent microphone audio for the next dictation and closes the input after the short warm period.
 - Per-app profiles: the "While dictating" page has a button that creates the
   profiles file with the default profiles (terminal, mail, editor and so on) if
   it does not exist yet and opens it. An existing file is never overwritten.
@@ -57,6 +62,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with what is still missing and a button to the right System Settings page),
   a microphone test that shows how loud you were without playing anything
   back, whether the speech model is ready, and a field to try dictating.
+- The optional text-cleanup benchmark can save case IDs and safety outcomes
+  without saving dictated or generated text, and now reports how often the
+  cleanup model was called.
 - A command-line client can show Quassel's local status, manage the dictionary
   and installed speech-model selection, transcribe an existing file, and safely
   request the Linux service toggle or emergency stop. It never starts a
@@ -172,6 +180,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   claiming it was opened.
 - macOS: when the text could not be typed and is left on the clipboard, the
   pill now says to press ⌘V instead of Ctrl+V.
+- When a speech server responds but cannot transcribe, Quassel can restart its own profile server once and retry the recording. The macOS app accepts restart requests from its own dictation process.
+- Windows now stops dictation on sleep and checks the speech server after wake. Linux clears held shortcut keys after sleep so the next shortcut works.
+- Windows microphone choices now follow the selected WASAPI device by name when device indexes change.
+- macOS permission guidance now follows the app language and names the selected dictation shortcut. The microphone permission description is readable in English and German.
+- Typing time estimates use the optional `[stats] typing_wpm` setting (10–200 words per minute; default 40).
 - Turning off dictation on macOS now unloads Quassel's own speech server;
   turning it back on starts the server before dictation resumes.
 - Linux Bluetooth output gets a short silence lead-in before the recording

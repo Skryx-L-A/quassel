@@ -11,6 +11,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from quassel import mac_app, server_mac
 
 
+def test_microphone_usage_description_is_bilingual():
+    from pathlib import Path
+    spec = (Path(__file__).resolve().parents[1] / "packaging/macos/Quassel.spec").read_text()
+    assert "NSMicrophoneUsageDescription" in spec
+    assert "Mikrofon" in spec and "microphone" in spec
+
+
 def _fake_bundle(tmp_path, with_server=True):
     """Minimale .app-Struktur: MacOS/Quassel + Resources/whisper/whisper-server."""
     contents = tmp_path / "Quassel.app" / "Contents"

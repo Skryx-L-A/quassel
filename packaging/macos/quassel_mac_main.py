@@ -16,6 +16,60 @@ import sys
 import traceback
 
 
+def _handle_server_restart(app):
+    """Honor a fresh request only from this App's live daemon child."""
+    import json
+    import time
+    from quassel import fsutil, profile, server_mac
+    from quassel.state import RUNDIR
+
+    request_path = os.path.join(RUNDIR, "server-restart.request")
+    ack_path = os.path.join(RUNDIR, "server-restart.ack")
+    try:
+        with open(request_path, encoding="utf-8") as source:
+            request = json.load(source)
+    except (OSError, ValueError):
+        return
+    try:
+        os.remove(request_path)
+    except OSError:
+        pass
+    if not isinstance(request, dict):
+        return
+    child = app.daemon
+    if (not app.enabled or child is None or child.poll() is not None
+            or request.get("daemon_pid") != child.pid
+            or request.get("app_pid") != os.getpid()
+            or request.get("profile") != profile.name()
+            or not isinstance(request.get("token"), str)
+            or not isinstance(request.get("created"), (int, float))
+            or abs(time.time() - request["created"]) > 30):
+        return
+    owned = server_mac._proc is not None and server_mac._proc.poll() is None
+    started = False
+    if owned:
+        try:
+            server_mac.stop()
+            started = bool(server_mac.start())
+            started = (started and server_mac._proc is not None
+                       and server_mac._proc.poll() is None)
+        except (OSError, ValueError):
+            started = False
+    fsutil.atomic_write(ack_path, json.dumps({"token": request["token"],
+                                              "started": started}), mode=0o600)
+
+
+def _install_server_restart_handler():
+    from quassel.mac_app import MacApp
+    original = MacApp._supervise
+
+    def supervise(app, now=None):
+        _handle_server_restart(app)
+        return original(app, now)
+
+    MacApp._supervise = supervise
+
+
 def _crash_log(exc):
     try:
         d = os.path.expanduser("~/Library/Logs/Quassel")
@@ -34,6 +88,7 @@ def _run():
     elif cmd == "center":
         from quassel.center import main
     else:
+        _install_server_restart_handler()
         from quassel.mac_app import main
     main()
 

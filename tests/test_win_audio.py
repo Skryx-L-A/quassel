@@ -5,6 +5,7 @@ auf Zuruf füttert. Alle Dateien liegen in tmp_path — nie im Laufzeit-
 verzeichnis einer installierten App (Audit B26/B27)."""
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -35,13 +36,23 @@ class FakeSD:
     def __init__(self, fail=False):
         self.streams = []
         self.fail = fail
+        self.default = SimpleNamespace(device=[1, None])
 
     def RawInputStream(self, **kw):           # noqa: N802 — Name wie sounddevice
         if self.fail:
             raise OSError("kein Mikrofon")
         stream = FakeStream(**kw)
+        stream.device = kw.get("device")
         self.streams.append(stream)
         return stream
+
+    def query_hostapis(self):
+        return [{"name": "MME"}, {"name": "Windows WASAPI"}]
+
+    def query_devices(self):
+        return [{"name": "Headset", "hostapi": 0, "max_input_channels": 1},
+                {"name": "Headset", "hostapi": 1, "max_input_channels": 1},
+                {"name": "Other", "hostapi": 1, "max_input_channels": 0}]
 
 
 @pytest.fixture
@@ -117,3 +128,62 @@ def test_start_while_running_stops_the_previous_stream(paths):
     assert sd.streams[0].active is False
     assert sd.streams[1].active is True
     rec.stop()
+
+
+def test_named_microphone_follows_current_wasapi_index(paths):
+    _raw, _raw_b, sd = paths
+    assert audio_win.list_mics() == [("Headset", "Headset")]
+    rec = audio_win.Recorder()
+    assert rec.start("Headset")
+    assert sd.streams[-1].device == 1
+    rec.stop()
+    sd.query_devices = lambda: [{"name": "New", "hostapi": 1, "max_input_channels": 1},
+                                {"name": "Headset", "hostapi": 0, "max_input_channels": 1},
+                                {"name": "Headset", "hostapi": 1, "max_input_channels": 1}]
+    assert audio_win.resolve_mic("Headset") == 2
+    assert rec.start("Headset")
+    assert sd.streams[-1].device == 2
+    rec.stop()
+
+
+def test_missing_named_microphone_fails_closed(paths):
+    _raw, _raw_b, sd = paths
+    rec = audio_win.Recorder()
+    assert rec.start("missing") is False
+    assert not sd.streams
+
+
+def test_preroll_reuses_warm_stream_and_prepends_bounded_audio(paths):
+    _raw, _raw_b, sd = paths
+    rec = audio_win.Recorder(preroll_ms=100, preroll_keep_s=10)
+    try:
+        assert rec.start()
+        sd.streams[0].feed(b"\x01\x00" * 10)
+        rec.stop()
+        assert not rec.active and sd.streams[0].active
+        sd.streams[0].feed(b"\x02\x00" * 2000)  # ring keeps last 100 ms
+        assert rec.start()
+        assert len(sd.streams) == 1
+        sd.streams[0].feed(b"\x03\x00" * 10)
+        assert rec.raw_bytes() == b"\x02\x00" * 1600 + b"\x03\x00" * 10
+        rec.stop()
+    finally:
+        rec._close_warm()
+    assert not sd.streams[0].active
+
+
+def test_warm_stream_is_reopened_when_default_input_changes(paths):
+    _raw, _raw_b, sd = paths
+    rec = audio_win.Recorder(preroll_ms=100, preroll_keep_s=10)
+    try:
+        assert rec.start()
+        assert sd.streams[-1].device == 1
+        rec.stop()
+        sd.default.device[0] = 0
+        assert rec.start()
+        assert len(sd.streams) == 2
+        assert not sd.streams[0].active
+        assert sd.streams[-1].device == 0
+        rec.stop()
+    finally:
+        rec._close_warm()

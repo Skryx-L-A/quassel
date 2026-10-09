@@ -28,7 +28,8 @@ def percentile(values: list[float], fraction: float) -> float:
     return ordered[min(len(ordered) - 1, int((len(ordered) - 1) * fraction))]
 
 
-def run(endpoint: str, model: str, level: str, timeout: float) -> dict:
+def run(endpoint: str, model: str, level: str, timeout: float,
+        cases_path: Path | None = None) -> dict:
     if not ai.is_loopback(endpoint) or ai.endpoint_warning(endpoint) == "invalid":
         raise ValueError("endpoint must be an explicit loopback URL")
     cases = [json.loads(line) for line in CORPUS.read_text(encoding="utf-8").splitlines()]
@@ -38,12 +39,15 @@ def run(endpoint: str, model: str, level: str, timeout: float) -> dict:
     deviations = 0
     unsafe_changes = 0
     accepted = 0
+    used_llm = 0
+    case_rows = []
     for case in cases:
         cfg = SimpleNamespace(cleanup_enabled=True, cleanup_terms=case["terms"],
                               cleanup_replacements={}, ai_model=model,
                               ai_endpoint=endpoint, ai_timeout=timeout)
         start = time.monotonic()
         result = cleanup(case["raw"], level, cfg)
+        used_llm += result.used_llm
         latencies.append(time.monotonic() - start)
         by_language[case["language"]] += 1
         if result.fallback_reason:
@@ -52,10 +56,21 @@ def run(endpoint: str, model: str, level: str, timeout: float) -> dict:
             accepted += 1
         if result.text != case["expected_rule"]:
             deviations += 1
-        if case["expected_guard"] == case["raw"] and result.text != case["raw"]:
+        unsafe = (case["expected_guard"] == case["raw"]
+                  and result.text != case["expected_rule"])
+        if unsafe:
             unsafe_changes += 1
+        if cases_path is not None:
+            case_rows.append({"id": case["id"], "level": level,
+                              "used_llm": result.used_llm,
+                              "fallback_reason": result.fallback_reason,
+                              "status": "unsicher" if unsafe else "ok"})
+    if cases_path is not None:
+        cases_path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n"
+                                      for row in case_rows), encoding="utf-8")
     return {
         "cases": len(cases), "by_language": dict(by_language), "accepted": accepted,
+        "used_llm": used_llm, "used_llm_rate": used_llm / len(cases),
         "fallback": sum(reasons.values()), "fallback_rate": sum(reasons.values()) / len(cases),
         "fallback_reasons": dict(reasons), "deviations_from_rule": deviations,
         "unsafe_changes": unsafe_changes,
@@ -71,11 +86,12 @@ def main() -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--level", choices=("mittel", "stark"), default="mittel")
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--cases", type=Path, help="optional JSONL with per-case metadata only")
     args = parser.parse_args()
     if not 0 < args.timeout <= 3600:
         parser.error("--timeout must be between 0 and 3600 seconds")
     try:
-        summary = run(args.endpoint, args.model, args.level, args.timeout)
+        summary = run(args.endpoint, args.model, args.level, args.timeout, args.cases)
     except ValueError as exc:
         parser.error(str(exc))
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
