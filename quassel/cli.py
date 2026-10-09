@@ -231,6 +231,8 @@ def parser():
     hist_sub = history.add_subparsers(dest="history_command", required=True)
     history_list = hist_sub.add_parser("list")
     history_list.add_argument("--since", type=_history_since, default=0)
+    sub.add_parser("diagnostics", help="print a diagnostics report for bug reports "
+                                       "(no history, dictionary or dictated text)")
     return p
 
 
@@ -242,6 +244,10 @@ def main(argv=None):
     args = parser().parse_args(argv)
     if args.command == "status":
         _emit(status_data(), args.json)
+        return 0
+    if args.command == "diagnostics":
+        from . import diagnostics
+        sys.stdout.write(diagnostics.build_report())
         return 0
     if args.command in ("toggle", "panic"):
         return _control(args.command)
