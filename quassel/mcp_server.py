@@ -13,12 +13,16 @@ PROTOCOL_VERSION = "2025-06-18"
 
 
 def _history_allowed():
-    """An absent or malformed setting is privacy-preserving: no history."""
+    """An absent or malformed setting is privacy-preserving: no history.
+    Both switches must be on: sharing over MCP and the history itself. With
+    the history switched off, entries still on disk must not leave over MCP
+    (the CLI refuses the same)."""
     parser = config._read_parser()
     try:
-        return parser.getboolean("mcp", "mcp_history", fallback=False)
+        shared = parser.getboolean("mcp", "mcp_history", fallback=False)
     except ValueError:
         return False
+    return shared and config.Cfg().history_enabled
 
 
 def _tool(name, description, properties=None, required=()):

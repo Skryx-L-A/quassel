@@ -66,3 +66,15 @@ def test_stdio_server_returns_parse_error_and_continues():
     replies = [json.loads(line) for line in stdout.getvalue().splitlines()]
     assert replies[0]["error"]["code"] == -32700
     assert replies[1]["id"] == 3
+
+
+def test_history_stays_private_when_the_history_itself_is_off(tmp_path, monkeypatch):
+    """mcp_history=true alone must not expose entries left on disk after the
+    user switched the history off (the CLI refuses the same)."""
+    monkeypatch.setattr(config, "HISTORY", str(tmp_path / "history.jsonl"))
+    config.history_append("privates Diktat")
+    config.save({("mcp", "mcp_history"): "true", ("history", "enabled"): "false"})
+    assert "history_list" not in {t["name"] for t in mcp_server.tools()}
+    result = request("tools/call", {"name": "history_list", "arguments": {}})
+    assert result["result"]["isError"] is True
+    assert "privates Diktat" not in json.dumps(result)
