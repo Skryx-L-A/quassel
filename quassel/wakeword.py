@@ -34,26 +34,47 @@ from . import vad
 # strikter Wort-fuer-Wort-Vergleich wuerde das Wake-Word dann nie ausloesen.
 WAKE_FUZZY = 0.72
 
-# Erlaubte Zeichen in normalisiertem Text: Buchstaben (inkl. aeoeuess), Ziffern,
-# Leerzeichen. Alles andere (Satzzeichen) wird zu Leerzeichen.
-_KEEP = re.compile(r"[^0-9a-zäöüß\s]+", re.UNICODE)
 _WS = re.compile(r"\s+", re.UNICODE)
+
+
+def _is_word_char(ch):
+    """Buchstabe/Ziffer in jeder Schrift (str.isalnum) oder kombinierendes
+    Zeichen (Akzent, Vokalzeichen), damit "naïve", "łódź" oder "नमस्ते" ein Wort
+    bleiben. Satzzeichen, Leerraum und "_" trennen."""
+    return ch.isalnum() or unicodedata.category(ch).startswith("M")
+
+
+def _word_spans(text):
+    """(Anfang, Ende) jedes Wortes in ``text``. Die EINE Tokenisierung fuer
+    Normalisierung und Restschnitt -- beide zaehlen dieselben Woerter."""
+    spans, start = [], None
+    for i, ch in enumerate(text):
+        if _is_word_char(ch):
+            if start is None:
+                start = i
+        elif start is not None:
+            spans.append((start, i))
+            start = None
+    if start is not None:
+        spans.append((start, len(text)))
+    return spans
 
 
 def normalize(text):
     """Kleinschreiben, Satzzeichen entfernen, Leerraum zusammenfassen, trimmen.
 
-    Behaelt Buchstaben (inkl. ae/oe/ue/ss bzw. ä/ö/ü/ß), Ziffern und einfache
-    Leerzeichen. Gibt fuer None/Leereingabe "" zurueck.
+    Behaelt Woerter aus Buchstaben und Ziffern jeder Schrift (inkl. ä/ö/ü/ß,
+    Akzente) und trennt sie mit einfachen Leerzeichen. Gibt fuer
+    None/Leereingabe "" zurueck.
     """
     if not text:
         return ""
-    # lower() (nicht casefold), damit "ß" als "ß" erhalten bleibt. Vorher NFC
-    # normalisieren, damit kombinierte Umlaute als ein Zeichen vorliegen.
-    t = unicodedata.normalize("NFC", text).lower()
-    t = _KEEP.sub(" ", t)
-    t = _WS.sub(" ", t)
-    return t.strip()
+    # Vorher NFC normalisieren, damit kombinierte Umlaute als ein Zeichen
+    # vorliegen. Erst zerlegen, dann je Wort lower() (nicht casefold), damit "ß"
+    # als "ß" erhalten bleibt und eine Laengenaenderung beim Kleinschreiben
+    # ("İ") die Wortgrenzen nicht verschiebt.
+    t = unicodedata.normalize("NFC", text)
+    return " ".join(t[a:b].lower() for a, b in _word_spans(t))
 
 
 def _similar(a, b):
@@ -160,26 +181,25 @@ def match_wake(transcript, phrase, fuzzy=WAKE_FUZZY):
     return (False, "")
 
 
-# Wort = zusammenhaengende Folge erlaubter Zeichen (Buchstaben/Ziffern).
-_WORDISH = re.compile(r"[0-9A-Za-zÀ-ÖØ-öø-ÿ]+", re.UNICODE)
-
-
 def _original_remainder(transcript, skip_words):
     """Liefert den Originaltext nach den ersten ``skip_words`` Woertern.
 
-    Fuehrende Satzzeichen/Leerzeichen des Rests werden entfernt. Sind nach den
+    Woerter zaehlt dieselbe Tokenisierung wie ``normalize``. Fuehrende
+    Satzzeichen/Leerzeichen des Rests werden entfernt. Sind nach den
     uebersprungenen Woertern keine weiteren Woerter mehr da, ist das Ergebnis "".
     """
     if not transcript:
         return ""
-    matches = list(_WORDISH.finditer(transcript))
-    if len(matches) <= skip_words:
+    # Dieselbe NFC-Form wie in normalize(), sonst zaehlt ein zerlegtes "é"
+    # anders.
+    transcript = unicodedata.normalize("NFC", transcript)
+    spans = _word_spans(transcript)
+    if len(spans) <= skip_words:
         return ""
     # Ab dem Ende des letzten Phrasen-Wortes weiterschneiden.
-    start = matches[skip_words - 1].end()
-    rest = transcript[start:]
+    rest = transcript[spans[skip_words - 1][1]:]
     # Fuehrende Nicht-Wort-Zeichen (Komma, Leerzeichen, ...) abstreifen.
-    return rest.lstrip(" \t\r\n,.;:!?-–— \"'`")
+    return rest.lstrip(" \t\r\n,.;:!?-–— \"'`")
 
 
 # ------------------------------------------------------ Einstellungen (config.ini)

@@ -15,6 +15,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Wake word: phrases and dictations with accented or non-German letters
+  ("naïve", "Łódź", "é") no longer lose a word or cut the dictation in the
+  wrong place after the phrase.
 - Dictated questions and instruction-override examples now stay exactly as
   spoken when text cleanup or number formatting would change them.
 
