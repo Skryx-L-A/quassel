@@ -212,3 +212,32 @@ def test_pid_alive_rejects_nonsense():
     assert not ask.pid_alive(True)
     assert not ask.pid_alive("12")
     assert not ask.pid_alive(999_999_999)
+
+
+def test_second_claim_on_the_same_request_is_refused(tmp_path):
+    # M1: dictation A answers, dictation B starts while A transcribes. B must
+    # not bind to the same request, else its text is lost when A delivers.
+    rundir = str(tmp_path)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    assert ask.claim(rundir=rundir)["token"] == doc["token"]
+    assert ask.claim(rundir=rundir) is None
+    assert ask.deliver(doc["token"], "A", rundir=rundir)
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=rundir) == "A"
+
+
+def test_stale_claim_of_another_request_does_not_block(tmp_path):
+    rundir = str(tmp_path)
+    with open(_path(tmp_path, ask.CLAIM_NAME), "w", encoding="utf-8") as sink:
+        json.dump({"token": "f" * 32}, sink)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    assert ask.claim(rundir=rundir)["token"] == doc["token"]
+    assert ask.claim(rundir=rundir) is None
+
+
+def test_released_claim_can_be_claimed_again(tmp_path):
+    rundir = str(tmp_path)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    assert ask.claim(rundir=rundir) is not None
+    ask.release(doc["token"], rundir=rundir)
+    assert ask.claim(rundir=rundir)["token"] == doc["token"]
+    assert sorted(os.listdir(tmp_path)) == [ask.CLAIM_NAME, ask.REQUEST_NAME]

@@ -333,6 +333,7 @@ class DictationCore:
     # Frage per Stimme (G104): die Anfrage, die das laufende Diktat
     # beantwortet. Gebunden beim START der Aufnahme, nie erst am Ende.
     _ask = None
+    _panic_epoch = 0            # zählt Not-Aus; eine Antwort von davor verfällt
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -624,6 +625,7 @@ class DictationCore:
         Läuft weder eine Aufnahme noch eine Aktion, gibt es nichts zu beenden
         — dann sagt die Methode das und tut sonst nichts. Eine wartende
         Frage eines Programms (G104) verwirft der Not-Aus in jedem Fall."""
+        self._panic_epoch += 1
         dismissed = self._ask_discard()
         self._ask = None
         if not self._busy():
@@ -1203,6 +1205,8 @@ class DictationCore:
             return None
         if doc is not None:
             self._log("ask: dieses Diktat beantwortet eine wartende Frage")
+            # Ein Not-Aus danach verwirft diese Antwort (siehe _answer).
+            doc["_panic_epoch"] = self._panic_epoch
         return doc
 
     def _ask_pending(self):
@@ -1241,12 +1245,35 @@ class DictationCore:
         if panic is not None and panic.is_set():
             self._state("idle")
             return
+        if ask_doc.get("_panic_epoch", self._panic_epoch) != self._panic_epoch:
+            # Not-Aus seit Beginn dieser Antwort: kein Text, nirgendwohin.
+            self._log("panic: Antwort verworfen (Not-Aus)")
+            self._state("idle")
+            return
         if ask.deliver(ask_doc["token"], text, rundir=self._ask_dir()):
             self._log("ask: Antwort übergeben (%d Zeichen)" % len(text))
             self._state("done", tr("ask_sent"))
+            return
+        # Frage inzwischen zu (Frist, Fragender weg): der Text darf nicht
+        # still verschwinden, soll aber auch nicht ungefragt in das Fenster,
+        # das gerade vorne ist. Also in die Zwischenablage; nur wenn die
+        # versagt, wie ein gewöhnliches Diktat einfügen.
+        self._log("ask: Frage nicht mehr offen, Antwort in die Zwischenablage")
+        try:
+            copied = self._clip_copy(text) is not False
+        except Exception as exc:  # noqa: BLE001 — Zwischenablage kaputt
+            self._log("ask: Zwischenablage: %s" % type(exc).__name__)
+            copied = False
+        if copied:
+            self._state("error", tr("ask_gone_clipboard"))
+            return
+        self._log("ask: Zwischenablage gescheitert, Antwort wird eingefügt")
+        text = self._finish_text(text, self._profile_cfg())
+        if self._insert(text):
+            self.last_paste_len = len(text)
+            self._state("done", tr("ask_gone_inserted"))
         else:
-            self._log("ask: Frage nicht mehr offen, Antwort verworfen")
-            self._state("error", tr("ask_gone"))
+            self._report_clipboard_only()
 
     # ----------------------------------------------------- Wake-Word (opt-in)
     def _sync_wakeword(self):

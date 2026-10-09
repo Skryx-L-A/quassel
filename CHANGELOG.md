@@ -113,7 +113,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   starts the microphone: the pill and a notification show the question, and
   your answer is the next dictation you start with the hotkey. Without one
   the question ends after two minutes (up to ten), and the emergency stop
-  dismisses it. Answers are not added to the history.
+  dismisses it. Answers are not added to the history. Only one dictation
+  answers a question: one you start while the answer is still being
+  transcribed goes into your window as usual. If the question closed before
+  your answer was ready, the answer is put on the clipboard instead of
+  being lost.
 - German "ß" is restored where spelling needs it when a German fine-tuned
   speech model is in use (it writes "grosses" instead of "großes"); "dass",
   "Masse" and English words stay as they are. Setting `[speech] eszett`

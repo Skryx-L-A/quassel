@@ -129,6 +129,13 @@ def _remove(path):
         pass
 
 
+def _remove_token(path, token):
+    """Remove path only while it still belongs to token: a file another
+    asker or dictation wrote meanwhile stays."""
+    if _token_of(path) == token:
+        _remove(path)
+
+
 def _token_of(path):
     doc = _read_json(path)
     token = doc.get("token") if doc else None
@@ -291,11 +298,34 @@ def claim(now=None, rundir=None):
     if doc is None:
         return None
     _, claim_path, _ = _paths(rundir)
+    token = doc["token"]
+    staging = "%s.%s" % (claim_path, secrets.token_hex(8))
     try:
-        fsutil.atomic_write(claim_path, json.dumps({"token": doc["token"]}), mode=0o600)
+        fsutil.atomic_write(staging, json.dumps({"token": token}), mode=0o600)
     except OSError:
-        pass        # without the claim the asker just does not wait past its deadline
-    return doc
+        return doc  # without the claim the asker just does not wait past its deadline
+    try:
+        for _attempt in range(2):
+            try:
+                # Hard link: exclusive. A second dictation that starts while
+                # the first still works on the answer is not bound to the
+                # same request (its text would be lost when the first delivers).
+                os.link(staging, claim_path)
+                return doc
+            except FileExistsError:
+                current = _token_of(claim_path)
+                if current == token:
+                    return None
+                _remove_token(claim_path, current)   # left over from an older request
+            except OSError:
+                # File system without hard links: check, then replace.
+                if _claimed(token, rundir):
+                    return None
+                os.replace(staging, claim_path)
+                return doc
+        return None
+    finally:
+        _remove(staging)
 
 
 def release(token, rundir=None):

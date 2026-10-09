@@ -193,12 +193,13 @@ def test_request_arriving_during_a_dictation_does_not_take_its_text(env):
 
 
 def test_request_gone_before_the_end_inserts_nothing(env):
+    env.core._clip_copy = lambda text: True
     doc = ask.open_request("Name?", 30, rundir=env.rundir)
     assert env.core.start_recording()
     ask.close_request(doc, env.rundir)          # the asker gave up meanwhile
     env.core.finish_now()
     assert env.core.pasted == []
-    assert env.core.states[-1] == ("error", i18n.tr("ask_gone"))
+    assert env.core.states[-1] == ("error", i18n.tr("ask_gone_clipboard"))
     assert not os.path.exists(_answer_file(env))
 
 
@@ -297,3 +298,51 @@ def test_real_asker_thread_gets_the_answer(env):
     thread.join(5)
     assert result == {"text": "die antwort ist zwölf"}
     assert os.listdir(env.rundir) == []
+
+
+def test_second_dictation_during_the_answer_is_inserted_not_lost(env):
+    # M1: A answers and is still transcribing when B starts. B is an ordinary
+    # dictation for the window.
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    assert env.core.start_recording()
+    rest_a = env.core.finish()
+    assert env.core.start_recording()
+    rest_b = env.core.finish()
+    rest_a()
+    rest_b()
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == "die antwort ist zwölf"
+    assert env.core.pasted == ["die antwort ist zwölf"]
+
+
+def test_answer_for_a_closed_question_goes_to_the_clipboard(env):
+    # M1/N4: the asker is gone before the answer is ready. The text is not
+    # lost and not typed into whatever window is in front.
+    copied = []
+    env.core._clip_copy = lambda text: copied.append(text) or True
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    assert env.core.start_recording()
+    ask.close_request(doc, env.rundir)
+    env.core.finish_now()
+    assert copied == ["die antwort ist zwölf"]
+    assert env.core.pasted == []
+    assert env.core.states[-1] == ("error", i18n.tr("ask_gone_clipboard"))
+    assert env.history == []
+
+
+def test_answer_for_a_closed_question_is_inserted_if_the_clipboard_fails(env):
+    env.core._clip_copy = lambda text: False
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    assert env.core.start_recording()
+    ask.close_request(doc, env.rundir)
+    env.core.finish_now()
+    assert env.core.pasted == ["die antwort ist zwölf"]
+
+
+def test_emergency_stop_before_a_wake_answer_drops_it(env):
+    copied = []
+    env.core._clip_copy = lambda text: copied.append(text) or True
+    ask.open_request("Name?", 30, rundir=env.rundir)
+    doc = env.core._ask_claim()
+    env.core.panic_stop()
+    env.core._answer(doc, "text", "die antwort ist zwölf")
+    assert copied == [] and env.core.pasted == []
