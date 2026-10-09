@@ -280,3 +280,28 @@ def test_default_filename():
     import datetime as dt
     assert diagnostics.default_filename(dt.datetime(2026, 10, 9, 5, 30, 1)) == \
         "quassel-diagnostics-20261009-053001.txt"
+
+
+@pytest.mark.parametrize("line", [
+    # Aus dem Review 2026-10-09 (review-neu, M3): blieben vorher unverändert.
+    "endpoint = https://llm.example.com/v1?apikey=S3CR3Tvalue",
+    "endpoint = https://llm.example.com/v1?sig=S3CR3Tvalue&x=1",
+    'ai: request failed {"api_key": "S3CR3Tvalue"}',
+    "ai: request failed {'password': 'S3CR3Tvalue'}",
+    "ai: X-Api-Key S3CR3Tvalue",
+])
+def test_common_secret_forms_are_redacted(line):
+    assert "S3CR3Tvalue" not in diagnostics.redact_line(line)
+
+
+def test_ordinary_log_words_stay():
+    for line in ("hotkey: alt+meta", "wake: heard 12 chars, match=yes"):
+        assert diagnostics.redact_line(line) == line
+
+
+def test_secret_values_from_config_ini_are_redacted_everywhere(monkeypatch):
+    monkeypatch.setattr(diagnostics.config, "read_serverenv", lambda: {})
+    parser = diagnostics.config._new_parser()
+    parser.read_string("[ai]\napi_token = S3CR3Tvalue\n")
+    monkeypatch.setattr(diagnostics.config, "_read_parser", lambda: parser)
+    assert "S3CR3Tvalue" in diagnostics._secret_values()

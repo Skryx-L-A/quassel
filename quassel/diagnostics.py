@@ -38,15 +38,23 @@ MAX_LOG_BYTES = 256 * 1024
 # Schlüsselnamen, deren Werte nie im Bericht stehen.
 SECRET_KEY = re.compile(r"token|key|secret|passw|request_path|auth|credential|cookie",
                         re.IGNORECASE)
-# Schlüssel=Wert bzw. Schlüssel: Wert in Logzeilen mit geheimem Schlüsselnamen.
-# Das geheime Wort steht allein oder hinter einem Trenner (api_key, X-Auth-Token),
-# damit gewöhnliche Logwörter wie „hotkey:“ stehen bleiben.
+# Schlüssel=Wert bzw. Schlüssel: Wert in Logzeilen mit geheimem Schlüsselnamen,
+# auch in JSON/Python-Form ("api_key": "…", 'password': '…') und ohne Trenner vor
+# dem geheimen Wort (apikey). Wörter wie „hotkey“ stehen in _NOT_SECRET.
+_SECRET_WORDS = (r"tokens?|keys?|secrets?|passw(?:or)?d|passphrase|pwd|sig|signature"
+                 r"|request_path|auth(?:orization)?|credentials?|cookie")
 _SECRET_PAIR = re.compile(
-    r"(?P<k>\b(?:[\w.]*[_.-])?(?:tokens?|keys?|secrets?|passw(?:or)?d|passphrase|request_path"
-    r"|auth(?:orization)?|credentials?|cookie)\b)(?P<sep>\s*[=:]\s*)"
-    r"(?P<v>\"[^\"]*\"|'[^']*'|\S+)",
+    r"(?P<k>[\"']?\b[\w.]*?(?:" + _SECRET_WORDS + r")\b[\"']?)(?P<sep>\s*[=:]\s*)"
+    r"(?P<v>\"[^\"]*\"|'[^']*'|[^\s&,;}\]]+)",
     re.IGNORECASE)
-# URL-Zugangsdaten (http://nutzer:pass@host) und Abfrageteile (?key=…).
+# Kopfzeilen ohne Doppelpunkt: „X-Api-Key S3CR3T“, „Authorization abc“.
+_SECRET_HEADER = re.compile(
+    r"(?P<k>\b(?:[\w]+-)+(?:" + _SECRET_WORDS + r")\b|\bauthorization\b)(?P<sep>\s+)"
+    r"(?P<v>[^\s:=]+)", re.IGNORECASE)
+_NOT_SECRET = re.compile(r"^[\"']?(?:hotkey|monkey|turkey|hotkeys)[\"']?$", re.IGNORECASE)
+# Jeder Wert in einer URL-Abfrage (?sig=…&x=…): Signaturen heißen nicht immer „key“.
+_QUERY_VALUE = re.compile(r"(?P<k>[?&][^=&\s#]+=)[^&\s#\"']+")
+# URL-Zugangsdaten (http://nutzer:pass@host).
 _URL_USERINFO = re.compile(r"(?P<scheme>\b[a-z][a-z0-9+.-]*://)[^/\s@]+@", re.IGNORECASE)
 _BEARER = re.compile(r"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
 # Logzeilen, die nach diktiertem Text aussehen könnten.
@@ -91,10 +99,18 @@ def _redact_url(text):
     return _BEARER.sub(lambda m: m.group(1) + " " + REDACTED, text)
 
 
+def _pair(match):
+    if _NOT_SECRET.match(match.group("k")):
+        return match.group(0)
+    return match.group("k") + match.group("sep") + REDACTED
+
+
 def redact_line(line):
     """Geheimnisse in einer freien Textzeile schwärzen."""
     line = _redact_url(line)            # zuerst: „Authorization: Bearer x“
-    line = _SECRET_PAIR.sub(lambda m: m.group("k") + m.group("sep") + REDACTED, line)
+    line = _QUERY_VALUE.sub(lambda m: m.group("k") + REDACTED, line)
+    line = _SECRET_PAIR.sub(_pair, line)
+    line = _SECRET_HEADER.sub(_pair, line)
     return anonymize_paths(line)
 
 
@@ -271,12 +287,19 @@ PARTS = (
 def _secret_values():
     """Werte geheimer server.env-Schlüssel: falls sie anderswo (Log, URL)
     auftauchen, werden sie dort ebenfalls geschwärzt."""
+    values = set()
     try:
         env = config.read_serverenv()
+        values |= {v.strip() for k, v in env.items() if SECRET_KEY.search(k)}
     except Exception:  # noqa: BLE001
-        return []
-    values = {v.strip() for k, v in env.items() if SECRET_KEY.search(k) and len(v.strip()) >= 4}
-    return sorted(values, key=len, reverse=True)
+        pass
+    try:                                # geheim benannte Werte aus config.ini ebenso
+        parser = config._read_parser()
+        for section in parser.sections():
+            values |= {v.strip() for k, v in parser.items(section) if SECRET_KEY.search(k)}
+    except Exception:  # noqa: BLE001
+        pass
+    return sorted((v for v in values if len(v) >= 4), key=len, reverse=True)
 
 
 def _reason(exc):
