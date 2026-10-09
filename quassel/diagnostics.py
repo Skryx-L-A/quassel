@@ -83,7 +83,7 @@ def anonymize_paths(text):
 def redact_value(key, value):
     if SECRET_KEY.search(key or ""):
         return REDACTED if value else value
-    return anonymize_paths(_redact_url(value))
+    return redact_line(value)           # etwa ?api_key=… in einer Endpunkt-URL
 
 
 def _redact_url(text):
@@ -279,6 +279,16 @@ def _secret_values():
     return sorted(values, key=len, reverse=True)
 
 
+def _reason(exc):
+    """Grund ohne Dateiinhalt: configparser zitiert in seinen Meldungen die
+    kaputte Zeile, und die könnte ein Geheimnis sein."""
+    name = type(exc).__name__
+    if isinstance(exc, configparser.Error):
+        return name
+    msg = redact_line(str(exc))[:200]
+    return "%s: %s" % (name, msg) if msg else name
+
+
 def build_report(parts=PARTS, now=None):
     """Den ganzen Bericht als Text. Wirft nie: ein Teil, der scheitert, steht
     mit Grund im Bericht."""
@@ -296,7 +306,7 @@ def build_report(parts=PARTS, now=None):
         except subprocess.TimeoutExpired:
             out.append("<not collected: timed out>")
         except Exception as exc:  # noqa: BLE001 — ein Teil darf den Bericht nicht verhindern
-            out.append("<not collected: %s: %s>" % (type(exc).__name__, exc))
+            out.append("<not collected: %s>" % _reason(exc))
     text = "\n".join(out) + "\n"
     for secret in _secret_values():
         text = text.replace(secret, REDACTED)

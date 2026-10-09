@@ -54,7 +54,10 @@ It contains:
 - the Quassel version, the platform and the Python version;
 - the profile name and the port of the speech server;
 - the file name of the speech model (not its folder);
-- the settings in `config.ini` and `server.env`;
+- the settings in `config.ini` and `server.env`. Device names (microphone,
+  output for the signal tones) and your wake phrase stay in, because many
+  audio problems depend on them; a device name can contain a name you gave
+  the device;
 - whether the local speech server answers (a request to its start page, never
   to `/inference`);
 - the names of your per-app profiles in `profiles.ini`, without their app

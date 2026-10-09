@@ -177,10 +177,19 @@ def test_failing_part_is_marked_and_report_continues(env):
 
 
 def test_unreadable_config_does_not_stop_report(env):
-    env["CONFIG"].write_text("kaputt ohne abschnitt\n", encoding="utf-8")
+    env["CONFIG"].write_text("api_key = sk-broken-999\n[ai]\n", encoding="utf-8")
     text = diagnostics.build_report()
-    assert "<not collected:" in text
+    assert "<not collected: MissingSectionHeaderError>" in text
+    assert "sk-broken-999" not in text      # configparser zitiert die Zeile
     assert "== Server ==" in text
+
+
+def test_secret_in_endpoint_query_is_redacted(env):
+    env["CONFIG"].write_text("[ai]\nendpoint = https://h.example/v1?api_key=qq-777\n",
+                             encoding="utf-8")
+    text = diagnostics.build_report()
+    assert "qq-777" not in text
+    assert "endpoint = https://h.example/v1?api_key=<entfernt>" in text
 
 
 def test_server_down_is_reported(env, monkeypatch):
