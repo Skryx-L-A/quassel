@@ -183,6 +183,7 @@ transcribed.
 | Key | Default | Meaning |
 |---|---|---|
 | `mcp_history` | `false` | Expose a `history_list` tool to the local MCP client. Works only while `[history] enabled` is `true`; with the history off, entries left on disk are never shared. See [cli.md](cli.md). |
+| `mcp_ask` | `false` | Expose the `ask_user` tool: an MCP client may wait for your next dictation, which you start yourself with the hotkey, and receive it as text instead of having it inserted. The microphone never starts on its own. See [cli.md](cli.md). |
 
 ## `profiles.ini` (per-app profiles, opt-in)
 

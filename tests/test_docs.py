@@ -50,7 +50,8 @@ def test_config_md_does_not_list_keys_the_code_never_reads():
     elsewhere = {("meta", "version"), ("vad", "backend"), ("vad", "silero_model"),
                  ("vad", "autostop"), ("vad", "autostop_silence"),
                  ("wakeword", "spotter_model"), ("wakeword", "spotter_threshold"),
-                 ("wakeword", "verify"), ("mcp", "mcp_history"), ("stats", "typing_wpm")}
+                 ("wakeword", "verify"), ("mcp", "mcp_history"), ("mcp", "mcp_ask"),
+                 ("stats", "typing_wpm")}
     extra = sorted("[%s] %s" % (sec, key)
                    for sec, keys in _documented_keys().items() for key in keys
                    if (sec, key) not in read and (sec, key) not in elsewhere)
@@ -67,6 +68,7 @@ def test_vad_wakeword_and_mcp_keys_exist_in_their_modules():
     for key in ("spotter_model", "spotter_threshold", "verify"):
         assert key in documented["wakeword"] and '"%s"' % key in wake, key
     assert "mcp_history" in documented["mcp"] and '"mcp_history"' in mcp
+    assert "mcp_ask" in documented["mcp"] and '"mcp_ask"' in mcp
     stats = (ROOT / "quassel" / "stats.py").read_text(encoding="utf-8")
     assert "typing_wpm" in documented["stats"] and '"typing_wpm"' in stats
 
