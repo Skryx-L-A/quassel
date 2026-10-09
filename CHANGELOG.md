@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Changing a model in a Linux profile now restarts that profile's speech
+  server, so the new model takes effect without interrupting the installed app.
 - Linux profile commands now start, stop and signal only the selected profile;
   stopping a profile leaves the shared keyboard helper running.
 - Windows: when the audio driver stops responding while a recording ends,

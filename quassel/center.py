@@ -293,7 +293,7 @@ def restart_server():
                   "alter Server läuft weiter, kein Neustart", file=sys.stderr)
         server_mac.start()
     else:
-        sysctl("try-restart", "quassel-server")
+        sysctl("try-restart", profile.service())
 
 
 class MicTestError(Exception):

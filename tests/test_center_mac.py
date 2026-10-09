@@ -71,6 +71,16 @@ def test_daemon_active_true_on_mac(mac, runs):
     assert runs == []
 
 
+def test_restart_server_targets_linux_profile(monkeypatch):
+    calls = []
+    monkeypatch.setattr(center, "IS_WINDOWS", False)
+    monkeypatch.setattr(center, "IS_MAC", False)
+    monkeypatch.setenv("QUASSEL_PROFILE", "next")
+    monkeypatch.setattr(center, "sysctl", lambda *args: calls.append(args))
+    center.restart_server()
+    assert calls == [("try-restart", "quassel-server@next.service")]
+
+
 def test_autostart_enabled_reflects_plist(mac, agent_plist):
     assert center.autostart_enabled() is False
     agent_plist.write_bytes(b"x")
