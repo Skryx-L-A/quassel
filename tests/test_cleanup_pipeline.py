@@ -126,3 +126,25 @@ def test_llm_error_returns_raw(monkeypatch, reason):
 def test_invalid_level_and_bad_input():
     assert cleanup("abc", "other", cfg()).fallback_reason == "invalid_level"
     assert cleanup(None, "leicht", cfg()).fallback_reason == "invalid_input"
+
+
+@pytest.mark.parametrize("level", ["mittel", "stark"])
+def test_a_translated_word_next_to_a_url_is_rejected(monkeypatch, level):
+    """Alle drei gemessenen Modelle (SmolLM3, Qwen3-4B, Granite 4 micro) machten
+    aus „Öffne https://…" „Open https://…"; die zerlegte URL trug das über die
+    Ähnlichkeitsschwelle (Messung 2026-10-09 04:17)."""
+    raw = "Öffne https://example.com/alpha."
+    monkeypatch.setattr(ai, "chat_cleanup", lambda *a, **k: ("Open https://example.com/alpha.", None))
+    result = cleanup(raw, level, cfg())
+    assert result.text == raw
+    assert result.fallback_reason in ("word_diff", "word_added")
+
+
+def test_medium_may_drop_words_but_never_add_one(monkeypatch):
+    monkeypatch.setattr(ai, "chat_cleanup",
+                        lambda *a, **k: ("Wir sehen uns morgen im Büro.", None))
+    assert cleanup("Wir sehen uns morgen im Büro.", "mittel", cfg()).fallback_reason is None
+    monkeypatch.setattr(ai, "chat_cleanup",
+                        lambda *a, **k: ("Wir sehen uns dann morgen im Büro.", None))
+    result = cleanup("Wir sehen uns morgen im Büro.", "mittel", cfg())
+    assert result.fallback_reason == "word_added"

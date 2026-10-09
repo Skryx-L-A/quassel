@@ -40,6 +40,8 @@ _SENTENCES = re.compile(r"[.!?](?:\s|$)")
 _MEANING_WORDS = {"nicht", "nie", "kein", "keine", "ja", "nein", "not", "never",
                   "no", "yes", "heute", "morgen", "gestern", "today", "tomorrow",
                   "yesterday", "before", "after", "vor", "nach"}
+# Füllwörter, die ein Modell wieder einsetzen darf, ohne etwas umzuformulieren.
+_FILLER_WORDS = {"äh", "ähm", "aeh", "aehm", "öhm", "oehm", "uh", "um", "hm", "hmm"}
 LEVELS = ("aus", "leicht", "mittel", "stark")
 
 
@@ -102,8 +104,20 @@ def _check(before: str, after: str, level: str, terms: list[str]) -> str | None:
         return "answer_marker"
     a = [w.casefold() for w in _WORD.findall(before)]
     b = [w.casefold() for w in _WORD.findall(after)]
-    if SequenceMatcher(None, a, b, autojunk=False).ratio() < (0.80 if level == "mittel" else 0.70):
+    # Wortvergleich ohne Entitäten: eine URL zerfällt sonst in vier Wörter
+    # ("https", "example", "com", "alpha"), die eine übersetzte Anweisung
+    # ("Öffne" -> "Open") über die Schwelle tragen. Entitäten prüft unten
+    # ein eigener Vergleich.
+    plain_a = [w.casefold() for w in _WORD.findall(_ENTITY.sub(" ", before))]
+    plain_b = [w.casefold() for w in _WORD.findall(_ENTITY.sub(" ", after))]
+    if SequenceMatcher(None, plain_a, plain_b, autojunk=False).ratio() < (
+            0.80 if level == "mittel" else 0.70):
         return "word_diff"
+    if level == "mittel" and set(plain_b) - set(plain_a) - _FILLER_WORDS:
+        # Mittel entfernt nur Füllwörter, Wiederholungen und Fehlstarts und
+        # setzt Satzzeichen: ein Wort, das im Diktat nicht vorkam, ist eine
+        # Umformulierung oder Übersetzung.
+        return "word_added"
     if _entities(before) != _entities(after):
         return "entity_changed"
     if [itn._number(w) for w in a if itn._number(w) is not None] != [itn._number(w) for w in b if itn._number(w) is not None]:
