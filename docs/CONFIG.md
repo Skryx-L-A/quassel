@@ -57,7 +57,7 @@ limit, or it is replaced by the default.
 | `mic` | `default` | device name | Microphone to record from. `default` follows the system setting. |
 | `programmer_mode` | `false` | boolean | Programmer dictation: spoken symbols and identifiers become code text. Globally it applies when a dictation starts with "Code:"; a per-app profile can turn it on for every dictation. |
 | `auto_learn` | `false` | boolean | Add names and jargon from your dictations to the personal dictionary after two occurrences. Never active together with `programmer_mode`. |
-| `preroll_ms` | `0` | 0 to 2000 ms, falls back to 0 | Pre-roll buffer. Above 0, the microphone stays open for about three seconds after a dictation and the next one includes this much audio from before the hotkey press. Linux and macOS only; the Windows recorder has no pre-roll. On macOS the system microphone indicator stays visible while the input is open. |
+| `preroll_ms` | `0` | 0 to 2000 ms, falls back to 0 | Pre-roll buffer. Above 0, the microphone stays open for about three seconds after a dictation and the next one includes this much audio from before the hotkey press. Linux, macOS and Windows. On macOS and Windows the system microphone indicator stays visible while the input is open. |
 
 ### `[pill]`
 
@@ -172,11 +172,17 @@ local server, such as Ollama, llama-server or LM Studio) and `[ai] enabled` is
 not required. With no model set, `mittel` and `stark` fall back to the text as
 transcribed.
 
+### `[stats]`
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `typing_wpm` | `40` | 10 to 200 | Your typing speed in words per minute. The statistics page uses it to estimate the time dictation saved. |
+
 ### `[mcp]`
 
 | Key | Default | Meaning |
 |---|---|---|
-| `mcp_history` | `false` | Expose a `history_list` tool to the local MCP client. See [cli.md](cli.md). |
+| `mcp_history` | `false` | Expose a `history_list` tool to the local MCP client. Works only while `[history] enabled` is `true`; with the history off, entries left on disk are never shared. See [cli.md](cli.md). |
 
 ## `profiles.ini` (per-app profiles, opt-in)
 

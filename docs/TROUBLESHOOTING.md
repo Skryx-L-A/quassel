@@ -51,8 +51,13 @@ The logs do not contain dictated text.
 | `Didn't catch that` | Nothing usable was recognised. Typical causes: silence, a muted or wrong microphone, or a recording that held only a known silence phrase such as "Thank you for watching". Check the microphone test (below). |
 | `No sound from the microphone. Check mute, the selected input and microphone access.` | The pill shows a flat amber line while recording when nothing arrives from the microphone for 1.5 seconds. Check mute, the selected input in the control center, and the microphone permission. |
 | `No microphone — is it on and connected?` | The recorder could not start. Connect or switch on a microphone, or choose another input. On Linux `pw-record` or `parecord` must exist (the notification then says `Fehler: pw-record/parecord fehlt`). On macOS the notification `Fehler: Mikrofonzugriff fehlt` means no usable input device or no microphone permission. |
+| `The microphone stopped delivering sound during the recording. It may have been unplugged or disconnected.` | The input went away mid-dictation (unplugged, Bluetooth dropped, driver stopped the stream) before enough audio arrived. Reconnect it or pick another input. |
+| `The microphone stopped during the recording. Only the part before that was transcribed.` | Same cause, but enough audio arrived before the drop: the first part was inserted, the rest is missing. |
+| `The audio driver stopped responding. Restart Quassel to record again.` | Windows: stopping a recording hung inside the audio driver. Quassel refuses new recordings instead of writing half files until it restarts. |
+| `Listening…` | After the wake phrase on its own, Quassel records what you say next. A tone plays only when signal tones are on. |
 | `Whisper server unreachable` | The speech server did not answer. If Quassel just started or you switched to a big model, it may still be loading: try again in a moment. The recording is not lost; the message ends with `recording saved: <path>` and the file is a normal WAV you can transcribe later with the command-line client (`transcribe`, see [cli.md](cli.md)). If it never starts, read the speech server log (table above). |
-| `Text is on the clipboard – press Ctrl+V` | The text was recognised but the paste key did not arrive. On Linux this means `ydotoold` is not running: `systemctl --user status quassel-ydotoold`. Press Ctrl+V yourself meanwhile. |
+| `Dictation could not be inserted` | The text could neither be pasted nor left on the clipboard, for example because the clipboard held an image or file that Quassel will not overwrite. The recording is saved (the message names the file) and the text is in the history when the history is on. |
+| `Text is on the clipboard – press Ctrl+V` | The text was recognised but the paste key did not arrive. Quassel shows this only when the clipboard really holds your text. On Linux this means `ydotoold` is not running: `systemctl --user status quassel-ydotoold`. Press Ctrl+V yourself meanwhile. |
 | `The text couldn't be inserted. On macOS, allow Quassel in System Settings → Privacy & Security → Accessibility. The text is on the clipboard.` | macOS dropped the paste key. Grant *Accessibility* and restart Quassel. |
 | `Enter is blocked in this app` | A per-app profile with `allow_enter = off` (the shipped terminal profile) refused "press enter". This is the terminal guard working; edit `profiles.ini` to change it. |
 | `Dictation stopped` | You used "Stop dictation now" (menu entry, or `kill -USR2 <daemon pid>`). Nothing is inserted after an emergency stop. |
@@ -135,6 +140,15 @@ Hyprland or Sway.
 **Two instances (`QUASSEL_PROFILE`).** A named
 profile uses its own folders and its own port; see [CONFIG.md](CONFIG.md). The
 installed app is unaffected.
+
+**Settings were reset, and there is a file `config.ini.damaged-…`.** The
+settings file could not be read completely (for example after a manual edit).
+Before saving a change, Quassel kept the whole damaged file next to it; copy the
+lost settings back from there. Quassel never overwrites a damaged file silently.
+
+**Quassel refuses to start with "QUASSEL_PROFILE=… is invalid".** Profile names
+may only contain a-z, 0-9 and "-", at most 32 characters. A profile also may not
+use port 8765, which belongs to the installed Quassel.
 
 ## Still stuck
 
