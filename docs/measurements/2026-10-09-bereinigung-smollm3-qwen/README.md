@@ -30,6 +30,12 @@ Schutzprüfung, sonst Rohtext.
 | 04:17 | Granite 4 micro, mittel | 31,5 % | 34 / 29 | 13 |
 | 04:17 | Granite 4 micro, stark | 43,0 % | 61 / 25 | 11 |
 | 04:17 | SmolLM3, mittel (Wiederholung) | 40,0 % | 63 / 17 | 10 |
+| 04:39 (Schutz-Fix URL, `2763980`) | Qwen3-4B, mittel / stark | 37,5 % / 55,5 % | 55 / 20 · 98 / 13 | 8 / 0 |
+| 04:39 | Granite 4 micro, mittel / stark | 39,0 % / 48,0 % | 49 / 29 · 71 / 25 | 3 / 1 |
+| 04:39 | SmolLM3, mittel / stark | 50,0 % / 51,0 % | 83 / 17 · 86 / 16 | 0 / 1 |
+| 05:02 (deutsche Stufenanweisung `a5d7191`, Schutz für Markup, Fragen, Sprache `0dac2d3`) | Qwen3-4B, mittel / stark | 30,0 % / **20,5 %** | 40 / 20 · **28** / 13 | 9 / 8 |
+| 05:02 | Granite 4 micro, mittel / stark | 54,5 % / 56,0 % | 77 / 32 · 85 / 27 | 0 / 0 |
+| 05:02 | SmolLM3, mittel / stark | 30,5 % / 26,5 % | 44 / 17 · 37 / 16 | 0 / 3 |
 
 Gründe für den Rückfall im Lauf 04:04 (SmolLM3 mittel / qwen mittel): Wortabweichung 48 / 23,
 geschützte Eingabe verändert (Frage oder Injection umgeschrieben) 18 / 24, Entität verändert
@@ -40,6 +46,17 @@ Latenz je Fall (Median, Lauf 04:04, Maschine ohne fremde Last): SmolLM3 0,20 s,
 qwen2.5-coder:3b 0,54 s.
 
 ## Einordnung
+
+**Stand nach dem letzten Lauf (05:02):** Die deutsche Stufenanweisung halbiert die Rückfälle
+auf Deutsch (Qwen3-4B stark: 98 auf 28, SmolLM3 mittel: 83 auf 44). Granite 4 micro liefert mit
+der deutschen Anweisung oft kein gültiges JSON mehr (70 bis 75 Schemafehler) und fällt damit
+zurück. Die einzigen unsicheren Annahmen in diesem Lauf waren gestrichenes „Bitte"/„Please";
+seit `2aef8ab` zählen Höflichkeitswörter als Inhalt. Bestes Modell dieser Nacht:
+**Qwen3-4B-Instruct-2507 auf Stufe stark** (20,5 % Rückfall, Apache-2.0, 0,52 s je Fall);
+eine Vorgabe ist das erst nach einem Lauf auf dem jetzigen Stand und einer Prüfung am Gerät.
+
+Frühere Läufe:
+
 
 - Die englische Stufen-Anweisung vor dem deutschen Diktat ließ SmolLM3 auf Englisch antworten.
   Der Schutz verwarf das jedes Mal, es kam also kein falscher Text heraus, aber auch keine
