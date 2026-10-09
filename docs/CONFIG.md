@@ -158,6 +158,8 @@ has no control center page yet; enable it in the file.
 |---|---|---|---|
 | `enabled` | `false` | boolean | Master switch. |
 | `level` | `aus` | `aus`, `leicht`, `mittel`, `stark` (case does not matter) | `aus` does nothing. `leicht` removes clear filler words ("äh", "um"), immediate repeats and simple self-corrections, applies your correction list and normalises numbers, all locally and without a model. `mittel` and `stark` additionally ask the model from `[ai]` to polish the text (`stark` allows larger edits). Other values mean `aus`. |
+| `decider_url` | empty (off) | an `http://` or `https://` address on this computer (`localhost`, `127.0.0.1`, `::1`) | Optional second check for `mittel` and `stark`: a local typed decision service that speaks the Jev format (`POST <url>/v1/systemone`). After the checks below accept an edit, Quassel asks it whether the cleaned text says the same as the dictation and keeps the edit only on a confident yes. Any other answer, or no answer, keeps the text as transcribed. An address on another computer is ignored. |
+| `decider_timeout` | `2.0` | 0.1 to 30 seconds | How long to wait for the decision service. |
 
 The model's result is checked before it is used. When it is empty, too long or
 too short, starts like an answer ("Sure, here is"), changes a number, URL,
@@ -171,6 +173,12 @@ the request goes to `<endpoint>/v1/chat/completions` (any OpenAI-compatible
 local server, such as Ollama, llama-server or LM Studio) and `[ai] enabled` is
 not required. With no model set, `mittel` and `stark` fall back to the text as
 transcribed.
+
+These checks compare words, numbers and entities. They do not see a swapped
+role or an opposite word ("rejected" turned into "accepted"); in a measurement
+on 40 synthetic pairs the `stark` level let 11 of 20 such changes through. The
+optional `decider_url` closes that gap (see
+[the measurement](measurements/2026-10-09-jev-entscheider/README.md)).
 
 ### `[stats]`
 

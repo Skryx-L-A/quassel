@@ -189,6 +189,20 @@ def cleanup(raw: str, level: str, cfg, context=None) -> CleanupResult:
             rejection = _check(pre, edited, level, terms)
             if rejection:
                 return CleanupResult(raw, used_llm=called, fallback_reason=rejection)
+            # Die Wortprüfung sieht keinen Rollentausch und kein Gegenwort. Ist
+            # ein lokaler Entscheider eingestellt, muss er die Bedeutung bestätigen.
+            decider_url = getattr(cfg, "cleanup_decider_url", "")
+            if decider_url:
+                from . import decider
+                verdict = decider.same_meaning(
+                    decider_url, pre, edited,
+                    timeout=getattr(cfg, "cleanup_decider_timeout", 2.0))
+                if verdict is None:
+                    return CleanupResult(raw, used_llm=called,
+                                         fallback_reason="decider_unavailable")
+                if not verdict:
+                    return CleanupResult(raw, used_llm=called,
+                                         fallback_reason="decider_meaning")
         final = itn.normalize(edited)
         if not final or not 0.20 <= len(final) / max(len(edited), 1) <= 1.6:
             return CleanupResult(raw, used_llm=called, fallback_reason="itn_length")

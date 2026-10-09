@@ -98,6 +98,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spoken when text cleanup or number formatting would change them.
 
 ### Added
+- Clean up dictation can ask a local decision service whether the cleaned text
+  still says the same as your dictation (`[cleanup] decider_url`, off by
+  default, addresses on this computer only). The word checks miss swapped roles
+  and opposite words; with the service the edit is kept only on a confident
+  yes, and the text as transcribed is inserted otherwise.
 - "Copy diagnostics" on the About page of the control center puts a plain-text
   report for bug reports on the clipboard, or saves it as a file that only you
   can read. It holds the version, platform, profile, model file name, your

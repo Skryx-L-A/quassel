@@ -305,6 +305,12 @@ class Cfg:
         self.cleanup_level = g("cleanup", "level", fallback="aus").strip().lower()
         if self.cleanup_level not in ("aus", "leicht", "mittel", "stark"):
             self.cleanup_level = "aus"
+        # Optionaler lokaler Entscheider als zweite Prüfung (quassel/decider.py).
+        # Nur eine Adresse auf diesem Rechner; alles andere bleibt aus.
+        from . import decider
+        url = g("cleanup", "decider_url", fallback="").strip()
+        self.cleanup_decider_url = url if decider.usable(url) else ""
+        self.cleanup_decider_timeout = _getfloat(p, "cleanup", "decider_timeout", 2.0, 0.1, 30.0)
         return True
 
     @property
