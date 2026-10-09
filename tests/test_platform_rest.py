@@ -57,16 +57,9 @@ def test_linux_restart_requires_matching_profile_service(monkeypatch):
 
 
 def test_mac_app_handles_only_own_daemon_request(tmp_path, monkeypatch):
-    import importlib.util
-    from pathlib import Path
-    from quassel import server_mac, state
+    from quassel import mac_app as entry, server_mac, state
 
-    script = Path(__file__).resolve().parents[1] / "packaging/macos/quassel_mac_main.py"
-    spec = importlib.util.spec_from_file_location("quassel_mac_entry_test", script)
-    entry = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(entry)
     monkeypatch.setattr(state, "RUNDIR", str(tmp_path))
-    monkeypatch.setattr(entry, "_crash_log", lambda _: None)
     monkeypatch.setattr(server_mac, "_proc", SimpleNamespace(poll=lambda: None))
     events = []
     monkeypatch.setattr(server_mac, "stop", lambda: events.append("stop"))
@@ -76,13 +69,13 @@ def test_mac_app_handles_only_own_daemon_request(tmp_path, monkeypatch):
     request = {"token": "probe", "daemon_pid": child.pid, "app_pid": os.getpid(),
                "profile": daemon.profile.name(), "created": daemon.time.time()}
     (tmp_path / "server-restart.request").write_text(json.dumps(request))
-    entry._handle_server_restart(app)
+    entry.handle_server_restart(app)
     assert events == ["stop", "start"]
     assert json.loads((tmp_path / "server-restart.ack").read_text()) == {
         "token": "probe", "started": True}
     request["daemon_pid"] = 9999
     (tmp_path / "server-restart.request").write_text(json.dumps(request))
-    entry._handle_server_restart(app)
+    entry.handle_server_restart(app)
     assert events == ["stop", "start"]
 
 
@@ -103,3 +96,14 @@ def test_mac_daemon_request_requires_matching_ack(tmp_path, monkeypatch):
 
     monkeypatch.setattr(daemon.fsutil, "atomic_write", write_and_ack)
     assert daemon._request_mac_server_restart(timeout=0.1)
+
+
+def test_source_start_supervisor_answers_restart_requests(monkeypatch):
+    """python -m quassel.mac_app has no bundle entry; _supervise must answer too."""
+    from quassel import mac_app
+    seen = []
+    monkeypatch.setattr(mac_app, "handle_server_restart", seen.append)
+    monkeypatch.setattr(mac_app, "rotate_log", lambda _path: None)
+    app = SimpleNamespace(enabled=True, daemon=SimpleNamespace(poll=lambda: None))
+    mac_app.MacApp._supervise(app)
+    assert seen == [app]

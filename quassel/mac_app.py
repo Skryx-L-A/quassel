@@ -130,6 +130,49 @@ def check_ffmpeg(tray):
     return False
 
 
+def handle_server_restart(app):
+    """Honor a fresh request only from this App's live daemon child."""
+    # Bundle und Quellstart teilen diesen Empfänger; die Gegenseite ist
+    # daemon._request_mac_server_restart. RUNDIR erst hier lesen (Profil, Tests).
+    import json
+    from . import fsutil, state
+
+    request_path = os.path.join(state.RUNDIR, "server-restart.request")
+    ack_path = os.path.join(state.RUNDIR, "server-restart.ack")
+    try:
+        with open(request_path, encoding="utf-8") as source:
+            request = json.load(source)
+    except (OSError, ValueError):
+        return
+    try:
+        os.remove(request_path)
+    except OSError:
+        pass
+    if not isinstance(request, dict):
+        return
+    child = app.daemon
+    if (not app.enabled or child is None or child.poll() is not None
+            or request.get("daemon_pid") != child.pid
+            or request.get("app_pid") != os.getpid()
+            or request.get("profile") != profile.name()
+            or not isinstance(request.get("token"), str)
+            or not isinstance(request.get("created"), (int, float))
+            or abs(time.time() - request["created"]) > 30):
+        return
+    owned = server_mac._proc is not None and server_mac._proc.poll() is None
+    started = False
+    if owned:
+        try:
+            server_mac.stop()
+            started = bool(server_mac.start())
+            started = (started and server_mac._proc is not None
+                       and server_mac._proc.poll() is None)
+        except (OSError, ValueError):
+            started = False
+    fsutil.atomic_write(ack_path, json.dumps({"token": request["token"],
+                                              "started": started}), mode=0o600)
+
+
 class MacApp:
     """Lebenszyklus der Kindprozesse + Tray/Pille (Qt-Objekte injizierbar).
 
@@ -197,6 +240,7 @@ class MacApp:
         gestartet."""
         if not self.enabled or self.daemon is None:
             return
+        handle_server_restart(self)
         rotate_log(daemon_log_path())     # billig: ein stat je Aufruf
         if self.daemon.poll() is None:
             return
