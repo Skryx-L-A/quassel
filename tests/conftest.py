@@ -19,12 +19,17 @@ import pytest
 # umbiegt, lässt die anderen auf der echten Installation (so überschrieb ein
 # Test das echte Wörterbuch). Darum zeigt das Home schon vor dem ersten Import
 # von quassel auf einen Wegwerfordner; tests/test_isolation.py prüft das.
+# Windows: expanduser liest USERPROFILE, nicht HOME; Quassel nutzt dort APPDATA.
+os.environ.setdefault("QUASSEL_TEST_REAL_HOME", os.path.expanduser("~"))
 _TEST_HOME = tempfile.mkdtemp(prefix="quassel-test-home-")
 atexit.register(shutil.rmtree, _TEST_HOME, True)
-os.environ["HOME"] = _TEST_HOME
+os.environ["HOME"] = os.environ["USERPROFILE"] = _TEST_HOME
 for _var in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
              "APPDATA", "LOCALAPPDATA"):
     os.environ.pop(_var, None)
+if os.name == "nt":
+    os.environ["APPDATA"] = os.path.join(_TEST_HOME, "AppData", "Roaming")
+    os.environ["LOCALAPPDATA"] = os.path.join(_TEST_HOME, "AppData", "Local")
 # Linux: Laufzeitordner (Sockets, PID-Dateien) liegt sonst unter /run/user/<uid>.
 os.environ["XDG_RUNTIME_DIR"] = os.path.join(_TEST_HOME, "run")
 os.makedirs(os.environ["XDG_RUNTIME_DIR"], mode=0o700)

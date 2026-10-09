@@ -7,11 +7,11 @@ Wörterbuch der installierten App. Darum zeigt in Tests das ganze Home auf einen
 Wegwerfordner, bevor quassel importiert wird.
 """
 import os
-import pwd
 
 from quassel import config, state
 
-REAL_HOME = os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir)
+# conftest merkt sich das echte Home, bevor es umgebogen wird.
+REAL_HOME = os.path.realpath(os.environ["QUASSEL_TEST_REAL_HOME"])
 
 
 def _inside_real_home(path):
@@ -22,6 +22,11 @@ def test_config_paths_are_not_in_the_real_home():
     for name in ("CONFDIR", "DATADIR", "CONFIG", "DICTIONARY", "LEARNED",
                  "REPLACEMENTS", "HISTORY", "AI_MODES"):
         assert not _inside_real_home(getattr(config, name)), name
+
+
+def test_the_real_home_is_known():
+    assert os.path.isdir(REAL_HOME)
+    assert os.path.realpath(os.path.expanduser("~")) != REAL_HOME
 
 
 def test_run_dir_is_not_in_the_real_home():
