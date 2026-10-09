@@ -198,7 +198,14 @@ def daemon_active():
     return sysctl("is-active", "--quiet", daemon_unit()).returncode == 0
 
 
+def profile_autostart_blocked():
+    """These platforms have only the installed app's autostart identity."""
+    return bool(os.environ.get("QUASSEL_PROFILE")) and (IS_WINDOWS or IS_MAC)
+
+
 def autostart_enabled():
+    if profile_autostart_blocked():
+        return False
     if IS_WINDOWS:
         import winreg
         try:
@@ -227,6 +234,8 @@ def mac_autostart_set(on):
     und sofort per launchctl bootstrap/bootout an-/abmelden. Gestartet wird
     über 'open' — das aktiviert eine schon laufende Instanz statt eine
     zweite zu spawnen."""
+    if profile_autostart_blocked():
+        raise ValueError("profile autostart is unavailable on macOS")
     uid = os.getuid()
     if on:
         app = mac_app_path()
@@ -259,6 +268,8 @@ def mac_autostart_set(on):
 
 def autostart_set(on):
     """Windows: Run-Key in der Registry (gleicher Wert wie im Inno-Setup)."""
+    if profile_autostart_blocked():
+        raise ValueError("profile autostart is unavailable on Windows")
     import winreg
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
                         winreg.KEY_SET_VALUE) as k:
@@ -1255,6 +1266,11 @@ class Center(QMainWindow):
         g = self.group(tr("sec_system"), lay)
         self.auto = QCheckBox(tr("autostart"))
         self.auto.setChecked(autostart_enabled())
+        if profile_autostart_blocked():
+            self.auto.setEnabled(False)
+            self.auto.setToolTip(
+                "Profile autostart is unavailable on this platform. "
+                "Profil-Autostart ist auf dieser Plattform nicht verfügbar.")
         self.auto.toggled.connect(self.on_autostart)
         g.addWidget(self.auto)
         self.uilang = self.guard(QComboBox())
@@ -1529,6 +1545,8 @@ class Center(QMainWindow):
         self.cfg.reload(force=True)
 
     def on_autostart(self, on):
+        if profile_autostart_blocked():
+            return
         if IS_WINDOWS:
             autostart_set(on)
         elif IS_MAC:

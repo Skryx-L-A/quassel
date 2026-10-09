@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Profile settings on macOS and Windows no longer change the installed app's
+  login startup setting; profile startup is unavailable on those platforms.
 - Changing a model in a Linux profile now restarts that profile's speech
   server, so the new model takes effect without interrupting the installed app.
 - Linux profile commands now start, stop and signal only the selected profile;
