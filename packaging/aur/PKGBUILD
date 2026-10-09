@@ -65,7 +65,7 @@ package() {
   find "$pkgdir/usr/lib/quassel" -name __pycache__ -type d -prune -exec rm -rf {} +
 
   # Startskripte: die Quellen suchen unter $HOME/.local/lib/quassel
-  for b in quasseld quassel-type quassel-pill quassel-ctl quassel-python; do
+  for b in quasseld quassel-type quassel-pill quassel-ctl quassel-python quassel-type-cli; do
     install -Dm755 "bin/$b" "$pkgdir/usr/bin/$b"
     sed -i 's|\$HOME/\.local/lib/quassel|/usr/lib/quassel|g' "$pkgdir/usr/bin/$b"
   done

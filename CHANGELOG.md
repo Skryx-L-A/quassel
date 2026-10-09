@@ -21,6 +21,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   being removed; it no longer does.
 - With the history switched off, MCP clients can no longer read old entries
   that are still on disk.
+- The command-line launcher is now included in Linux installations and
+  packages, so `quassel-type-cli` is available after setup.
+- Saved transcripts and subtitles now use private file permissions.
+- Profile settings on macOS and Windows no longer change the installed app's
+  login startup setting; profile startup is unavailable on those platforms.
+- Changing a model in a Linux profile now restarts that profile's speech
+  server, so the new model takes effect without interrupting the installed app.
+- Linux profile commands now start, stop and signal only the selected profile;
+  stopping a profile leaves the shared keyboard helper running.
 - Windows: when the audio driver stops responding while a recording ends,
   Quassel now says to restart it instead of claiming the microphone is busy.
 - Model downloads from Hugging Face show real progress instead of jumping to

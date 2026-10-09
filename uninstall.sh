@@ -30,7 +30,8 @@ systemctl --user disable quasseld quassel-server quassel-pill quassel-ydotoold \
     2>/dev/null || true
 
 rm -f "$BIN"/quasseld "$BIN"/quassel-type "$BIN"/quassel-pill \
-      "$BIN"/quassel-ctl "$BIN"/quassel-python "$BIN"/quassel-mac
+      "$BIN"/quassel-ctl "$BIN"/quassel-python "$BIN"/quassel-mac \
+      "$BIN"/quassel-type-cli
 rm -f "$UNITS"/quassel*.service
 rm -f "$APPS/quassel.desktop"
 rm -f "$ICONS/scalable/apps/quassel-voice.svg"

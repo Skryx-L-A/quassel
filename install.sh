@@ -257,7 +257,8 @@ cp -r "$SRC/quassel" "$LIB/quassel"
 rm -rf "$LIB/assets"
 cp -r "$SRC/assets" "$LIB/assets"        # Icon-Fallback + Ton-Dateien (beep)
 install -m 755 "$SRC/bin/quasseld" "$SRC/bin/quassel-type" "$SRC/bin/quassel-pill" \
-               "$SRC/bin/quassel-ctl" "$SRC/bin/quassel-python" "$BIN/"
+               "$SRC/bin/quassel-ctl" "$SRC/bin/quassel-python" \
+               "$SRC/bin/quassel-type-cli" "$BIN/"
 mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/share/applications" \
          "$HOME/.config/quassel"
 install -m 644 "$SRC"/systemd/*.service "$HOME/.config/systemd/user/"

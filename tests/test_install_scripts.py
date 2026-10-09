@@ -40,6 +40,15 @@ def test_python_launchers_use_the_version_checked_helper():
         assert "quassel-python" in content
 
 
+def test_online_and_offline_installers_ship_the_cli_launcher():
+    online = (ROOT / "install.sh").read_text(encoding="utf-8")
+    offline = (ROOT / "scripts/offline/bundle-files/install.sh").read_text(
+        encoding="utf-8")
+    assert '"$SRC/bin/quassel-type-cli"' in online
+    assert '"$BIN/quassel-type-cli"' in offline
+    assert 'quassel.cli' in offline
+
+
 def test_requirements_are_pinned_and_used_by_the_linux_installer():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     dependencies = [line for line in requirements.splitlines()
@@ -79,7 +88,7 @@ def test_ci_runs_the_full_offline_pytest_suite():
 def test_uninstaller_removes_every_user_file_and_asks_before_system_changes():
     uninstaller = (ROOT / "uninstall.sh").read_text(encoding="utf-8")
     for launcher in ("quasseld", "quassel-type", "quassel-pill", "quassel-ctl",
-                     "quassel-python"):
+                     "quassel-python", "quassel-type-cli"):
         assert f'"$BIN"/{launcher}' in uninstaller
     assert "quassel-voice.svg" in uninstaller
     assert "quassel-voice.png" in uninstaller
@@ -720,7 +729,7 @@ def test_pkgbuild_package_installs_every_launcher_unit_and_icon(tmp_path):
     pkg = tmp_path / "pkg"
 
     for launcher in ("quasseld", "quassel-type", "quassel-pill", "quassel-ctl",
-                     "quassel-python"):
+                     "quassel-python", "quassel-type-cli"):
         text = (pkg / "usr" / "bin" / launcher).read_text(encoding="utf-8")
         assert ".local/lib/quassel" not in text
     assert "/usr/lib/quassel" in (pkg / "usr/bin/quasseld").read_text(encoding="utf-8")

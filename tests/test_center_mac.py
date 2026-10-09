@@ -71,6 +71,16 @@ def test_daemon_active_true_on_mac(mac, runs):
     assert runs == []
 
 
+def test_restart_server_targets_linux_profile(monkeypatch):
+    calls = []
+    monkeypatch.setattr(center, "IS_WINDOWS", False)
+    monkeypatch.setattr(center, "IS_MAC", False)
+    monkeypatch.setenv("QUASSEL_PROFILE", "next")
+    monkeypatch.setattr(center, "sysctl", lambda *args: calls.append(args))
+    center.restart_server()
+    assert calls == [("try-restart", "quassel-server@next.service")]
+
+
 def test_autostart_enabled_reflects_plist(mac, agent_plist):
     assert center.autostart_enabled() is False
     agent_plist.write_bytes(b"x")
@@ -116,6 +126,28 @@ def test_autostart_off_boots_out_and_removes_plist(mac, agent_plist, runs):
 def test_autostart_off_without_plist_is_quiet(mac, agent_plist, runs):
     center.mac_autostart_set(False)     # kein Plist vorhanden: kein Fehler
     assert not agent_plist.exists()
+
+
+def test_profile_autostart_cannot_touch_default_mac_agent(
+        mac, agent_plist, runs, monkeypatch):
+    monkeypatch.setenv("QUASSEL_PROFILE", "next")
+    agent_plist.write_bytes(b"installed app")
+    assert center.autostart_enabled() is False
+    with pytest.raises(ValueError, match="profile"):
+        center.mac_autostart_set(False)
+    with pytest.raises(ValueError, match="profile"):
+        center.mac_autostart_set(True)
+    assert agent_plist.read_bytes() == b"installed app"
+    assert runs == []
+
+
+def test_profile_autostart_cannot_touch_default_windows_registry(monkeypatch):
+    monkeypatch.setattr(center, "IS_WINDOWS", True)
+    monkeypatch.setattr(center, "IS_MAC", False)
+    monkeypatch.setenv("QUASSEL_PROFILE", "next")
+    assert center.autostart_enabled() is False
+    with pytest.raises(ValueError, match="profile"):
+        center.autostart_set(False)
 
 
 def test_mac_app_path_none_when_not_frozen(monkeypatch):

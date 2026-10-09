@@ -102,6 +102,25 @@ def test_raw_last_asks_the_linux_daemon_by_signal(monkeypatch, capsys):
     assert "clipboard" in out
 
 
+def test_profile_control_prefers_checkout_launcher(monkeypatch):
+    run = _Run()
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.setenv("QUASSEL_PROFILE", "next")
+    monkeypatch.setattr(cli.shutil, "which", lambda _: "/old/quassel-ctl")
+    monkeypatch.setattr(cli.subprocess, "run", run)
+    assert cli._control("toggle") == 0
+    assert run.calls[0][0].endswith("/bin/quassel-ctl")
+
+
+def test_invalid_profile_control_never_calls_installed_launcher(monkeypatch):
+    run = _Run()
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.setenv("QUASSEL_PROFILE", "../next")
+    monkeypatch.setattr(cli.subprocess, "run", run)
+    assert cli._control("panic") == cli.EXIT_USAGE
+    assert run.calls == []
+
+
 def test_raw_last_without_a_running_daemon(monkeypatch, capsys):
     run = _Run(active=False)
     monkeypatch.setattr(cli.sys, "platform", "linux")
