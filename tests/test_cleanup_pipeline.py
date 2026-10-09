@@ -46,7 +46,7 @@ def test_middle_uses_llm_then_itn(monkeypatch):
 
 
 def test_strong_accepts_same_reply_rejected_by_middle(monkeypatch):
-    raw = "Please send the report to the team tomorrow."
+    raw = "So send the report to the team tomorrow."
     edited = "Send report to team tomorrow."
     monkeypatch.setattr(ai, "chat_cleanup", lambda *a, **k: (edited, None))
     middle = cleanup(raw, "mittel", cfg())
@@ -170,3 +170,15 @@ def test_guard_still_accepts_a_real_cleanup_in_both_languages(monkeypatch):
         monkeypatch.setattr(ai, "chat_cleanup", lambda *a, edited=edited, **k: (edited, None))
         result = cleanup(raw, "mittel", cfg())
         assert result.fallback_reason is None, (raw, result.fallback_reason)
+
+
+@pytest.mark.parametrize("raw,edited", [
+    ("Bitte prüfe PostgreSQL morgen.", "Prüfe PostgreSQL morgen."),
+    ("Please check FastAPI tomorrow.", "Check FastAPI tomorrow."),
+])
+def test_politeness_is_content_not_filler(monkeypatch, raw, edited):
+    """Gemessen 2026-10-09 05:02: Qwen3-4B und SmolLM3 strichen „Bitte"/„Please"."""
+    monkeypatch.setattr(ai, "chat_cleanup", lambda *a, **k: (edited, None))
+    for level in ("mittel", "stark"):
+        result = cleanup(raw, level, cfg())
+        assert result.text == raw and result.fallback_reason == "meaning_word_changed"

@@ -39,7 +39,10 @@ _INSTRUCTION_OVERRIDE = re.compile(
 _SENTENCES = re.compile(r"[.!?](?:\s|$)")
 _MEANING_WORDS = {"nicht", "nie", "kein", "keine", "ja", "nein", "not", "never",
                   "no", "yes", "heute", "morgen", "gestern", "today", "tomorrow",
-                  "yesterday", "before", "after", "vor", "nach"}
+                  "yesterday", "before", "after", "vor", "nach",
+                  # Höflichkeit ist in einer Nachricht an Menschen Inhalt, kein
+                  # Füllwort (Qwen3-4B und SmolLM3 strichen „Bitte"/„Please").
+                  "bitte", "please", "danke", "thanks"}
 # Häufige Funktionswörter je Sprache: tauchen im Ergebnis welche der anderen
 # Sprache neu auf, hat das Modell (teilweise) übersetzt.
 _DE_WORDS = {"der", "die", "das", "den", "dem", "des", "und", "ist", "sind", "mit",
