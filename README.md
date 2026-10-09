@@ -37,8 +37,11 @@ one-line installer (unsigned — building from source is still available too, se
 - **Keyboard-layout safe:** pastes via clipboard — QWERTZ/AZERTY umlauts survive
 - **GPU accelerated:** NVIDIA (CUDA) and AMD/Intel (Vulkan) auto-detected
 - **Bilingual UI:** English and German, follows your system language
-- **Transcribe files:** pick an audio or video file in the control center, or use
-  the command line to get plain text, JSON, or SRT/WebVTT subtitles
+- **Transcribe files:** pick an audio or video file in the control center and
+  save the result as text, SRT or WebVTT, or use the command line to get plain
+  text, JSON, or subtitles
+- **Raw text back:** after a cleaned-up dictation, put the unedited text on the
+  clipboard from the menu (macOS, Windows), the control center or the command line
 
 ### Optional features — opt-in, default off
 
@@ -57,13 +60,17 @@ explained in [docs/CONFIG.md](docs/CONFIG.md).
   `stark` (plus a local language model through an OpenAI-compatible endpoint).
   The result is checked, and on any doubt the text as transcribed is inserted.
 - **Local AI modes:** reshape a dictation as an email, a list, formal and more
-  through a local Ollama model ("as an email ..."), plus modes of your own.
+  through a local model on Ollama or any OpenAI-compatible server
+  ("as an email ..."), plus modes of your own.
 - **Hands-free auto-stop:** `[vad] autostop = true` ends a double-tap dictation
   by itself after a pause, but only once you have spoken.
-- **Pre-roll buffer** (Linux and macOS): `[speech] preroll_ms = 300` includes the
-  moment before you pressed the keys. The microphone then stays open for about
-  three seconds after each dictation, so on macOS the system's microphone
-  indicator stays visible during that time.
+- **Pre-roll buffer:** `[speech] preroll_ms = 300` includes the moment before you
+  pressed the keys. The microphone then stays open for about three seconds after
+  each dictation, so the system's microphone indicator (macOS, Windows) stays
+  visible during that time.
+- **German "ß" for fine-tuned models:** a German fine-tuned speech model writes
+  "grosses" for "großes"; Quassel restores "ß" from a word list
+  (`[speech] eszett`, automatic with such a model, `off` for Swiss German).
 - **Wake word (beta):** say a phrase (default "Hey Quassel") instead of pressing
   keys. A small keyword model can sit in front of the speech engine so it does not
   transcribe every sentence said in the room; Quassel ships no such model.
