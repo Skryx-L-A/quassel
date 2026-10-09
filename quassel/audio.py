@@ -953,6 +953,8 @@ class Recorder:
                 return
             self._warm = None
             self._warm_timer = None
-            capture.close()
-            if capture.abandoned:
-                self._abandoned = True
+        # Außerhalb der Sperre: close() wartet bis zu ~15 s auf Gerät und
+        # Prozess, start()/stop() und der Not-Aus dürfen dahinter nicht hängen.
+        capture.close()
+        if capture.abandoned:
+            self._abandoned = True
