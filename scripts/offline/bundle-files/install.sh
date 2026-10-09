@@ -89,13 +89,15 @@ EOF
   echo "export QUASSEL_CENTER_CMD=\"$BIN/quassel-type\""
   echo "exec \"$PY\" -m quassel.pill_qt \"\$@\""; } > "$BIN/quassel-pill"
 { echo '#!/usr/bin/env bash'; common_env; echo "exec \"$PY\" -m quassel.center \"\$@\""; } > "$BIN/quassel-type"
+{ echo '#!/usr/bin/env bash'; common_env; echo "exec \"$PY\" -m quassel.cli \"\$@\""; } > "$BIN/quassel-type-cli"
 { echo '#!/usr/bin/env bash'
+  echo 'if [[ -n "${QUASSEL_PROFILE:-}" ]]; then echo "Profile control is unavailable in this offline bundle" >&2; exit 2; fi'
   echo "case \"\${1:-}\" in"
   echo "  start) systemctl --user start quasseld quassel-server ;;"
   echo "  stop)  systemctl --user stop quasseld quassel-server quassel-ydotoold ;;"
   echo "  *) echo 'Aufruf: quassel-ctl start|stop' ;;"
   echo "esac"; } > "$BIN/quassel-ctl"
-chmod +x "$BIN/quasseld" "$BIN/quassel-pill" "$BIN/quassel-type" "$BIN/quassel-ctl"
+chmod +x "$BIN/quasseld" "$BIN/quassel-pill" "$BIN/quassel-type" "$BIN/quassel-type-cli" "$BIN/quassel-ctl"
 ok "Launcher in $BIN"
 
 # ---------------------------------------------------------------------------

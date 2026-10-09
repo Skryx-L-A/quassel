@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- The command-line launcher is now included in Linux installations and
+  packages, so `quassel-type-cli` is available after setup.
 - Saved transcripts and subtitles now use private file permissions.
 - Profile settings on macOS and Windows no longer change the installed app's
   login startup setting; profile startup is unavailable on those platforms.
