@@ -29,6 +29,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The emergency stop signal (`SIGUSR2`, the "Stop dictation now" menu item on
   macOS) can no longer freeze Quassel when it arrives while a recording is
   starting or ending.
+- After saying only the wake phrase, the pill now shows the level of the
+  wake recording and no longer warns about a silent microphone while you speak.
 - A damaged settings file is no longer replaced by the part that could still be
   read: Quassel keeps a copy next to it (`config.ini.damaged-…`) before saving.
 - The dictation history could lose a new entry while expired entries were

@@ -32,7 +32,7 @@ import time
 from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18n,
                power, profiles, progmode, selfheal, stats, textproc, textreplace, vad,
                wakeword, whisperclient)
-from .audio import LevelPump, RATE, SAMPLE_BYTES
+from .audio import LevelPump, RATE, SAMPLE_BYTES, rms_level
 from .backends.base import SpeechResult
 from .i18n import tr
 from .state import RUNDIR, WAV
@@ -1155,7 +1155,7 @@ class DictationCore:
         self._state("recording", tr("wake_listening"))
         if self.cfg.beep:
             beep.start()
-        self._start_level()
+        self._start_wake_level()
         try:
             return self._wake_record_utterance(spot=False)
         finally:
@@ -1163,6 +1163,19 @@ class DictationCore:
             if self.cfg.beep:
                 beep.stop()
             self._state("idle")
+
+    def _start_wake_level(self):
+        """Pegel aus der Rohdatei der Wake-Aufnahme, nicht aus der des letzten
+        Diktats (die ist alt -> 0 -> „kein Ton vom Mikrofon")."""
+        self._stop_level()
+        target = self._level_target()
+        if target is None:
+            return
+        try:
+            self._level_pump = LevelPump(
+                target, level=lambda: rms_level(path=WAKE_RAW)).start()
+        except Exception as exc:  # noqa: BLE001
+            self._log("level: Pegelanzeige nicht gestartet: %r" % exc)
 
     def _wake_transcribe(self, pcm):
         return wake_transcribe(self.cfg, pcm, scratch_wav("wake"),

@@ -144,9 +144,11 @@ def newest_raw():
 LEVEL_STALE_S = 0.5
 
 
-def rms_level(window_s=0.15, now=None):
-    """Pegel 0.0–1.0 aus dem Ende der laufenden Roh-Aufnahme (für die Pille)."""
-    raw = newest_raw()
+def rms_level(window_s=0.15, now=None, path=None):
+    """Pegel 0.0–1.0 aus dem Ende der laufenden Roh-Aufnahme (für die Pille).
+    path: eine bestimmte Rohdatei (Wake-Folgeaufnahme), sonst die neueste
+    der beiden Diktat-Rohdateien."""
+    raw = path or newest_raw()
     try:
         now = time.time() if now is None else now
         if now - os.path.getmtime(raw) > LEVEL_STALE_S:
