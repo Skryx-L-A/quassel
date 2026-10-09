@@ -14,6 +14,9 @@ def paste_module(monkeypatch):
     monkeypatch.setattr(ctypes, "windll", fake, raising=False)
     sys.modules.pop("quassel.win.paste", None)
     module = importlib.import_module("quassel.win.paste")
+    # The real clip_read would dereference the fake GlobalLock pointer.
+    monkeypatch.setattr(module, "clip_read", lambda: "")
+    monkeypatch.setattr(module.clipwait, "wait_until_holds", lambda read, text, max_s: 0.0)
     yield module
     sys.modules.pop("quassel.win.paste", None)
 

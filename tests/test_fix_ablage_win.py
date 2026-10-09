@@ -10,7 +10,12 @@ def _module(monkeypatch):
     monkeypatch.setattr(ctypes, "windll", SimpleNamespace(
         user32=MagicMock(), kernel32=MagicMock()), raising=False)
     sys.modules.pop("quassel.win.paste", None)
-    return importlib.import_module("quassel.win.paste")
+    win = importlib.import_module("quassel.win.paste")
+    # The real clip_read dereferences the fake GlobalLock pointer (segfault on
+    # Python 3.10/3.11); these tests are about the snapshot state, not the wait.
+    monkeypatch.setattr(win, "clip_read", lambda: "")
+    monkeypatch.setattr(win.clipwait, "wait_until_holds", lambda read, text, max_s: 0.0)
+    return win
 
 
 def test_unsafe_clipboard_does_not_stick_after_new_copy(monkeypatch):
