@@ -15,6 +15,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Model downloads from Hugging Face show real progress instead of jumping to
+  100 % at once, and cancelling a download waits for it to stop before the
+  partial file is removed.
 - Windows recording now writes audio outside the capture callback and returns
   from a stalled device stop within a deadline.
 - A slowly loading Windows GPU speech engine is no longer replaced with the

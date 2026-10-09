@@ -43,9 +43,13 @@ def _content_length(url):
     try:
         r = subprocess.run(["curl", "-sIL", "-m", "20", url],
                            capture_output=True, text=True, check=False, **NOWIN)
-        for line in r.stdout.lower().splitlines():
-            if line.startswith("content-length:"):
-                return int(line.split(":", 1)[1].strip())
+        # -L folgt Weiterleitungen (Hugging Face: 302 -> CDN); jede Antwort
+        # bringt ihre eigene Länge mit, die der Datei steht zuletzt.
+        lengths = [line.split(":", 1)[1].strip()
+                   for line in r.stdout.lower().splitlines()
+                   if line.startswith("content-length:")]
+        if lengths:
+            return int(lengths[-1])
     except (OSError, ValueError):
         pass
     return 0
@@ -73,6 +77,13 @@ def download(url, target, progress=None, cancel=None):
         while proc.poll() is None:
             if cancel and cancel.is_set():
                 proc.terminate()
+                # Erst warten, bis curl die .part-Datei losgelassen hat; Windows
+                # könnte sie sonst nicht löschen, und curl schriebe weiter.
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
                 break
             time.sleep(0.1)
         ok = proc.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0

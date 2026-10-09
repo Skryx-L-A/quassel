@@ -38,6 +38,10 @@ class Curl:
     def terminate(self):
         self.terminated = True
 
+    def wait(self, timeout=None):
+        self.waited = True
+        return self.poll()
+
 
 @pytest.fixture
 def curl(monkeypatch):
@@ -102,6 +106,7 @@ def test_cancel_terminates_curl_and_keeps_the_old_target(tmp_path, curl):
     cancel.set()
     assert net.download("https://example.invalid/x", str(target), cancel=cancel) is False
     assert fake.terminated
+    assert fake.waited, "curl must have let go of the .part file before cleanup"
     assert target.read_bytes() == b"previous model"
 
 
@@ -156,10 +161,6 @@ def test_content_length_without_header_or_curl_is_zero(monkeypatch):
     assert net._content_length("https://example.invalid/x") == 0
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Fehler in net.py (nicht in diesem Auftrag): bei Weiterleitungen (Hugging "
-    "Face antwortet 302 -> CDN) zählt die Länge der ERSTEN Antwort, nicht die "
-    "der Datei; der Fortschritt springt sofort auf 100 %."))
 def test_content_length_after_a_redirect_is_the_final_one(monkeypatch):
     monkeypatch.setattr(net.subprocess, "run", lambda *a, **k: Headers(
         "HTTP/2 302\r\ncontent-length: 1300\r\nlocation: https://cdn/x\r\n\r\n"
