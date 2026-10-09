@@ -15,6 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- When a dictation cannot be inserted, Quassel only says "Text is on the
+  clipboard" if the clipboard really holds it. Otherwise (for example when
+  Linux keeps a copied image untouched) it says the dictation could not be
+  inserted and saves the recording so nothing is lost.
 - Terminal protection now checks the app in front right before the text is
   inserted. Switching from a mail window to a terminal while Quassel is still
   transcribing no longer sends a line break or a spoken Enter there.

@@ -85,6 +85,16 @@ def clip_copy(text):
     return importlib.import_module(platform_mod._backend_module_name()).clip_copy(text)
 
 
+def clip_read():
+    """Text der Zwischenablage über das Plattform-Backend; None, wenn das
+    Backend keine Lesefunktion hat."""
+    import importlib
+    from . import platform as platform_mod
+    backend = importlib.import_module(platform_mod._backend_module_name())
+    read = getattr(backend, "clip_read", None)
+    return read() if read is not None else None
+
+
 def _restart_linux_server():
     """Restart only an active user unit bound to this process's profile."""
     name = profile.name()
@@ -224,6 +234,9 @@ class Daemon(dictation.DictationCore):
 
     def _clip_copy(self, text):
         return clip_copy(text)
+
+    def _clip_read(self):
+        return clip_read()
 
     def _level_target(self):
         # Pegel über state.json an die Pille (eigener Prozess); level_set

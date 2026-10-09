@@ -882,7 +882,7 @@ class DictationCore:
         if inserted:
             self._forget_text(self._state("done", value))
         else:
-            self._report_clipboard_only()
+            self._report_not_inserted(value, data)
         secs = len(data) / (RATE * SAMPLE_BYTES)
         self._after_insert(value, secs)
 
@@ -917,6 +917,39 @@ class DictationCore:
         Plattformen ohne Rückmeldung (None) gelten als erfolgreich."""
         with wakeword.INSERT_GATE.dictation():
             return self._paste(text) is not False
+
+    def _clip_read(self):
+        """Plattform: Text der Zwischenablage. None = nicht lesbar."""
+        return None
+
+    def _clipboard_holds(self, text):
+        """Liegt genau dieses Diktat in der Zwischenablage? Der Inhalt wird
+        nur verglichen, nie geloggt."""
+        try:
+            current = self._clip_read()
+        except Exception as exc:  # noqa: BLE001 — Zwischenablage kaputt
+            self._log("paste: Zwischenablage nicht lesbar: %s" % type(exc).__name__)
+            return False
+        return current is not None and current.rstrip("\r\n") == text.rstrip("\r\n")
+
+    def _report_not_inserted(self, text, data):
+        """Die Plattform meldete „nicht eingefügt". Nur wenn die Zwischenablage
+        das Diktat wirklich hält, stimmt der Hinweis auf Strg+V. Sonst (Linux
+        lässt Bild-, Datei- und unbekannte Ablagen absichtlich unverändert)
+        die Aufnahme retten, damit das Diktat nicht verloren ist."""
+        if self._clipboard_holds(text):
+            self._report_clipboard_only()
+            return
+        self._log("paste: nicht eingefügt, Diktat auch nicht in der Zwischenablage")
+        message = tr("err_not_inserted")
+        try:
+            path = self._rescue(data)
+        except Exception as exc:  # noqa: BLE001
+            self._log("rescue: gescheitert: %s" % type(exc).__name__)
+            path = None
+        if path:
+            message += " · " + tr("rescued").format(path=path)
+        self._state("error", message)
 
     def _report_clipboard_only(self):
         """Die Pille sagte sonst „fertig", obwohl im Fenster nichts ankam."""
