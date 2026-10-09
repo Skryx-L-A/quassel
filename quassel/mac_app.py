@@ -374,7 +374,8 @@ def main():
     pill_qt.OPEN_CENTER = mac.open_center
     pill_qt.TOGGLE = mac.toggle
     mac.tray = traymac.start_tray(app, mac.open_center, mac.quit,
-                                  on_toggle=mac.toggle, on_panic=mac.panic)
+                                  on_toggle=mac.toggle, on_panic=mac.panic,
+                                  on_raw_back=mac.raw_back)
     check_ffmpeg(mac.tray)
     mac.pill = pill_qt.Pill()
     mac.pill.show()

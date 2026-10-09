@@ -19,6 +19,7 @@ script.
 bin/quassel-type-cli status --json
 bin/quassel-type-cli toggle
 bin/quassel-type-cli panic
+bin/quassel-type-cli raw-last
 bin/quassel-type-cli transcribe recording.wav --json
 bin/quassel-type-cli model list
 bin/quassel-type-cli model use large-v3-turbo-q5_0
@@ -30,6 +31,12 @@ bin/quassel-type-cli history list --since 2026-10-01T00:00:00Z
 profile, and latest state IPC value. `toggle` and `panic` use the existing
 Linux `quassel-ctl` service mechanism; they exit with status 5 on platforms
 without a daemon control channel.
+
+`raw-last` asks the running Linux daemon (SIGHUP) to put the unedited text of
+the last dictation on the clipboard. The command never reads the text; it lives
+only in the daemon's memory. The pill shows whether there was any raw text.
+On macOS and Windows use "Raw text back" in the menu bar or tray menu; the
+command exits 5 there.
 
 `transcribe` accepts an existing supported media file. Plain text is the
 default. `--json` includes text and segments; `--srt` and `--vtt` render the

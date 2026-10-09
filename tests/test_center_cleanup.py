@@ -26,7 +26,7 @@ def qapp():
 def c(tmp_path, monkeypatch, qapp):
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
-    config.save({("ui", "language"): "en"})
+    config.save({("ui", "language"): "en", ("system", "onboarded"): "true"})
     win = center.Center()
     yield win
     win.close()

@@ -493,6 +493,10 @@ class WinApp(QObject):
         self.act_panic = QAction(_panic_label(), menu)
         self.act_panic.triggered.connect(self.panic)
         menu.addAction(self.act_panic)
+        # „Rohtext zurück": Menüeintrag statt eines weiteren globalen Hotkeys.
+        self.act_raw_back = QAction(tr("raw_back"), menu)
+        self.act_raw_back.triggered.connect(self.raw_back)
+        menu.addAction(self.act_raw_back)
         self.act_settings = QAction(tr("settings"), menu)
         self.act_settings.triggered.connect(self.open_settings)
         menu.addAction(self.act_settings)
@@ -513,6 +517,7 @@ class WinApp(QObject):
                           else self.cfg.ui_language)
         self.act_toggle.setText(tr("turn_off") if self.enabled else tr("turn_on"))
         self.act_panic.setText(_panic_label())
+        self.act_raw_back.setText(tr("raw_back"))
         self.act_settings.setText(tr("settings"))
         self.act_quit.setText(tr("quit"))
         self.tray.setToolTip("Quassel")

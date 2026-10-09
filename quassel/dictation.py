@@ -1088,8 +1088,21 @@ class DictationCore:
             discard(rec.raw_path)
 
     def _wake_record_followup(self):
-        """Die Äußerung nach der reinen Phrase: ohne Spotter, der hat sie gehört."""
-        return self._wake_record_utterance(spot=False)
+        """Die Äußerung nach der reinen Phrase: ohne Spotter, der hat sie gehört.
+        Rückmeldung wie beim Hotkey: die Pille zeigt „hört zu" mit Pegel, ein
+        Ton nur, wenn die Signaltöne an sind. Danach zurück auf Ruhe; das
+        Ergebnis meldet das Einfügen."""
+        self._state("recording", tr("wake_listening"))
+        if self.cfg.beep:
+            beep.start()
+        self._start_level()
+        try:
+            return self._wake_record_utterance(spot=False)
+        finally:
+            self._stop_level()
+            if self.cfg.beep:
+                beep.stop()
+            self._state("idle")
 
     def _wake_transcribe(self, pcm):
         return wake_transcribe(self.cfg, pcm, scratch_wav("wake"),

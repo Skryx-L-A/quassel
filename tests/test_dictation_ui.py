@@ -293,3 +293,36 @@ def test_raw_text_is_kept_in_memory_only_when_cleanup_changed_it(monkeypatch, ac
     core._after_insert = lambda value, seconds=0.0: None
     core._wake_insert_with(core.cfg, "äh hallo")
     assert core._last_raw == kept
+
+
+# ------------------------------------------------- Wake-Phrase: Rückmeldung
+def _wake_core(monkeypatch, beep_on):
+    sounds = []
+    monkeypatch.setattr(dictation.beep, "start", lambda: sounds.append("start"))
+    monkeypatch.setattr(dictation.beep, "stop", lambda: sounds.append("stop"))
+    core = Core()
+    core.cfg.beep = beep_on
+    core._wake_record_utterance = lambda spot=True: (core.events.append(("rec", spot)), b"pcm")[1]
+    return core, sounds
+
+
+def test_wake_phrase_shows_listening_without_a_sound(monkeypatch):
+    core, sounds = _wake_core(monkeypatch, beep_on=False)
+    assert core._wake_record_followup() == b"pcm"
+    assert core.states[0] == ("recording", i18n.tr("wake_listening"))
+    assert core.states[-1] == ("idle", "")
+    assert ("rec", False) in core.events          # ohne Spotter
+    assert sounds == []                           # kein Ton bei ausgeschalteten Signaltönen
+
+
+def test_wake_phrase_beeps_only_when_beep_is_on(monkeypatch):
+    core, sounds = _wake_core(monkeypatch, beep_on=True)
+    core._wake_record_followup()
+    assert sounds == ["start", "stop"]
+
+
+def test_wake_followup_returns_to_idle_when_nothing_was_said(monkeypatch):
+    core, _ = _wake_core(monkeypatch, beep_on=False)
+    core._wake_record_utterance = lambda spot=True: None
+    assert core._wake_record_followup() is None
+    assert core.states[-1] == ("idle", "")

@@ -35,7 +35,7 @@ def qapp():
 def c(tmp_path, monkeypatch, qapp):
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
-    config.save({("ui", "language"): "en", ("ui", "onboarded"): "true"})
+    config.save({("ui", "language"): "en", ("system", "onboarded"): "true"})
     monkeypatch.setattr(center.threading, "Thread", _InlineThread)
     win = center.Center()
     win.ai_endpoint.setText("http://127.0.0.1:8080/v1")
