@@ -434,3 +434,56 @@ def test_level_instruction_follows_the_dictation_language(transcript, german):
     table = ai.LEVEL_INSTRUCTIONS_DE if german else ai.LEVEL_INSTRUCTIONS
     for level in ("mittel", "stark"):
         assert ai.level_instruction(level, transcript) == table[level]
+
+
+class _ChatResponse:
+    status = 200
+
+    def __init__(self, text):
+        self.text = text
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def read(self):
+        return json.dumps({"choices": [{"message": {"content": self.text}}]}).encode()
+
+
+def test_ai_modes_use_chat_on_an_openai_endpoint(monkeypatch):
+    seen = []
+    monkeypatch.setattr(ai, "_open", lambda req, ep, timeout: seen.append(req.full_url)
+                        or _ChatResponse("Sehr geehrte Frau Müller,"))
+    out = ai.generate("als E-Mail: hallo", model="qwen3", endpoint="http://127.0.0.1:8080/v1")
+    assert out == "Sehr geehrte Frau Müller,"
+    assert seen == ["http://127.0.0.1:8080/v1/chat/completions"]
+
+
+def test_ai_modes_fall_back_to_chat_when_api_generate_is_missing(monkeypatch):
+    import urllib.error
+    seen = []
+
+    def fake_open(req, ep, timeout):
+        seen.append(req.full_url)
+        if req.full_url.endswith("/api/generate"):
+            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+        return _ChatResponse("Liste:\\n- Brot")
+    monkeypatch.setattr(ai, "_open", fake_open)
+    out = ai.generate("als Liste: Brot", model="m", endpoint="http://127.0.0.1:8080")
+    assert out and out.startswith("Liste:")
+    assert seen == ["http://127.0.0.1:8080/api/generate",
+                    "http://127.0.0.1:8080/v1/chat/completions"]
+
+
+def test_ai_modes_do_not_retry_on_server_errors(monkeypatch):
+    import urllib.error
+    seen = []
+
+    def fake_open(req, ep, timeout):
+        seen.append(req.full_url)
+        raise urllib.error.HTTPError(req.full_url, 500, "boom", {}, None)
+    monkeypatch.setattr(ai, "_open", fake_open)
+    assert ai.generate("x", model="m", endpoint="http://127.0.0.1:11434") is None
+    assert len(seen) == 1

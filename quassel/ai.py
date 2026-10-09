@@ -312,6 +312,9 @@ def generate(prompt: str, *, model: str, system: str | None = None,
     nichts vorgewaermt)."""
     if not model:
         return None
+    if urllib.parse.urlsplit(endpoint).path.rstrip("/").endswith("/v1"):
+        # Ausdrücklich OpenAI-kompatibel: gleich der Chat-Weg.
+        return _generate_chat(prompt, model, system, endpoint, timeout, options)
     url = endpoint.rstrip("/") + "/api/generate"
     body = json.dumps(
         build_generate_payload(model, prompt, system, options, keep_alive)
@@ -329,6 +332,34 @@ def generate(prompt: str, *, model: str, system: str | None = None,
         if resp_text is None:
             return None
         out = clean_output(resp_text)
+        return out or None
+    except urllib.error.HTTPError as exc:
+        # Kein Ollama (llama-server, LM Studio, vLLM ...): /api/generate fehlt.
+        # Das Kontrollzentrum bietet solche Server an; die KI-Modi sollen dort
+        # nicht still den Rohtext liefern.
+        if exc.code in (404, 405):
+            return _generate_chat(prompt, model, system, endpoint, timeout, options)
+        return None
+    except Exception:
+        return None
+
+
+def _generate_chat(prompt, model, system, endpoint, timeout, options):
+    """Freier Text über /v1/chat/completions (ohne Schema, für die KI-Modi)."""
+    messages = ([{"role": "system", "content": system}] if system else []) + [
+        {"role": "user", "content": prompt}]
+    temperature = (options or {}).get("temperature", 0.2)
+    body = json.dumps({"model": model, "messages": messages, "stream": False,
+                       "temperature": temperature,
+                       "max_tokens": min(4096, max(64, len(prompt) // 2 + 64))}).encode("utf-8")
+    req = urllib.request.Request(_chat_url(endpoint), data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with _open(req, endpoint, timeout) as resp:
+            if resp.status != 200:
+                return None
+            text = parse_chat(json.loads(resp.read().decode("utf-8")), structured=False)
+        out = clean_output(text) if text else None
         return out or None
     except Exception:
         return None
