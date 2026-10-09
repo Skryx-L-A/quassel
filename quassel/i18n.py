@@ -474,6 +474,17 @@ STRINGS = {
                     "Fehlermeldung ein."),
     "diag_saved": ("Saved as {name}.", "Gespeichert als {name}."),
     "diag_save_failed": ("Could not save the file.", "Die Datei ließ sich nicht speichern."),
+    # --- Frage per Stimme: Antwort kam zu spät ---
+    "ask_gone_clipboard": ("The question is no longer open — your answer is on the "
+                           "clipboard, nothing inserted",
+                           "Die Frage ist nicht mehr offen — deine Antwort liegt in der "
+                           "Zwischenablage, nichts eingefügt"),
+    "ask_gone_inserted": ("The question is no longer open — your answer was inserted "
+                          "as normal text",
+                          "Die Frage ist nicht mehr offen — deine Antwort wurde als "
+                          "normaler Text eingefügt"),
+    "ask_failed": ("answer not sent, the question was ended",
+                   "Antwort nicht übergeben, die Frage ist beendet"),
 }
 
 _lang = None

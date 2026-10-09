@@ -113,7 +113,21 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   starts the microphone: the pill and a notification show the question, and
   your answer is the next dictation you start with the hotkey. Without one
   the question ends after two minutes (up to ten), and the emergency stop
-  dismisses it. Answers are not added to the history.
+  dismisses it. Answers are not added to the history. Only one dictation
+  answers a question: one you start while the answer is still being
+  transcribed goes into your window as usual. If the question closed before
+  your answer was ready, the answer is put on the clipboard instead of
+  being lost. With the wake phrase, only a question that was already waiting
+  when you started speaking takes your words. When the agent cancels
+  `ask_user` or disconnects, the question disappears at once instead of
+  waiting for your next dictation. The live preview stays empty while you
+  answer, so the answer never shows in the pill. If the speech server fails
+  while you answer, the asking program gets an error right away; the
+  recording of the answer is not kept. Invisible and right-to-left control
+  characters are removed from the question and the program name, so the
+  pill cannot be made to show a different asker. An answer uses your general
+  settings, not the per-app profile of the window in front, so a terminal in
+  front no longer removes its line breaks.
 - German "ß" is restored where spelling needs it when a German fine-tuned
   speech model is in use (it writes "grosses" instead of "großes"); "dass",
   "Masse" and English words stay as they are. Setting `[speech] eszett`

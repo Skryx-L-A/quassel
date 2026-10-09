@@ -239,6 +239,11 @@ class PartialLoop(threading.Thread):
                 # (spart auf schwacher CPU viel Last, die sonst das Finale bremst).
                 if self.owner.streamer is None and not self.cfg.pill_preview:
                     continue
+                # Eine Antwort an ein Programm (G104) erscheint nie in Pille
+                # oder state.json, auch nicht als Vorschau; Streaming läuft
+                # dabei ohnehin nicht (enable_streaming).
+                if getattr(self.owner, "_ask", None) is not None:
+                    continue
                 if not getattr(self.owner, "_handsfree", False) and \
                         time.monotonic() - self.rec.started < PREVIEW_HOLD_MIN:
                     continue
@@ -333,6 +338,11 @@ class DictationCore:
     # Frage per Stimme (G104): die Anfrage, die das laufende Diktat
     # beantwortet. Gebunden beim START der Aufnahme, nie erst am Ende.
     _ask = None
+    _panic_epoch = 0            # zählt Not-Aus; eine Antwort von davor verfällt
+    # Dasselbe für den Wake-Pfad (nur dessen Thread): die beim Start der
+    # Folgeaufnahme gebundene Anfrage und der Beginn der laufenden Aufnahme.
+    _wake_ask = None
+    _wake_started = None
 
     # ------------------------------------------------- Plattform-Anbindung
     # Jede Methode hier ist bewusst schmal: sie reicht an die Plattform weiter.
@@ -624,6 +634,7 @@ class DictationCore:
         Läuft weder eine Aufnahme noch eine Aktion, gibt es nichts zu beenden
         — dann sagt die Methode das und tut sonst nichts. Eine wartende
         Frage eines Programms (G104) verwirft der Not-Aus in jedem Fall."""
+        self._panic_epoch += 1
         dismissed = self._ask_discard()
         self._ask = None
         if not self._busy():
@@ -784,7 +795,14 @@ class DictationCore:
             # Fehlschlag retten und melden, statt auf „transkribiert" stehen
             # zu bleiben. Nur der Typ ins Log, nie der Text.
             self._log("dict: Rest fehlgeschlagen: %s" % type(exc).__name__)
-            keep_raw = not self._fail_safely(data, streamer, clip_backup)
+            if ask_doc is not None:
+                keep_raw = False
+                try:
+                    self._fail_answer(ask_doc, streamer, clip_backup, SpeechResult(None))
+                except Exception as exc2:  # noqa: BLE001
+                    self._log("ask: Fehlermeldung gescheitert: %s" % type(exc2).__name__)
+            else:
+                keep_raw = not self._fail_safely(data, streamer, clip_backup)
         finally:
             if not keep_raw:
                 discard(done_path)
@@ -793,7 +811,8 @@ class DictationCore:
     def _transcribe_and_insert(self, streamer, clip_backup, data, panic, ask_doc=None):
         # Per-App-Profil der Anwendung, in die gleich eingefügt wird. Gilt nur
         # für dieses Diktat und nur auf diesem Thread; self.cfg bleibt, wie es ist.
-        cfg = self._run.cfg = self._profile_cfg()
+        # Eine Antwort an ein Programm geht in kein Fenster: Grundeinstellungen.
+        cfg = self._run.cfg = self.cfg if ask_doc is not None else self._profile_cfg()
         try:
             return self._transcribe_and_insert_with(cfg, streamer, clip_backup, data, panic,
                                                     ask_doc=ask_doc)
@@ -807,6 +826,8 @@ class DictationCore:
         deadline = (SERVER_WAIT_FINISH if whisperclient.server_was_up()
                     else SERVER_WAIT_COLD)
         if not whisperclient.ensure_server(deadline=deadline):
+            if ask_doc is not None:
+                return self._fail_answer(ask_doc, streamer, clip_backup, None)
             return self._fail_with_rescue(data, streamer, clip_backup, None)
         wav = scratch_wav("rec")
         try:
@@ -818,6 +839,8 @@ class DictationCore:
             discard(wav)
         raw_text = result.text
         if raw_text is None:
+            if ask_doc is not None:
+                return self._fail_answer(ask_doc, streamer, clip_backup, result)
             return self._fail_with_rescue(data, streamer, clip_backup, result)
         if panic.is_set():
             # „Diktat sofort beenden" wurde gedrückt, während transkribiert
@@ -1007,6 +1030,22 @@ class DictationCore:
         self._state("error", text)
         return path is not None
 
+    def _fail_answer(self, ask_doc, streamer, clip_backup, result=None):
+        """Wie _fail_with_rescue, aber für eine Antwort an ein Programm: die
+        Aufnahme wird NICHT gerettet (sie galt dem Fragenden, nicht dem
+        Nutzer), und der Fragende erfährt den Fehler sofort, statt bis zu
+        seiner Frist zu warten. Rückgabe True: die Rohdatei kann weg."""
+        if streamer is not None:
+            self._streaming_restore(clip_backup)
+        try:
+            ask.fail(ask_doc["token"], rundir=self._ask_dir())
+        except Exception as exc:  # noqa: BLE001 — nur die Wartezeit des Fragenden
+            self._log("ask: Fehler nicht übergeben: %s" % type(exc).__name__)
+            self._ask_release(ask_doc)
+        self._log("ask: Antwort nicht transkribiert, Frage mit Fehler beendet")
+        self._state("error", failure_text(result) + " · " + tr("ask_failed"))
+        return True
+
     def _fail_safely(self, data, streamer, clip_backup):
         """_fail_with_rescue nach einer Ausnahme: scheitert auch das, bleibt
         die Rohdatei, und die Pille zeigt trotzdem einen Fehler."""
@@ -1106,20 +1145,23 @@ class DictationCore:
                 text = textreplace.apply_rules(text, rules)
         return text
 
-    def _refine(self, text):
-        """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad)."""
+    def _refine(self, text, window=True):
+        """Mechanische Umformungen + (optional) lokale KI — synchron (Wake-Pfad).
+        window=False: der Text geht in kein Fenster (Antwort an ein Programm),
+        also ohne Terminal-Schutz (_finish_text)."""
         cfg = self._cfg_now()
+        finish = self._finish_text if window else (lambda value, _cfg: value)
         raw = text
         if self._cleanup_active():
             try:
                 text = self._refine_mechanical(text)
             except Exception:
                 return raw
-            return self._finish_text(self._cleanup_refine(raw, text), cfg)
+            return finish(self._cleanup_refine(raw, text), cfg)
         text = self._refine_mechanical(text)
         if cfg.ai_enabled:
             text = self._ai_refine(text)
-        return self._finish_text(text, cfg)
+        return finish(text, cfg)
 
     def _cleanup_active(self):
         cfg = self._cfg_now()
@@ -1203,6 +1245,8 @@ class DictationCore:
             return None
         if doc is not None:
             self._log("ask: dieses Diktat beantwortet eine wartende Frage")
+            # Ein Not-Aus danach verwirft diese Antwort (siehe _answer).
+            doc["_panic_epoch"] = self._panic_epoch
         return doc
 
     def _ask_pending(self):
@@ -1237,23 +1281,52 @@ class DictationCore:
             self._ask_release(ask_doc)
             self._state("error", tr("ask_no_answer"))
             return
-        text = self._refine(value)
+        # Grundeinstellungen statt des Profils der Anwendung, die gerade vorne
+        # ist, und kein Terminal-Schutz: die Antwort geht in kein Fenster.
+        previous, self._run.cfg = getattr(self._run, "cfg", None), self.cfg
+        try:
+            text = self._refine(value, window=False)
+        finally:
+            self._run.cfg = previous
         if panic is not None and panic.is_set():
+            self._state("idle")
+            return
+        if ask_doc.get("_panic_epoch", self._panic_epoch) != self._panic_epoch:
+            # Not-Aus seit Beginn dieser Antwort: kein Text, nirgendwohin.
+            self._log("panic: Antwort verworfen (Not-Aus)")
             self._state("idle")
             return
         if ask.deliver(ask_doc["token"], text, rundir=self._ask_dir()):
             self._log("ask: Antwort übergeben (%d Zeichen)" % len(text))
             self._state("done", tr("ask_sent"))
+            return
+        # Frage inzwischen zu (Frist, Fragender weg): der Text darf nicht
+        # still verschwinden, soll aber auch nicht ungefragt in das Fenster,
+        # das gerade vorne ist. Also in die Zwischenablage; nur wenn die
+        # versagt, wie ein gewöhnliches Diktat einfügen.
+        self._log("ask: Frage nicht mehr offen, Antwort in die Zwischenablage")
+        try:
+            copied = self._clip_copy(text) is not False
+        except Exception as exc:  # noqa: BLE001 — Zwischenablage kaputt
+            self._log("ask: Zwischenablage: %s" % type(exc).__name__)
+            copied = False
+        if copied:
+            self._state("error", tr("ask_gone_clipboard"))
+            return
+        self._log("ask: Zwischenablage gescheitert, Antwort wird eingefügt")
+        text = self._finish_text(text, self._profile_cfg())
+        if self._insert(text):
+            self.last_paste_len = len(text)
+            self._state("done", tr("ask_gone_inserted"))
         else:
-            self._log("ask: Frage nicht mehr offen, Antwort verworfen")
-            self._state("error", tr("ask_gone"))
+            self._report_clipboard_only()
 
     # ----------------------------------------------------- Wake-Word (opt-in)
     def _sync_wakeword(self):
         """Listener nach Konfig starten/stoppen (idempotent)."""
         if self.cfg.wakeword_enabled and self.wake is None:
             self.wake = wakeword.WakeListener(
-                self.cfg, self._wake_record_utterance, self._wake_transcribe,
+                self.cfg, self._wake_record_utterance, self._wake_transcribe_checked,
                 self._wake_insert, is_busy=self._wake_busy,
                 record_followup=self._wake_record_followup,
                 trust_capture=bool(wakeword.wake_settings(self.cfg).spotter_model))
@@ -1261,6 +1334,7 @@ class DictationCore:
         elif not self.cfg.wakeword_enabled and self.wake is not None:
             self.wake.stop()
             self.wake = None
+            self._wake_release()
 
     def _wake_record_utterance(self, spot=True):
         """Eine Äußerung für den Wake-Listener aufnehmen
@@ -1270,6 +1344,13 @@ class DictationCore:
         mit Silero-Modell entscheidet stattdessen das. Ist ein Keyword-Modell
         eingetragen ([wakeword] spotter_model), hört zuerst nur dieses mit und
         gibt die Aufnahme erst nach einem Treffer an Whisper weiter."""
+        if spot:
+            # Neuer Zyklus: eine Bindung, die der Listener liegen ließ (die
+            # Folgeaufnahme kam nicht bis zum Einfügen), gilt nicht mehr.
+            self._wake_release()
+        # Nur eine Anfrage, die schon VOR diesem Zeitpunkt wartete, darf die
+        # Äußerung beantworten (siehe _wake_insert_with).
+        self._wake_started = time.time()
         rec = self._new_recorder(WAKE_RAW)
         spotter = wakeword.load_spotter(self.cfg, log=self._log) if spot else None
         try:
@@ -1293,13 +1374,21 @@ class DictationCore:
         if self._busy():
             self._log("wake: Folgeaufnahme übersprungen (Tastatur-Diktat läuft)")
             return None
+        # Wie beim Hotkey: die Folgeaufnahme beginnt der Nutzer selbst (mit
+        # der Phrase), also wird hier gebunden, nicht erst nach der Transkription.
+        self._wake_release()
+        self._wake_ask = self._ask_claim()
         self._state("recording", tr("wake_listening"))
         if self.cfg.beep:
             beep.start()
         self._start_wake_level()
+        pcm = None
         try:
-            return self._wake_record_utterance(spot=False)
+            pcm = self._wake_record_utterance(spot=False)
+            return pcm
         finally:
+            if not pcm:
+                self._wake_release()        # nichts gesagt: die Frage wartet weiter
             pump, self._wake_pump = self._wake_pump, None
             if pump is not None:
                 pump.stop()
@@ -1329,7 +1418,48 @@ class DictationCore:
         return wake_transcribe(self.cfg, pcm, scratch_wav("wake"),
                                self._wav_from_raw, self._log)
 
+    def _wake_transcribe_checked(self, pcm):
+        """_wake_transcribe (Plattformen ersetzen es) plus Freigabe: ohne
+        verstandenen Text ruft der Listener _wake_insert gar nicht erst auf."""
+        text = None
+        try:
+            text = self._wake_transcribe(pcm)
+            return text
+        finally:
+            if not (text or "").strip():
+                self._wake_release()
+
+    def _wake_release(self):
+        doc, self._wake_ask = self._wake_ask, None
+        self._ask_release(doc)
+
+    def _wake_claim_older(self):
+        """Phrase und Text in EINER Äußerung (ohne Folgeaufnahme): gebunden
+        wird nur eine Anfrage, die schon vor Beginn der Aufnahme wartete.
+        Eine, die erst während des Sprechens kam, beantwortet das nächste Diktat."""
+        started = self._wake_started
+        doc = self._ask_pending()
+        if started is None or doc is None or not doc.get("created", started) < started:
+            return None
+        claimed = self._ask_claim()
+        if claimed is not None and claimed.get("token") != doc.get("token"):
+            self._ask_release(claimed)
+            return None
+        return claimed
+
     def _wake_insert(self, raw_text):
+        # Auch ein per Wake-Phrase begonnenes Diktat beantwortet eine wartende
+        # Frage, statt einzufügen: die beim Start der Folgeaufnahme gebundene
+        # oder eine, die schon vor Beginn der Äußerung wartete. Eine Antwort
+        # geht in kein Fenster, also ohne Per-App-Profil (Grundeinstellungen).
+        waiting, self._wake_ask = self._wake_ask, None
+        if waiting is None:
+            waiting = self._wake_claim_older()
+        if waiting is not None:
+            # Bei Stille oder Sprachbefehl gibt _answer die Frage wieder frei.
+            kind, value = postprocess_transcript(raw_text, self.cfg)
+            self._answer(waiting, kind, value)
+            return
         cfg = self._run.cfg = self._profile_cfg()
         try:
             self._wake_insert_with(cfg, raw_text)
@@ -1339,12 +1469,6 @@ class DictationCore:
     def _wake_insert_with(self, cfg, raw_text):
         kind, value = postprocess_transcript(raw_text, cfg)
         if kind != "text" or not value.strip():
-            return
-        # Auch ein per Wake-Phrase begonnenes Diktat beantwortet eine wartende
-        # Frage, statt einzufügen.
-        waiting = self._ask_pending()
-        if waiting is not None:
-            self._answer(waiting, kind, value)
             return
         self._last_raw = None
         raw = value

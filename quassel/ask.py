@@ -13,8 +13,8 @@ Files (both mode 0600, written atomically):
   is refused while a valid one waits.
 * ask.claim: token of the request a running dictation answers. It lets the
   asker wait a little past the deadline while the user is still speaking.
-* ask.answer: token plus the answer text, or token plus canceled. The asker
-  reads it and deletes it at once.
+* ask.answer: token plus the answer text, or token plus canceled or failed.
+  The asker reads it and deletes it at once.
 
 The pattern follows the server restart request in daemon.py
 (_request_mac_server_restart) and mac_app.py (handle_server_restart).
@@ -45,7 +45,12 @@ PROGRAM_MAX = 40
 ORPHAN_AGE = 30            # s: an answer nobody picked up is removed after this
 
 _TOKEN = re.compile(r"[0-9a-f]{32}")
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f  ]+")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+# Bidi controls, zero-width characters and other invisible formatting: they
+# could make the pill show a different program name or question than the
+# one sent. Removed outright, not replaced by a space.
+_INVISIBLE = re.compile(r"[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e"
+                        r"\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb]+")
 
 
 class AskError(Exception):
@@ -75,7 +80,7 @@ def clamp_timeout(value):
 
 def shorten(text, limit):
     """One calm line for display: no control characters, no line breaks."""
-    text = _CONTROL.sub(" ", str(text or ""))
+    text = _CONTROL.sub(" ", _INVISIBLE.sub("", str(text or "")))
     text = " ".join(text.split())
     if len(text) > limit:
         text = text[:limit - 1].rstrip() + "…"
@@ -127,6 +132,13 @@ def _remove(path):
         os.remove(path)
     except OSError:
         pass
+
+
+def _remove_token(path, token):
+    """Remove path only while it still belongs to token: a file another
+    asker or dictation wrote meanwhile stays."""
+    if _token_of(path) == token:
+        _remove(path)
 
 
 def _token_of(path):
@@ -210,10 +222,13 @@ def open_request(question, timeout=DEFAULT_TIMEOUT, program="", pid=None, now=No
                 os.link(staging, request)
                 return doc
             except FileExistsError:
+                # Token first, then judge: whatever another asker links in
+                # between carries a different token and stays.
+                stale = _token_of(request)
                 if pending(now, rundir) is not None:
                     raise AskError("busy", "another question is already waiting for an answer")
-                _remove(request)             # expired, or its asker is gone
-                _remove(claim)
+                _remove_token(request, stale)        # expired, or its asker is gone
+                _remove_token(claim, stale)
             except OSError:
                 # File system without hard links: check, then replace.
                 if pending(now, rundir) is not None:
@@ -225,18 +240,24 @@ def open_request(question, timeout=DEFAULT_TIMEOUT, program="", pid=None, now=No
         _remove(staging)
 
 
-def wait_answer(doc, poll=0.1, sleep=time.sleep, clock=time.time, rundir=None):
+def wait_answer(doc, poll=0.1, sleep=time.sleep, clock=time.time, rundir=None, stop=None):
     """Wait for the answer to request doc. Returns the text. Raises AskError
-    with reason timeout (nobody answered), canceled (emergency stop, or the
-    request vanished) or busy (another asker replaced it)."""
+    with reason timeout (nobody answered), canceled (emergency stop, the
+    request vanished, or stop() turned true: the asker itself gave up) or
+    busy (another asker replaced it)."""
     request, _, answer = _paths(rundir)
     token = doc["token"]
     while True:
+        if stop is not None and stop():
+            close_request(doc, rundir)
+            raise AskError("canceled", "the question was canceled")
         reply = _read_json(answer)
         if reply and reply.get("token") == token:
             _remove(answer)
             if reply.get("canceled"):
                 raise AskError("canceled", "the question was dismissed")
+            if reply.get("failed"):
+                raise AskError("failed", "the spoken answer could not be transcribed")
             text = reply.get("text")
             return text if isinstance(text, str) else ""
         current = _token_of(request)
@@ -291,11 +312,34 @@ def claim(now=None, rundir=None):
     if doc is None:
         return None
     _, claim_path, _ = _paths(rundir)
+    token = doc["token"]
+    staging = "%s.%s" % (claim_path, secrets.token_hex(8))
     try:
-        fsutil.atomic_write(claim_path, json.dumps({"token": doc["token"]}), mode=0o600)
+        fsutil.atomic_write(staging, json.dumps({"token": token}), mode=0o600)
     except OSError:
-        pass        # without the claim the asker just does not wait past its deadline
-    return doc
+        return doc  # without the claim the asker just does not wait past its deadline
+    try:
+        for _attempt in range(2):
+            try:
+                # Hard link: exclusive. A second dictation that starts while
+                # the first still works on the answer is not bound to the
+                # same request (its text would be lost when the first delivers).
+                os.link(staging, claim_path)
+                return doc
+            except FileExistsError:
+                current = _token_of(claim_path)
+                if current == token:
+                    return None
+                _remove_token(claim_path, current)   # left over from an older request
+            except OSError:
+                # File system without hard links: check, then replace.
+                if _claimed(token, rundir):
+                    return None
+                os.replace(staging, claim_path)
+                return doc
+        return None
+    finally:
+        _remove(staging)
 
 
 def release(token, rundir=None):
@@ -318,8 +362,29 @@ def deliver(token, text, now=None, rundir=None):
         fsutil.atomic_write(answer, json.dumps({"token": token, "text": text}), mode=0o600)
     except OSError:
         return False
-    _remove(request)
-    _remove(claim_path)
+    # Only this request's files: the asker may have ended meanwhile and a
+    # new one asked.
+    _remove_token(request, token)
+    _remove_token(claim_path, token)
+    return True
+
+
+def fail(token, now=None, rundir=None):
+    """The dictation that claimed token could not turn the answer into text
+    (speech server down, transcription failed): end the question with an
+    error at once, instead of letting the asker wait until its deadline.
+    False if that request no longer waits."""
+    request, claim_path, answer = _paths(rundir)
+    doc = pending(now, rundir)
+    if doc is None or doc.get("token") != token:
+        return False
+    try:
+        fsutil.atomic_write(answer, json.dumps({"token": token, "failed": True}), mode=0o600)
+    except OSError:
+        release(token, rundir)          # the asker still ends at its deadline
+        return False
+    _remove_token(request, token)
+    _remove_token(claim_path, token)
     return True
 
 

@@ -212,3 +212,110 @@ def test_pid_alive_rejects_nonsense():
     assert not ask.pid_alive(True)
     assert not ask.pid_alive("12")
     assert not ask.pid_alive(999_999_999)
+
+
+def test_second_claim_on_the_same_request_is_refused(tmp_path):
+    # M1: dictation A answers, dictation B starts while A transcribes. B must
+    # not bind to the same request, else its text is lost when A delivers.
+    rundir = str(tmp_path)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    assert ask.claim(rundir=rundir)["token"] == doc["token"]
+    assert ask.claim(rundir=rundir) is None
+    assert ask.deliver(doc["token"], "A", rundir=rundir)
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=rundir) == "A"
+
+
+def test_stale_claim_of_another_request_does_not_block(tmp_path):
+    rundir = str(tmp_path)
+    with open(_path(tmp_path, ask.CLAIM_NAME), "w", encoding="utf-8") as sink:
+        json.dump({"token": "f" * 32}, sink)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    assert ask.claim(rundir=rundir)["token"] == doc["token"]
+    assert ask.claim(rundir=rundir) is None
+
+
+def test_released_claim_can_be_claimed_again(tmp_path):
+    rundir = str(tmp_path)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    assert ask.claim(rundir=rundir) is not None
+    ask.release(doc["token"], rundir=rundir)
+    assert ask.claim(rundir=rundir)["token"] == doc["token"]
+    assert sorted(os.listdir(tmp_path)) == [ask.CLAIM_NAME, ask.REQUEST_NAME]
+
+
+def test_late_delivery_does_not_remove_a_newer_request(tmp_path, monkeypatch):
+    # N3: deliver for A passed pending() just before A ended and B asked.
+    rundir = str(tmp_path)
+    doc_a = ask.open_request("A?", 30, rundir=rundir)
+    ask.close_request(doc_a, rundir)
+    doc_b = ask.open_request("B?", 30, rundir=rundir)
+    monkeypatch.setattr(ask, "pending", lambda now=None, rundir=None: doc_a)
+    ask.deliver(doc_a["token"], "for A", rundir=rundir)
+    monkeypatch.undo()
+    assert ask.pending(rundir=rundir)["token"] == doc_b["token"]
+
+
+def test_racing_askers_do_not_remove_each_others_request(tmp_path, monkeypatch):
+    # N3: two askers see the same expired request; the faster one links its
+    # own. The slower one must get busy, not delete the fresh request.
+    rundir = str(tmp_path)
+    ask.open_request("old", 5, now=time.time() - 60, rundir=rundir)
+    real_pending = ask.pending
+    winner = {}
+
+    def pending_then_lose_the_race(now=None, rundir=None):
+        if not winner:
+            os.remove(os.path.join(rundir, ask.REQUEST_NAME))
+            monkeypatch.setattr(ask, "pending", real_pending)
+            winner["doc"] = ask.open_request("fast", 30, rundir=rundir)
+            monkeypatch.setattr(ask, "pending", pending_then_lose_the_race)
+            return None                 # what the slow asker saw before
+        return real_pending(now, rundir)
+
+    monkeypatch.setattr(ask, "pending", pending_then_lose_the_race)
+    with pytest.raises(ask.AskError) as err:
+        ask.open_request("slow", 30, rundir=rundir)
+    assert err.value.reason == "busy"
+    monkeypatch.undo()
+    assert ask.pending(rundir=rundir)["token"] == winner["doc"]["token"]
+
+
+def test_stop_ends_the_wait_as_canceled_and_cleans_up(tmp_path):
+    rundir = str(tmp_path)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    calls = []
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=lambda s: calls.append(s), rundir=rundir,
+                        stop=lambda: len(calls) >= 2)
+    assert err.value.reason == "canceled"
+    assert os.listdir(tmp_path) == []
+
+
+def test_failed_answer_reaches_the_asker_as_failed(tmp_path):
+    rundir = str(tmp_path)
+    doc = ask.open_request("Name?", 30, rundir=rundir)
+    ask.claim(rundir=rundir)
+    assert ask.fail(doc["token"], rundir=rundir)
+    assert ask.pending(rundir=rundir) is None
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=lambda s: None, rundir=rundir)
+    assert err.value.reason == "failed"
+    assert os.listdir(tmp_path) == []
+    assert not ask.fail(doc["token"], rundir=rundir)
+
+
+@pytest.mark.parametrize("raw, shown", [
+    ("Quassel‮gnp.exe", "Quasselgnp.exe"),        # right-to-left override
+    ("⁦claude⁩ code", "claude code"),          # isolates
+    ("cl​au‍de﻿", "claude"),              # zero width
+    ("a‎b‏c؜d­e", "abcde"),          # marks, soft hyphen
+    ("one two", "one two"),
+])
+def test_bidi_and_invisible_characters_are_removed(raw, shown):
+    # N5: a client name or question must not disguise who asks or what.
+    assert ask.shorten(raw, 80) == shown
+
+
+def test_request_keeps_no_bidi_controls(tmp_path):
+    doc = ask.open_request("Delete ‮all?", 30, "Quassel‮", rundir=str(tmp_path))
+    assert "‮" not in doc["question"] and "‮" not in doc["program"]

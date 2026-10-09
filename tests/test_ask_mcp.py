@@ -113,3 +113,108 @@ def test_without_a_running_service_a_clear_error(monkeypatch):
     error, body = call({"question": "Weiter?"})
     assert error and body["reason"] == "unavailable"
     assert os.listdir(state.RUNDIR) == []
+
+
+def _lines(*items):
+    """stdin for serve(): JSON lines and callables, which run (and may wait)
+    before the next line is read. The end of the generator is EOF."""
+    for item in items:
+        if callable(item):
+            item()
+        else:
+            yield json.dumps(item) + "\n"
+
+
+def _request_waits():
+    deadline = time.monotonic() + 5
+    while ask.pending() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ask.pending() is not None
+
+
+ASK_CALL = {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+            "params": {"name": "ask_user", "arguments": {"question": "Weiter?", "timeout": 3}}}
+
+
+def _replied(out):
+    deadline = time.monotonic() + 5
+    while not out.getvalue() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def _replies(out):
+    return [json.loads(line) for line in out.getvalue().splitlines()]
+
+
+def test_cancel_notification_ends_the_question_at_once():
+    # M2: the client cancels the tool call; the request must not wait on and
+    # take the user's next dictation.
+    import io
+    enable()
+    out = io.StringIO()
+    gone = {}
+
+    def request_gone():
+        deadline = time.monotonic() + 5
+        while ask.pending() is not None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        gone["after"] = time.monotonic() - started
+
+    started = time.monotonic()
+    mcp_server.serve(_lines(ASK_CALL, _request_waits,
+                            {"jsonrpc": "2.0", "method": "notifications/cancelled",
+                             "params": {"requestId": 5, "reason": "user"}},
+                            request_gone,
+                            {"jsonrpc": "2.0", "id": 6, "method": "tools/list"}), out)
+    assert gone["after"] < 2
+    assert os.listdir(state.RUNDIR) == []
+    # No reply for the canceled call, the next request is still served.
+    assert [reply["id"] for reply in _replies(out)] == [6]
+
+
+def test_cancel_for_another_request_id_changes_nothing():
+    import io
+    enable()
+    out = io.StringIO()
+
+    def answer():
+        doc = ask.claim()
+        ask.deliver(doc["token"], "Ja.")
+
+    mcp_server.serve(_lines(ASK_CALL, _request_waits,
+                            {"jsonrpc": "2.0", "method": "notifications/cancelled",
+                             "params": {"requestId": 99}},
+                            lambda: time.sleep(0.2), answer, lambda: _replied(out)), out)
+    replies = _replies(out)
+    assert [reply["id"] for reply in replies] == [5]
+    assert json.loads(replies[0]["result"]["content"][0]["text"]) == {"answer": "Ja."}
+
+
+def test_end_of_input_ends_the_question_at_once():
+    import io
+    enable()
+    out = io.StringIO()
+    started = time.monotonic()
+    mcp_server.serve(_lines(ASK_CALL, _request_waits), out)
+    assert time.monotonic() - started < 2
+    assert os.listdir(state.RUNDIR) == []
+
+
+def test_malformed_id_does_not_break_the_server():
+    import io
+    enable()
+    out = io.StringIO()
+    call = dict(ASK_CALL, id=[1, 2])
+    started = time.monotonic()
+    mcp_server.serve(_lines(call, _request_waits,
+                            {"jsonrpc": "2.0", "method": "notifications/cancelled",
+                             "params": {"requestId": [1, 2]}}), out)
+    assert time.monotonic() - started < 2
+    assert os.listdir(state.RUNDIR) == []
+
+
+def test_non_object_messages_get_an_error_reply():
+    import io
+    out = io.StringIO()
+    mcp_server.serve(_lines([1, 2], "text"), out)
+    assert [reply["error"]["code"] for reply in _replies(out)] == [-32600, -32600]

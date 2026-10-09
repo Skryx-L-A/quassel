@@ -193,12 +193,13 @@ def test_request_arriving_during_a_dictation_does_not_take_its_text(env):
 
 
 def test_request_gone_before_the_end_inserts_nothing(env):
+    env.core._clip_copy = lambda text: True
     doc = ask.open_request("Name?", 30, rundir=env.rundir)
     assert env.core.start_recording()
     ask.close_request(doc, env.rundir)          # the asker gave up meanwhile
     env.core.finish_now()
     assert env.core.pasted == []
-    assert env.core.states[-1] == ("error", i18n.tr("ask_gone"))
+    assert env.core.states[-1] == ("error", i18n.tr("ask_gone_clipboard"))
     assert not os.path.exists(_answer_file(env))
 
 
@@ -269,8 +270,20 @@ def test_canceled_recording_leaves_the_question_waiting(env):
     assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == "die antwort ist zwölf"
 
 
-def test_wake_phrase_dictation_answers_a_waiting_question(env):
+def _wake_capture(env, monkeypatch, during=None, pcm=b"\x01\x00" * 8000):
+    """Stand-in for the wake recorder: runs during() while "recording"."""
+    def capture(*a, **k):
+        if during is not None:
+            during()
+        return pcm
+    monkeypatch.setattr(dictation.wakeword, "capture_utterance", capture)
+    env.core._new_recorder = lambda raw_path: SimpleNamespace(raw_path=raw_path)
+
+
+def test_wake_phrase_dictation_answers_a_waiting_question(env, monkeypatch):
     doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch)
+    env.core._wake_record_utterance()
     env.core._wake_insert("die antwort ist zwölf")
     assert env.core.pasted == []
     assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == "die antwort ist zwölf"
@@ -297,3 +310,235 @@ def test_real_asker_thread_gets_the_answer(env):
     thread.join(5)
     assert result == {"text": "die antwort ist zwölf"}
     assert os.listdir(env.rundir) == []
+
+
+def test_second_dictation_during_the_answer_is_inserted_not_lost(env):
+    # M1: A answers and is still transcribing when B starts. B is an ordinary
+    # dictation for the window.
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    assert env.core.start_recording()
+    rest_a = env.core.finish()
+    assert env.core.start_recording()
+    rest_b = env.core.finish()
+    rest_a()
+    rest_b()
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == "die antwort ist zwölf"
+    assert env.core.pasted == ["die antwort ist zwölf"]
+
+
+def test_answer_for_a_closed_question_goes_to_the_clipboard(env):
+    # M1/N4: the asker is gone before the answer is ready. The text is not
+    # lost and not typed into whatever window is in front.
+    copied = []
+    env.core._clip_copy = lambda text: copied.append(text) or True
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    assert env.core.start_recording()
+    ask.close_request(doc, env.rundir)
+    env.core.finish_now()
+    assert copied == ["die antwort ist zwölf"]
+    assert env.core.pasted == []
+    assert env.core.states[-1] == ("error", i18n.tr("ask_gone_clipboard"))
+    assert env.history == []
+
+
+def test_answer_for_a_closed_question_is_inserted_if_the_clipboard_fails(env):
+    env.core._clip_copy = lambda text: False
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    assert env.core.start_recording()
+    ask.close_request(doc, env.rundir)
+    env.core.finish_now()
+    assert env.core.pasted == ["die antwort ist zwölf"]
+
+
+def test_emergency_stop_before_a_wake_answer_drops_it(env):
+    copied = []
+    env.core._clip_copy = lambda text: copied.append(text) or True
+    ask.open_request("Name?", 30, rundir=env.rundir)
+    doc = env.core._ask_claim()
+    env.core.panic_stop()
+    env.core._answer(doc, "text", "die antwort ist zwölf")
+    assert copied == [] and env.core.pasted == []
+
+
+def test_question_arriving_during_a_wake_utterance_does_not_take_it(env, monkeypatch):
+    # H2: phrase and text in one utterance; the question came while speaking.
+    created = {}
+    _wake_capture(env, monkeypatch, during=lambda: created.update(
+        doc=ask.open_request("Name?", 30, now=time.time() + 0.01, rundir=env.rundir)))
+    env.core._wake_record_utterance()
+    env.core._wake_insert("die antwort ist zwölf")
+    assert env.core.pasted == ["die antwort ist zwölf"]
+    assert ask.pending(rundir=env.rundir)["token"] == created["doc"]["token"]
+
+
+def test_wake_followup_binds_at_its_start(env, monkeypatch):
+    # H2: only the phrase was said; the follow-up recording answers the
+    # question that waited when it started, and holds the claim meanwhile.
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    seen = {}
+    _wake_capture(env, monkeypatch, during=lambda: seen.update(
+        claimed=ask._claimed(doc["token"], env.rundir)))
+    assert env.core._wake_record_followup()
+    assert seen == {"claimed": True}
+    env.core._wake_insert("die antwort ist zwölf")
+    assert env.core.pasted == []
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == "die antwort ist zwölf"
+
+
+def test_question_arriving_during_a_wake_followup_does_not_take_it(env, monkeypatch):
+    created = {}
+    _wake_capture(env, monkeypatch, during=lambda: created.update(
+        doc=ask.open_request("Name?", 30, now=time.time() + 0.01, rundir=env.rundir)))
+    assert env.core._wake_record_followup()
+    env.core._wake_insert("die antwort ist zwölf")
+    assert env.core.pasted == ["die antwort ist zwölf"]
+    assert ask.pending(rundir=env.rundir)["token"] == created["doc"]["token"]
+
+
+def test_empty_wake_followup_releases_the_claim(env, monkeypatch):
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch, pcm=None)
+    assert env.core._wake_record_followup() is None
+    assert not ask._claimed(doc["token"], env.rundir)
+    assert ask.pending(rundir=env.rundir)["token"] == doc["token"]
+
+
+def test_unheard_wake_followup_releases_the_claim(env, monkeypatch):
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch)
+    env.core._wake_transcribe = lambda pcm: None      # platforms override it
+    pcm = env.core._wake_record_followup()
+    assert env.core._wake_transcribe_checked(pcm) is None
+    assert not ask._claimed(doc["token"], env.rundir)
+
+
+def test_wake_followup_with_a_spoken_command_releases_the_claim(env, monkeypatch):
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch)
+    env.core._wake_record_followup()
+    env.core._wake_insert("press enter")
+    assert env.core.pasted == []
+    assert env.core.states[-1] == ("error", i18n.tr("ask_no_answer"))
+    assert not ask._claimed(doc["token"], env.rundir)
+    assert ask.pending(rundir=env.rundir)["token"] == doc["token"]
+
+
+def test_next_wake_cycle_releases_a_claim_left_behind(env, monkeypatch):
+    # The listener dropped the follow-up (a keyboard dictation ran): the next
+    # cycle must not keep the asker waiting past its deadline.
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch, pcm=None)
+    env.core._wake_ask = env.core._ask_claim()
+    env.core._wake_record_utterance()
+    assert not ask._claimed(doc["token"], env.rundir)
+
+
+def test_answer_gets_no_live_preview(monkeypatch):
+    # N1: the pill and state.json never show an answer, also not as preview.
+    from quassel.audio import RATE, SAMPLE_BYTES
+    calls = []
+    monkeypatch.setattr(dictation.whisperclient, "ensure_server", lambda: None)
+    monkeypatch.setattr(dictation.whisperclient, "transcribe_result",
+                        lambda *a, **k: calls.append(1) or dictation.SpeechResult("geheim"))
+    monkeypatch.setattr(dictation.textproc, "postprocess", lambda raw, cfg: ("text", raw))
+    rec = SimpleNamespace(active=True, started=0.0,
+                          raw_bytes=lambda: b"\x00" * (RATE * SAMPLE_BYTES * 2))
+    owner = SimpleNamespace(streamer=None, _handsfree=True, _ask={"token": "a" * 32},
+                            states=[], _wav_from_raw=lambda data, path: None)
+    owner._state = lambda s, text="": owner.states.append((s, text))
+    loop = dictation.PartialLoop(rec, SimpleNamespace(pill_preview=True), owner)
+    waits = []
+    loop.stop_event = SimpleNamespace(wait=lambda t: waits.append(t) or len(waits) > 2,
+                                      is_set=lambda: len(waits) > 2)
+    loop._loop("unused.wav")
+    assert owner.states == [] and calls == []
+
+
+def _must_not_wait(seconds):
+    raise AssertionError("the asker had to keep waiting")
+
+
+def _no_rescue(env):
+    return not any(name.startswith("rescued") for name in os.listdir(env.rundir))
+
+
+def test_transcription_failure_during_an_answer_fails_the_question_at_once(env, monkeypatch):
+    # N2: the asker learns it at once, the claim is gone and the answer audio
+    # is not kept (it was meant for another program).
+    monkeypatch.setattr(dictation.whisperclient, "transcribe_result",
+                        lambda wav, cfg: dictation.SpeechResult(None))
+    monkeypatch.setattr(dictation.selfheal, "recover", lambda: False)
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _dictate(env.core)
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=_must_not_wait, rundir=env.rundir)
+    assert err.value.reason == "failed"
+    assert env.core.states[-1][0] == "error"
+    assert i18n.tr("ask_failed") in env.core.states[-1][1]
+    assert _no_rescue(env) and env.core.pasted == []
+    assert not os.path.exists(env.core.rec.path)
+    assert ask.pending(rundir=env.rundir) is None
+
+
+def test_server_down_during_an_answer_fails_the_question(env, monkeypatch):
+    monkeypatch.setattr(dictation.whisperclient, "ensure_server", lambda deadline=600: False)
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _dictate(env.core)
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=_must_not_wait, rundir=env.rundir)
+    assert err.value.reason == "failed"
+    assert _no_rescue(env)
+
+
+def test_crash_during_an_answer_fails_the_question_without_rescue(env, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("x")
+    monkeypatch.setattr(dictation, "postprocess_transcript", boom)
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _dictate(env.core)
+    with pytest.raises(ask.AskError) as err:
+        ask.wait_answer(doc, sleep=_must_not_wait, rundir=env.rundir)
+    assert err.value.reason == "failed"
+    assert _no_rescue(env)
+    assert env.core.states[-1][0] == "error"
+
+
+def _terminal_in_front(env, monkeypatch, seen):
+    """Per-app profile of a terminal: no Enter. An answer must not care."""
+    def for_active_app(cfg, log=None):
+        seen.append(1)
+        return SimpleNamespace(**dict(vars(cfg), allow_enter=False))
+    monkeypatch.setattr(dictation.profiles, "for_active_app", for_active_app)
+
+
+def test_answer_is_formed_without_the_profile_of_the_window_in_front(env, monkeypatch):
+    # N6: the answer goes to a program, not into the terminal in front.
+    seen = []
+    _terminal_in_front(env, monkeypatch, seen)
+    env.transcript["text"] = "zeile eins\nzeile zwei\n"
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _dictate(env.core)
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == \
+        "zeile eins\nzeile zwei\n"
+    assert seen == []
+
+
+def test_wake_answer_is_formed_without_the_profile_of_the_window_in_front(env, monkeypatch):
+    seen = []
+    _terminal_in_front(env, monkeypatch, seen)
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _wake_capture(env, monkeypatch)
+    env.core._wake_record_followup()
+    env.core._wake_insert("zeile eins\nzeile zwei\n")
+    assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == \
+        "zeile eins\nzeile zwei\n"
+    assert seen == []
+
+
+def test_dictation_without_question_still_uses_the_profile(env, monkeypatch):
+    seen = []
+    _terminal_in_front(env, monkeypatch, seen)
+    env.transcript["text"] = "zeile eins\nzeile zwei\n"
+    _dictate(env.core)
+    assert env.core.pasted == ["zeile eins zeile zwei"]
+    assert seen
