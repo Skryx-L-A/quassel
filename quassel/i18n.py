@@ -437,6 +437,29 @@ STRINGS = {
     "stats_chart": ("Words per day (last 14 days)", "Wörter pro Tag (letzte 14 Tage)"),
     "stats_chart_empty": ("Dictate something to see your daily activity here.",
                           "Diktiere etwas, um hier deine tägliche Aktivität zu sehen."),
+    # --- Diagnose kopieren (System-Seite) ---
+    "sec_diag": ("Diagnostics", "Diagnose"),
+    "diag_copy": ("Copy diagnostics", "Diagnose kopieren"),
+    "diag_save": ("Save as file…", "Als Datei speichern…"),
+    "diag_hint": ("For a bug report: a plain-text report goes to the clipboard. It contains the "
+                  "version, platform, profile and port, model file name, your settings, the server "
+                  "configuration without secrets, whether the server answers, the names of your "
+                  "per-app profiles and the last 200 lines of the log. It never contains your "
+                  "history, dictionary, replacements, AI mode texts, clipboard or anything you "
+                  "dictated. Your home folder is shown as ~.",
+                  "Für eine Fehlermeldung: Ein Klartextbericht kommt in die Zwischenablage. Er "
+                  "enthält Version, Plattform, Profil und Port, den Dateinamen des Modells, deine "
+                  "Einstellungen, die Server-Konfiguration ohne Geheimnisse, ob der Server "
+                  "antwortet, die Namen deiner Per-App-Profile und die letzten 200 Zeilen des "
+                  "Logs. Er enthält nie deinen Verlauf, das Wörterbuch, Ersetzungen, Texte der "
+                  "KI-Modi, die Zwischenablage oder etwas, das du diktiert hast. Dein "
+                  "Benutzerordner erscheint als ~."),
+    "diag_collecting": ("Collecting…", "Wird gesammelt …"),
+    "diag_copied": ("Copied to the clipboard ({lines} lines). Paste it into your bug report.",
+                    "In die Zwischenablage kopiert ({lines} Zeilen). Füge ihn in deine "
+                    "Fehlermeldung ein."),
+    "diag_saved": ("Saved as {name}.", "Gespeichert als {name}."),
+    "diag_save_failed": ("Could not save the file.", "Die Datei ließ sich nicht speichern."),
 }
 
 _lang = None

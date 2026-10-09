@@ -24,8 +24,9 @@ from PySide6.QtWidgets import (
     QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, fsutil, i18n,
-               profile, profiles, stats, transcribe_file, updatecheck, vad, wakeword, whisperclient)
+from . import (__version__, ai, aimodes, beep, cleanup, config, diagnostics, dictprompt, fsutil,
+               i18n, profile, profiles, stats, transcribe_file, updatecheck, vad, wakeword,
+               whisperclient)
 from .dictation import failure_text, mac_mic_permission
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
@@ -332,6 +333,7 @@ class Bridge(QObject):
     update_done = Signal(dict)        # updatecheck.check()-Resultat
     ai_models = Signal(dict)          # {"available":bool,"models":[...]}
     ai_test_done = Signal(str)        # Ergebnis des KI-Tests
+    diag_done = Signal(str, str)      # (Ziel "copy"/"save", Bericht)
 
 
 class Center(QMainWindow):
@@ -352,6 +354,7 @@ class Center(QMainWindow):
         self.bridge.update_done.connect(self.on_update_done)
         self.bridge.ai_models.connect(self.on_ai_models)
         self.bridge.ai_test_done.connect(self.on_ai_test_done)
+        self.bridge.diag_done.connect(self.on_diag_done)
         self.nowheel = NoWheel(self)
         # Ein bestätigter fremder KI-Endpunkt wird nicht bei jedem weiteren
         # Speichern erneut abgefragt; der gespeicherte gilt als bestätigt.
@@ -1332,6 +1335,26 @@ class Center(QMainWindow):
             QUrl("https://github.com/Skryx-L-A/quassel")))
         g.addWidget(link)
 
+        # --- Diagnose kopieren ---
+        g = self.group(tr("sec_diag"), lay)
+        row = QHBoxLayout()
+        self.diag_copy = QPushButton(tr("diag_copy"))
+        self.diag_copy.setAccessibleName(tr("diag_copy"))
+        self.diag_copy.setAccessibleDescription(tr("diag_hint"))
+        self.diag_copy.clicked.connect(lambda: self.on_diag("copy"))
+        row.addWidget(self.diag_copy)
+        self.diag_save = QPushButton(tr("diag_save"))
+        self.diag_save.setAccessibleName(tr("diag_save"))
+        self.diag_save.clicked.connect(lambda: self.on_diag("save"))
+        row.addWidget(self.diag_save)
+        row.addStretch(1)
+        g.addLayout(row)
+        self.diag_hint = self.desc(tr("diag_hint"), g)
+        self.diag_status = QLabel()
+        self.diag_status.setObjectName("desc")
+        self.diag_status.setWordWrap(True)
+        g.addWidget(self.diag_status)
+
         lay.addStretch(1)
         return scroll
 
@@ -1820,6 +1843,46 @@ class Center(QMainWindow):
         else:
             self.update_status.setText(tr("update_none", current=__version__))
             self.update_get.setVisible(False)
+
+    # ---------------------------------------------------- Diagnose kopieren
+    def on_diag(self, target, run_async=True):
+        """Bericht im Hintergrund sammeln (journalctl und die Server-Probe
+        haben Fristen von Sekunden) und danach im GUI-Thread ausliefern."""
+        self.diag_copy.setEnabled(False)
+        self.diag_save.setEnabled(False)
+        self.diag_status.setText(tr("diag_collecting"))
+
+        def run():
+            self.bridge.diag_done.emit(target, diagnostics.build_report())
+        if run_async:
+            threading.Thread(target=run, daemon=True).start()
+        else:
+            run()
+
+    def on_diag_done(self, target, report):
+        self.diag_copy.setEnabled(True)
+        self.diag_save.setEnabled(True)
+        if target == "save":
+            self._diag_save(report)
+            return
+        # Qt-Zwischenablage des Kontrollzentrums, nicht die Diktat-Einfügewege.
+        QApplication.clipboard().setText(report)
+        self.diag_status.setText(tr("diag_copied", lines=report.count("\n")))
+
+    def _diag_save(self, report):
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("diag_save"),
+            os.path.join(os.path.expanduser("~"), diagnostics.default_filename()),
+            "Text (*.txt)")
+        if not path:
+            self.diag_status.setText("")
+            return
+        try:
+            diagnostics.save_report(path, report)
+        except OSError:
+            self.diag_status.setText(tr("diag_save_failed"))
+            return
+        self.diag_status.setText(tr("diag_saved", name=os.path.basename(path)))
 
     # ---------------------------------------------------- Zurücksetzen (#31)
     def on_reset_defaults(self):
