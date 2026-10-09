@@ -209,6 +209,15 @@ def test_spoken_command_is_not_executed_and_the_question_keeps_waiting(env):
     assert env.core.pasted == []
     assert env.core.states[-1] == ("error", i18n.tr("ask_no_answer"))
     assert ask.pending(rundir=env.rundir)["token"] == doc["token"]
+    assert not os.path.exists(os.path.join(env.rundir, ask.CLAIM_NAME))
+
+
+def test_too_short_answer_releases_the_claim(env):
+    env.core.rec.data = b"\x01\x00" * 100
+    doc = ask.open_request("Name?", 30, rundir=env.rundir)
+    _dictate(env.core)
+    assert ask.pending(rundir=env.rundir)["token"] == doc["token"]
+    assert not os.path.exists(os.path.join(env.rundir, ask.CLAIM_NAME))
 
 
 def test_emergency_stop_without_dictation_dismisses_the_question(env):
@@ -251,8 +260,11 @@ def test_request_of_a_dead_asker_is_ignored(env):
 def test_canceled_recording_leaves_the_question_waiting(env):
     doc = ask.open_request("Name?", 30, rundir=env.rundir)
     assert env.core.start_recording()
+    assert os.path.exists(os.path.join(env.rundir, ask.CLAIM_NAME))
     env.core.cancel_recording("canceled_key")
     assert ask.pending(rundir=env.rundir)["token"] == doc["token"]
+    # No longer claimed: the asker does not wait past its deadline for it.
+    assert not os.path.exists(os.path.join(env.rundir, ask.CLAIM_NAME))
     _dictate(env.core)
     assert ask.wait_answer(doc, sleep=lambda s: None, rundir=env.rundir) == "die antwort ist zwölf"
 

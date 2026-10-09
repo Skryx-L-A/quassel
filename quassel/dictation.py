@@ -587,6 +587,7 @@ class DictationCore:
         # solange als laufendes Diktat (siehe _busy).
         self._sync_action = "cancel"
         # Die Frage bleibt offen; das nächste Diktat beantwortet sie.
+        self._ask_release(self._ask)
         self._ask = None
         try:
             if self.partial:
@@ -753,6 +754,7 @@ class DictationCore:
             self._bt, self._vad, raw_len / (RATE * SAMPLE_BYTES), trim_ms, pad_ms,
             lost or "-"))
         if len(data) < MIN_AUDIO_BYTES:
+            self._ask_release(answer_to)
             if lost:
                 self._report_mic_lost()
             else:
@@ -1209,6 +1211,14 @@ class DictationCore:
         except Exception:  # noqa: BLE001
             return None
 
+    def _ask_release(self, ask_doc):
+        if ask_doc is None:
+            return
+        try:
+            ask.release(ask_doc["token"], rundir=self._ask_dir())
+        except Exception:  # noqa: BLE001 — nur die Wartezeit des Fragenden
+            pass
+
     def _ask_discard(self):
         try:
             return ask.discard(rundir=self._ask_dir())
@@ -1224,6 +1234,7 @@ class DictationCore:
             # Stille oder ein Sprachbefehl („Enter", „Rückgängig"): nichts
             # ausführen, die Frage wartet weiter auf eine Antwort.
             self._log("ask: keine Antwort erkannt (%s)" % (kind or "leer"))
+            self._ask_release(ask_doc)
             self._state("error", tr("ask_no_answer"))
             return
         text = self._refine(value)

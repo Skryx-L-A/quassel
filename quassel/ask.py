@@ -298,6 +298,14 @@ def claim(now=None, rundir=None):
     return doc
 
 
+def release(token, rundir=None):
+    """The dictation that claimed token ended without an answer (canceled,
+    too short, nothing heard): the asker no longer waits past its deadline."""
+    _, claim_path, _ = _paths(rundir)
+    if _token_of(claim_path) == token:
+        _remove(claim_path)
+
+
 def deliver(token, text, now=None, rundir=None):
     """Hand the finished text to the asker of token. False if that request
     no longer waits (deadline passed, emergency stop, asker gone): then the
