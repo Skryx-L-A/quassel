@@ -26,6 +26,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   an error and returns to idle instead of hanging on "transcribing".
 - With pre-roll switched on, starting or emergency-stopping a dictation no
   longer waits while the idle microphone stream is being released.
+- The emergency stop signal (`SIGUSR2`, the "Stop dictation now" menu item on
+  macOS) can no longer freeze Quassel when it arrives while a recording is
+  starting or ending.
 - A damaged settings file is no longer replaced by the part that could still be
   read: Quassel keeps a copy next to it (`config.ini.damaged-…`) before saving.
 - The dictation history could lose a new entry while expired entries were
