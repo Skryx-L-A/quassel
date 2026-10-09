@@ -18,6 +18,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Terminal protection now checks the app in front right before the text is
   inserted. Switching from a mail window to a terminal while Quassel is still
   transcribing no longer sends a line break or a spoken Enter there.
+- In apps whose profile forbids Enter (terminals by default), line breaks
+  inside a dictation are now inserted as spaces, so a spoken "new line" can no
+  longer run the first half as a command.
 - A damaged settings file is no longer replaced by the part that could still be
   read: Quassel keeps a copy next to it (`config.ini.damaged-…`) before saving.
 - The dictation history could lose a new entry while expired entries were

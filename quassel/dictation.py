@@ -990,10 +990,15 @@ class DictationCore:
 
     @staticmethod
     def _finish_text(text, cfg):
-        """Terminal-Schutz: verbietet das Profil Enter, kein Umbruch am Ende."""
+        """Terminal-Schutz: verbietet das Profil Enter, kein Umbruch am Ende,
+        und Umbrüche im Text werden Leerzeichen wie im Streaming. Die
+        Tipp-Rückfälle (ydotool, Unicode-Ereignisse) senden einen Umbruch als
+        Enter, und auch beim echten Einfügen schützt Bracketed Paste nur in
+        Shells, die es einschalten (nicht in REPLs, Passwortabfragen, ssh auf
+        alte Shells)."""
         if profiles.allow_enter(cfg):
             return text
-        return profiles.strip_trailing_enter(text)
+        return profiles.strip_trailing_enter(text).translate(_NO_ENTER)
 
     def _refine_mechanical(self, text):
         """Schnelle lokale Umformungen ohne Netz/KI: Programmier-Diktat + Textersetzungen."""

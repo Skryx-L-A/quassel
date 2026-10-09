@@ -75,3 +75,16 @@ def test_mail_profile_keeps_enter_and_inner_newlines(monkeypatch):
     core._transcribe_and_insert(None, None, b"\0" * 32000, threading.Event())
     assert ("insert", "a\nb\n") in calls
 
+
+def test_no_enter_turns_inner_newlines_into_spaces(monkeypatch):
+    """Befund 4: Tipp-Rückfälle senden "\\n" als Enter."""
+    core, calls = make_core(monkeypatch, "echo eins\necho zwei\n", [TERMINAL, TERMINAL])
+    monkeypatch.setattr(dictation, "postprocess_transcript", lambda *a: ("text", a[0]))
+    core._transcribe_and_insert(None, None, b"\0" * 32000, threading.Event())
+    assert ("insert", "echo eins echo zwei") in calls
+
+
+def test_finish_text_keeps_length_except_the_trailing_enter():
+    out = dictation.DictationCore._finish_text("a\r\nb\nc  \n", TERMINAL)
+    assert out == "a  b c"
+    assert dictation.DictationCore._finish_text("a\nb\n", MAIL) == "a\nb\n"
