@@ -98,6 +98,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spoken when text cleanup or number formatting would change them.
 
 ### Added
+- "Copy diagnostics" on the About page of the control center puts a plain-text
+  report for bug reports on the clipboard, or saves it as a file that only you
+  can read. It holds the version, platform, profile, model file name, your
+  settings, the server configuration, whether the server answers, the names of
+  your per-app profiles and the last 200 log lines. It never holds your
+  history, dictionary, replacements, AI mode texts, clipboard or dictated text;
+  secrets are replaced by `<entfernt>` and your home folder by `~`. The same
+  report is printed by `quassel-type diagnostics`.
 - German "ß" is restored where spelling needs it when a German fine-tuned
   speech model is in use (it writes "grosses" instead of "großes"); "dass",
   "Masse" and English words stay as they are. Setting `[speech] eszett`

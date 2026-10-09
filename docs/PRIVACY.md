@@ -41,6 +41,40 @@ Two things deserve a note:
   class). It never reads, stores or logs window titles. Without `profiles.ini`
   the lookup is not done at all.
 
+## The diagnostics report
+
+"Copy diagnostics" on the About page of the control center, and
+`quassel-type diagnostics`, build a plain-text report for bug reports
+(`quassel/diagnostics.py`). It is put on the clipboard or, with "Save as
+file…", written with mode 0600. Nothing is sent anywhere; you decide whether
+to paste it into an issue.
+
+It contains:
+
+- the Quassel version, the platform and the Python version;
+- the profile name and the port of the speech server;
+- the file name of the speech model (not its folder);
+- the settings in `config.ini` and `server.env`;
+- whether the local speech server answers (a request to its start page, never
+  to `/inference`);
+- the names of your per-app profiles in `profiles.ini`, without their app
+  patterns or settings;
+- the last 200 lines of the daemon log (the macOS `daemon.log`, the Windows
+  `debug.log`, or on Linux `journalctl --user -u quasseld.service`, stopped
+  after five seconds).
+
+It never contains your history, personal dictionary, replacements, correction
+list, AI mode texts, the clipboard or dictated text. Those files are not even
+opened. Values of keys whose name contains token, key, secret, password, auth
+or `REQUEST_PATH`, user names and passwords in addresses, and `Bearer` tokens
+are replaced by `<entfernt>`; your home folder is written as `~`, and on Linux
+the computer's name in journal lines as `<host>`. The log never holds dictated
+text by design. As a second safeguard, every log line that could still hold
+some is replaced by a notice: lines with `text=`, `hyp=`, `transcript=`,
+`raw=`, `prompt=` and similar keys, and lines with more than 20 characters in
+quotation marks unless that is a file path. If one part of the report cannot be
+collected, the report says why and contains the rest.
+
 ## What can use the network
 
 Quassel's own code makes these connections and no others. Everything is

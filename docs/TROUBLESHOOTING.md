@@ -155,3 +155,12 @@ use port 8765, which belongs to the installed Quassel.
 Open an issue at <https://github.com/Skryx-L-A/quassel/issues> and fill in the
 template: version, platform, the log lines around the problem and the steps to
 reproduce. Do not paste dictated text or recordings you want to keep private.
+
+The quickest way to collect most of this: open the control center, go to
+**About** and press **Copy diagnostics** (German: **Diagnose kopieren**), then
+paste the report into the issue. **Save as file…** writes the same report to a
+file that only you can read. Without the control center, run
+`quassel-type diagnostics`. The report never contains your history,
+dictionary, replacements, AI mode texts or anything you dictated; see
+[PRIVACY.md](PRIVACY.md#the-diagnostics-report) for the full list. Read it
+before you post it: it is plain text.
