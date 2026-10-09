@@ -117,8 +117,9 @@ def check_ffmpeg(tray):
     """ffmpeg vorhanden? Sonst einmalig per Tray-Notification den
     brew-Hinweis zeigen. Die App läuft weiter (Server + UI gehen auch ohne).
 
-    Nur relevant, wenn das ffmpeg-Aufnahme-Backend aktiv ist — der Default
-    nimmt über sounddevice auf und braucht ffmpeg nicht."""
+    Nur relevant, wenn das ffmpeg-Diagnose-Backend (QUASSEL_MAC_AUDIO=ffmpeg)
+    aktiv ist — der Default nimmt über sounddevice auf und braucht ffmpeg
+    nicht."""
     if audio.mac_backend() != "ffmpeg":
         return True
     if shutil.which("ffmpeg"):

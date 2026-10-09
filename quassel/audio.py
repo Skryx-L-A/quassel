@@ -33,7 +33,10 @@ RAW_B = os.path.join(os.path.dirname(RAW), "rec-b.raw")
 # dylibs gelinkt), deshalb nimmt die App über sounddevice/CoreAudio auf.
 #   "sd16"      Stream direkt auf 16 kHz öffnen — CoreAudio konvertiert
 #   "sdnative"  Stream auf der Geräterate + eigenes Polyphase-Resampling
-#   "ffmpeg"    alter Subprozess-Pfad (nur mit ffmpeg im PATH)
+#   "ffmpeg"    nur zur Diagnose: alter Subprozess-Pfad (ffmpeg/AVFoundation,
+#               nur mit ffmpeg im PATH). Bleibt, weil scripts/bench_mac_capture.py
+#               die Backends gegeneinander misst und docs/CONFIG.md ihn als
+#               Diagnoseschalter nennt; kein Nutzerweg führt dorthin.
 # Umschaltbar zur Laufzeit über QUASSEL_MAC_AUDIO (siehe mac_backend()).
 MAC_BACKEND_DEFAULT = "sd16"
 MAC_BACKENDS = ("sd16", "sdnative", "ffmpeg")
