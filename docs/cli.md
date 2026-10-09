@@ -52,7 +52,11 @@ appears. The next dictation you start yourself with the hotkey (or the wake
 phrase) is then not inserted into any window: Quassel prints the finished text
 (with your replacements, number formatting and, if switched on, clean-up) on
 stdout and exits 0. A dictation that was already running when the question
-arrived still goes to its window. The answer is not added to the history, the
+arrived still goes to its window; with the wake phrase that means a question
+must already wait when you start speaking. Only one dictation answers: one you
+start while the answer is still being transcribed goes to its window. If the
+question ended before your answer was ready, the answer is put on the
+clipboard and the pill says so. The answer is not added to the history, the
 statistics or the learned words, and it is never logged.
 
 | Option | Meaning |
@@ -112,6 +116,9 @@ Only then does `ask_user` appear in `tools/list`. Arguments: `question`
 a timeout, a dismissed question or a question already waiting come back as an
 error with `reason` `timeout`, `canceled` or `busy`. The tool never starts the
 microphone: you answer with your next dictation, started with the hotkey.
+If the client cancels the call (`notifications/cancelled`) or closes the
+server's input, the question is withdrawn at once and no response is sent
+for the canceled call.
 
 MCP history is off by default. To explicitly share it with the local MCP
 client, add this to Quassel's `config.ini`:
