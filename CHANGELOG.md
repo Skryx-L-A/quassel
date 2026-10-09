@@ -15,6 +15,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- A damaged settings file is no longer replaced by the part that could still be
+  read: Quassel keeps a copy next to it (`config.ini.damaged-…`) before saving.
+- The dictation history could lose a new entry while expired entries were
+  being removed; it no longer does.
+- With the history switched off, MCP clients can no longer read old entries
+  that are still on disk.
 - Windows: when the audio driver stops responding while a recording ends,
   Quassel now says to restart it instead of claiming the microphone is busy.
 - Model downloads from Hugging Face show real progress instead of jumping to

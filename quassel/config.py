@@ -89,6 +89,38 @@ def _read_parser():
     return p
 
 
+def _read_parser_strict():
+    """(Parser, ob config.ini vollständig gelesen wurde). Fehlt die Datei,
+    gilt das als vollständig (nichts zu verlieren)."""
+    p = _new_parser()
+    if not os.path.exists(CONFIG):
+        return p, True
+    try:
+        with open(CONFIG, encoding="utf-8") as f:
+            p.read_file(f)
+        return p, True
+    except (configparser.Error, OSError, ValueError):
+        return _read_parser(), False
+
+
+def _keep_damaged_copy():
+    """Kopie einer nicht vollständig lesbaren config.ini neben das Original,
+    bevor ein Schreiben den lesbaren Teilstand an ihre Stelle setzt: die
+    Einstellungen hinter der kaputten Stelle bleiben so wiederherstellbar."""
+    try:
+        with open(CONFIG, "rb") as f:
+            data = f.read()
+        backup = CONFIG + ".damaged-" + __import__("time").strftime("%Y%m%d-%H%M%S")
+        # Byteweise: eine kaputte Datei kann ungültiges UTF-8 enthalten.
+        fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                     | getattr(os, "O_BINARY", 0), 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        return backup
+    except OSError:
+        return None
+
+
 def _write_parser(p):
     buf = io.StringIO()
     p.write(buf)
@@ -108,7 +140,12 @@ def migrate():
     Alte Dateien ohne ``[meta] version`` gelten als Version 0. Unbekannte
     neuere Versionen werden nicht zurückgeschrieben.
     """
-    p = _read_parser()
+    if not os.path.exists(CONFIG):
+        return False             # nichts zu migrieren; save() legt die Datei an
+    p, complete = _read_parser_strict()
+    if not complete:
+        # Nie eine nur teilweise gelesene Datei als vollständige zurückschreiben.
+        return False
     try:
         version = p.getint("meta", "version", fallback=0)
     except ValueError:
@@ -283,7 +320,9 @@ def save(values):
     Schlüssel übergibt.
     """
     migrate()
-    p = _read_parser()
+    p, complete = _read_parser_strict()
+    if not complete:
+        _keep_damaged_copy()
     for (sec, key), val in values.items():
         if not p.has_section(sec):
             p.add_section(sec)
