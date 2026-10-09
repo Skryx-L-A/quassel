@@ -67,3 +67,20 @@ def test_gtk_pill_switches_only_its_own_profile_units(monkeypatch):
     on_right_click(pill)
     assert calls == [["systemctl", "--user", "stop",
                       "quasseld@next.service", "quassel-server@next.service"]]
+
+
+def test_gtk_pill_keeps_dictated_text_off_the_accessibility_bus_without_preview():
+    from quassel import i18n
+    namespace = {"STRINGS": i18n.STRINGS, "tr": i18n.tr, "time": __import__("time"),
+                 "RESULT_SHOW_MS": 1000}
+    set_mode = _pill_function("set_mode", namespace)
+    announced = []
+    pill, _shown = _recording_pill(preview=False)
+    pill.update_accessible = announced.append
+    set_mode(pill, "done", "geheimer Text")
+    set_mode(pill, "error", "Mikrofon fehlt")
+    assert announced == ["", "Mikrofon fehlt"]
+    pill, _shown = _recording_pill(preview=True)
+    pill.update_accessible = announced.append
+    set_mode(pill, "done", "sichtbarer Text")
+    assert announced[-1] == "sichtbarer Text"

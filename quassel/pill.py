@@ -337,7 +337,11 @@ class Pill(Gtk.Application):
             self._hint_shown = False
         self.mode = mode
         self.text = text
-        self.update_accessible(text if mode in ("done", "error") else "")
+        # Fehlermeldungen sind Statustext und bleiben für Screenreader lesbar;
+        # der diktierte Text („done") geht nur mit eingeschalteter Vorschau an
+        # den Accessibility-Bus, wie bei der Qt-Pille.
+        spoken = mode == "error" or (mode == "done" and self.cfg.pill_preview)
+        self.update_accessible(text if spoken else "")
         if mode in ("off", "ready"):
             self.textbox.set_visible(False)
         elif mode == "recording":
