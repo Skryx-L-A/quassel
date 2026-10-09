@@ -800,7 +800,7 @@ class DictationCore:
             live_typed = len(streamer.typed) if streamer is not None else 0
             if streamer is not None:
                 self._streaming_restore(clip_backup)
-            if action == "enter" and not profiles.allow_enter(cfg):
+            if action == "enter" and not profiles.allow_enter(self._insert_cfg(cfg)):
                 # Terminal-Schutz: ein gesprochenes Enter führte den Befehl aus.
                 if live_typed:
                     self._send_backspaces(live_typed)
@@ -840,6 +840,7 @@ class DictationCore:
             if panic.is_set():
                 self._state("idle")
                 return
+            final = self._finish_text(final, self._insert_cfg(cfg))
             inserted = self._insert(final)
             self.last_paste_len = len(final) if inserted else 0
             if final != value:
@@ -861,10 +862,12 @@ class DictationCore:
             if panic.is_set():
                 self._state("idle")
                 return
+            final = self._finish_text(final, self._insert_cfg(cfg))
             inserted = self._insert(final)
             self.last_paste_len = len(final) if inserted else 0
             value = final
         else:
+            mech = self._finish_text(mech, self._insert_cfg(cfg))
             inserted = self._insert(mech)
             self.last_paste_len = len(mech) if inserted else 0
             value = mech
@@ -974,6 +977,16 @@ class DictationCore:
         Ohne profiles.ini ist es self.cfg selbst, die Anwendung wird dann gar
         nicht erst abgefragt."""
         return profiles.for_active_app(self.cfg, log=self._log)
+
+    def _insert_cfg(self, cfg):
+        """Profil für die Enter-Sperre, unmittelbar vor dem Einfügen bestimmt:
+        zwischen der ersten Abfrage und dem Einfügen liegen Transkription und
+        Modellaufruf, inzwischen kann ein Terminal vorne sein. Sperrt schon
+        das Profil vom Diktatbeginn Enter, bleibt es dabei. Die Sprache
+        kommt weiter aus der ersten Abfrage."""
+        if not profiles.allow_enter(cfg):
+            return cfg
+        return self._profile_cfg()
 
     @staticmethod
     def _finish_text(text, cfg):
