@@ -36,7 +36,6 @@ not yet released or tried on a real device by the maintainer.
 - A control center page for dictation clean-up, per-app profiles, auto-stop, pre-roll and
   the keyword detector (today these live in `config.ini` and `profiles.ini`,
   see [docs/CONFIG.md](docs/CONFIG.md)) — **M**
-- "Copy diagnostics" button (bundles logs and settings without dictated text) — **S**
 - Model management in the control center: sizes, speed hints, a recommendation, delete — **M**
 
 ### Trust and distribution
@@ -79,6 +78,9 @@ not yet released or tried on a real device by the maintainer.
   damaged settings file is kept as a copy instead of being overwritten; the history
   cannot lose an entry while old ones are removed.
 - The command-line client ships with the Linux installers and the AUR package.
+- "Copy diagnostics" in the control center (About page) and `quassel-type diagnostics`:
+  version, settings with secrets removed and the recent log, never history, dictionary
+  or dictated text.
 - `QUASSEL_PROFILE` to run a second copy next to the installed one.
 - Windows runs the same dictation flow as Linux and macOS (rescue of failed recordings,
   separate wake-word recording file, the stop-race fix).
