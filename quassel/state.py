@@ -36,7 +36,7 @@ def mark_daemon_running():
     from . import fsutil
     pid = os.getpid()
     try:
-        os.makedirs(RUNDIR, exist_ok=True)
+        os.makedirs(RUNDIR, mode=0o700, exist_ok=True)
         fsutil.atomic_write(DAEMON_PID, "%d\n" % pid, mode=0o600)
     except OSError:
         return
@@ -73,7 +73,7 @@ _level_written = float("-inf")
 
 
 def _write(doc):
-    os.makedirs(RUNDIR, exist_ok=True)
+    os.makedirs(RUNDIR, mode=0o700, exist_ok=True)
     tmp = STATE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(doc, f)

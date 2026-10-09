@@ -802,7 +802,7 @@ class Recorder:
         return self.proc is not None and self.proc.poll() is None
 
     def start(self, mic="default"):
-        os.makedirs(RUNDIR, exist_ok=True)
+        os.makedirs(RUNDIR, mode=0o700, exist_ok=True)
         # Ein Vorgänger, den niemand beendet hat (verlorenes stop(), Not-Aus
         # mitten im Ablauf), wird zuerst abgeräumt: eine fallen gelassene
         # Referenz nähme das Mikrofon mit und schriebe still weiter.

@@ -1023,7 +1023,7 @@ class DictationCore:
     def _rescue(self, data):
         """Rohdaten als eigene WAV-Datei ablegen. Rückgabe: Pfad oder None."""
         rundir = self._rundir()
-        os.makedirs(rundir, exist_ok=True)
+        os.makedirs(rundir, mode=0o700, exist_ok=True)
         # Der Name hat Sekundenauflösung. Bei totem Server scheitern zwei
         # Diktate leicht in derselben Sekunde — dann zählt ein Suffix weiter,
         # statt die erste Rettung stillschweigend zu überschreiben.

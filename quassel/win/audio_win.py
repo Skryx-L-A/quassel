@@ -155,7 +155,7 @@ class Recorder:
     def start(self, mic="default"):
         if self.stream_abandoned:
             return False
-        os.makedirs(RUNDIR, exist_ok=True)
+        os.makedirs(RUNDIR, mode=0o700, exist_ok=True)
         # Ein Vorgänger, den niemand beendet hat, wird zuerst abgeräumt: er
         # hielte sonst das Mikrofon und schriebe still weiter.
         if self.running_path is not None:

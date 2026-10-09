@@ -243,7 +243,7 @@ class Pill(Gtk.Application):
             "/", Gio.DBusNodeInfo.new_for_xml(DBUS_XML).interfaces[0],
             self.on_dbus_call)
         path = os.path.join(RUNDIR, "kwin-follow.js")
-        os.makedirs(RUNDIR, exist_ok=True)
+        os.makedirs(RUNDIR, mode=0o700, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(KWIN_JS)
         for args in (["unloadScript", "s", KWIN_PLUGIN],

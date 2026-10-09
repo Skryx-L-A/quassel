@@ -130,7 +130,7 @@ def _wait_functional_server(timeout=30):
 
 def _request_mac_server_restart(timeout=45):
     """Ask the owning App process to restart its child, via this profile's run dir."""
-    os.makedirs(RUNDIR, exist_ok=True)
+    os.makedirs(RUNDIR, mode=0o700, exist_ok=True)
     token = secrets.token_hex(16)
     request = {"token": token, "daemon_pid": os.getpid(), "app_pid": os.getppid(),
                "profile": profile.name(), "created": time.time()}

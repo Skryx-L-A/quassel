@@ -291,7 +291,7 @@ class Pill(QWidget):
         if RUNDIR in self._fs_watcher.directories():
             return
         try:
-            os.makedirs(RUNDIR, exist_ok=True)
+            os.makedirs(RUNDIR, mode=0o700, exist_ok=True)
             self._fs_watcher.addPath(RUNDIR)
         except OSError:
             pass  # nächster tick()-Aufruf versucht es erneut
