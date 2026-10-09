@@ -11,7 +11,7 @@ each statement is named so that you can check it.
 | What | Where | Content | How long |
 |---|---|---|---|
 | Recording while you speak | runtime folder: `rec.raw`, `rec-b.raw`, `partial.wav`, `rec.wav`, `wake.raw` | Raw audio of the dictation in progress | Deleted when the dictation has been transcribed (`dictation.discard`). A crash can leave one file behind; it is overwritten by the next recording. On Linux the runtime folder is in memory (`/run/user/<uid>`) and disappears at logout. |
-| Rescued recording | runtime folder: `rescued-<timestamp>.wav` | Audio of a dictation whose transcription failed, so it is not lost | Only created on failure. The five newest are kept; older ones are removed when a new one is saved. Delete them by hand when you no longer need them. |
+| Rescued recording | runtime folder: `rescued-<timestamp>.wav` | Audio of a dictation whose transcription or insertion failed, so it is not lost | Only created on failure. The five newest are kept; older ones are removed when a new one is saved. Delete them by hand when you no longer need them. |
 | Status for the pill | runtime folder: `state.json` | State, the level of the microphone, and for four seconds the last text the pill shows | The text is removed from the file after four seconds. |
 | History | data folder: `history.jsonl`, mode 0600 | The text of your last dictations, newest 50 at most | Entries older than 7 days are deleted (setting `history_days`; `0` keeps them until you clear the history). Turn it off with `[history] enabled = false` or in the control center, or press "Clear history". |
 | Statistics | data folder: `stats.json` | Counts only: words, characters, seconds spoken and saved, and a per-day tally. No text. | Until you reset it in the control center. Turn it off with `[behavior] stats_enabled = false`. |
@@ -19,6 +19,8 @@ each statement is named so that you can check it.
 | Auto-learn counter | settings folder: `dictionary-counts.json` | Candidate words (names, jargon) seen once, and how often, capped at two | Until you delete the file. Only exists if auto-learn is on. |
 | Replacements, correction list, AI modes | settings folder: `replacements.txt`, `cleanup-corrections.txt`, `ai_modes.txt` | What you wrote | Until you delete them. |
 | Settings | settings folder: `config.ini`, `profiles.ini`, `server.env` | Settings; `server.env` also holds the path and the random URL prefix of the local speech server and is written with mode 0600 | Until you delete them. "Restore all settings" removes `config.ini` and keeps the rest. |
+| Copy of a damaged settings file | settings folder: `config.ini.damaged-<timestamp>`, mode 0600 | Your settings as they were before Quassel saved over a file it could not read completely | Only created in that case. Delete it once you have copied back what you need. |
+| Saved transcripts | where you choose ("Save as" on the file transcription page), mode 0600 | Text, SRT or WebVTT of a transcribed file | Until you delete them. |
 | Speech models | data folder: `models/` | Downloaded Whisper models | Until you delete them; `uninstall --purge` removes them. |
 | Server log | data folder: `whisper-server.log` (macOS, Windows) | Output of the speech server. The server is started so that it does not print transcripts. | Rotated by size. |
 | Daemon log | systemd journal (Linux), `~/Library/Logs/Quassel/daemon.log` (macOS, three files of about 1 MB), `debug.log` and `crash.log` (Windows) | Timing and error messages. Quassel does not write dictated text, wake-word audio or the text of a key press to any log. The wake-word listener logs only lengths and whether the phrase matched. | The macOS and Windows logs rotate by size. |
@@ -63,7 +65,10 @@ Everything else stays on the machine:
 - The MCP server speaks only over standard input and output with the program
   that started it. It has no recording tool. It reads only the file path the
   client names. Dictation history is not offered unless you set
-  `[mcp] mcp_history = true`.
+  `[mcp] mcp_history = true` and the history itself is on; entries left on disk
+  after you turned the history off are never shared.
+- The pill tells screen readers about errors. The text of a finished dictation
+  goes to the accessibility interface only when the pill preview is on.
 - Keyboard events are read to detect the hotkey. Quassel does not store keys
   and does not log them.
 - The wake word, if you turn it on, makes the microphone listen continuously.
