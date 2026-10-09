@@ -39,6 +39,21 @@ if IS_WAYLAND and not os.environ.get("WAYLAND_DISPLAY") and XDG_RUNTIME:
         os.environ["WAYLAND_DISPLAY"] = displays[0]
 
 
+# Was der Dienst von der grafischen Sitzung wissen muss, um dort einzufügen.
+SESSION_VARS = ("WAYLAND_DISPLAY", "DISPLAY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE")
+
+
+def import_session_env(run=_run):
+    """Vor dem Start von quasseld der systemd-User-Instanz die Anzeige dieser
+    Sitzung mitgeben. GNOME und KDE tun das selbst, Sway/Hyprland ohne
+    dbus-update-activation-environment nicht; der Dienst wüsste dann nicht,
+    wohin er tippt. Nur tatsächlich gesetzte Werte, nie ein geratenes wayland-0."""
+    names = [n for n in SESSION_VARS if os.environ.get(n)]
+    if names:
+        run(["systemctl", "--user", "import-environment", *names], check=False)
+    return names
+
+
 def find_ydotool_socket():
     """Return only an owned socket below this user's runtime directory.
 

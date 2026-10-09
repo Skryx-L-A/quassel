@@ -24,6 +24,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   service startup omits Quassel from `PATH`.
 - Linux now finds an existing Wayland socket instead of assuming `wayland-0`
   when the session does not provide a display name.
+- Linux: switching Quassel on from the pill or with `quassel-ctl start` now
+  hands the session's display to the dictation service first, so it types into
+  the right window on Sway, Hyprland and other desktops that do not do this
+  themselves.
 - On Windows, unavailable media controls no longer toggle muted sound or start
   paused playback when dictation begins.
 - Dictated questions and instruction-override examples now stay exactly as

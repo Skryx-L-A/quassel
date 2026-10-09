@@ -406,6 +406,8 @@ class Pill(Gtk.Application):
             self.on = False
             self.set_mode("off")
         else:
+            from .platform_linux import import_session_env
+            import_session_env()
             subprocess.run(["systemctl", "--user", "start",
                             "quasseld", "quassel-server"], check=False)
             self.on = True

@@ -5,7 +5,15 @@ cmd="${1:-toggle}"
 running() { systemctl --user is-active --quiet quasseld; }
 case "$cmd" in toggle) if running; then cmd=stop; else cmd=start; fi ;; esac
 case "$cmd" in
-    start) systemctl --user start quasseld quassel-server quassel-pill ;;
+    start)
+        # Anzeige dieser Sitzung an systemd geben (nur gesetzte Werte), sonst
+        # weiß quasseld unter Sway/Hyprland nicht, wohin er tippt.
+        vars=""
+        for v in WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE; do
+            [ -n "${!v:-}" ] && vars="$vars $v"
+        done
+        [ -n "$vars" ] && systemctl --user import-environment $vars
+        systemctl --user start quasseld quassel-server quassel-pill ;;
     stop)  systemctl --user stop quasseld quassel-server quassel-ydotoold ;;
     panic) systemctl --user kill -s USR2 quasseld ;;
     *) echo "usage: quassel-ctl [toggle|start|stop|panic]" >&2; exit 2 ;;
