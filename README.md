@@ -78,8 +78,10 @@ explained in [docs/CONFIG.md](docs/CONFIG.md).
   threshold for the wake word and auto-stop. Quassel neither ships nor downloads
   it; you add `onnxruntime` and the model file yourself.
 - **Command line and MCP server:** `status`, model and dictionary management,
-  file transcription, and a local stdio MCP server for tools such as Claude Code.
-  They never record from the microphone. See [docs/cli.md](docs/cli.md).
+  file transcription, diagnostics, and a local stdio MCP server for tools such as
+  Claude Code. A program can ask you a question and get your spoken answer
+  (`dictate --once`, MCP tool `ask_user`, off until `[mcp] mcp_ask = true`); the
+  microphone still starts only when you press the hotkey. See [docs/cli.md](docs/cli.md).
 - **Live typing (streaming)** in hands-free mode, **programmer dictation**,
   **text replacements**, **auto-learned dictionary words**, **update check**.
 - **A second copy next to the installed one:** `QUASSEL_PROFILE=next` gives a
