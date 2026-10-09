@@ -72,6 +72,36 @@ PREVIEW_HOLD_MIN = 4.0
 LEAD_TRIM_MS = 160            # nur der Start-Ton (mit VAD)
 LEAD_TRIM_NOVAD_BT_MS = 400   # ohne VAD: BT-Ramp am Anfang
 TAIL_PAD_MS, TAIL_PAD_BT_MS = 250, 450
+# Der Nachlauf endet früher, sobald das zuletzt angekommene Audio still ist
+# (Audit C43): frühestens nach der Gerätelatenz (Bluetooth puffert länger),
+# spätestens nach TAIL_PAD_MS wie bisher. Still heißt: RMS der letzten 80 ms
+# unter der Stilleschwelle des Auto-Stopps (vad.py, silence_rms=350).
+TAIL_MIN_MS, TAIL_MIN_BT_MS = 80, 250
+TAIL_QUIET_LEVEL = 350 / 8000.0      # rms_level() normiert auf 8000
+TAIL_QUIET_WINDOW_S = 0.08
+TAIL_POLL_S = 0.02
+
+
+def wait_tail(pad_ms, min_ms, level, now=time.monotonic, sleep=time.sleep):
+    """Wartet den Nachlauf ab und gibt die gewartete Zeit in ms zurück.
+
+    level() liefert den Pegel des zuletzt angekommenen Audios (0..1) oder None,
+    wenn es keinen gibt; dann und bei jedem Fehler gilt die volle Länge."""
+    start = now()
+    deadline = start + max(0, pad_ms) / 1000.0
+    sleep(min(max(0, min_ms), max(0, pad_ms)) / 1000.0)
+    while now() < deadline:
+        try:
+            current = level()
+        except Exception:   # noqa: BLE001 — ohne Pegel lieber das volle Ende
+            current = None
+        if current is None:
+            sleep(deadline - now())
+            break
+        if current < TAIL_QUIET_LEVEL:
+            break
+        sleep(min(TAIL_POLL_S, deadline - now()))
+    return int(round((now() - start) * 1000))
 
 # So lange bleibt der Text einer Meldung in state.json stehen: länger als die
 # Pille ihn zeigt (3 s) und als ihr Abfragetakt (80 ms), danach wird er
@@ -424,6 +454,14 @@ class DictationCore:
     def _tail_pad_ms(self):
         return TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS
 
+    def _tail_min_ms(self):
+        return TAIL_MIN_BT_MS if self._bt else TAIL_MIN_MS
+
+    def _tail_level(self):
+        """Pegel der letzten 80 ms aus der laufenden Rohdatei (alle Plattformen
+        schreiben dieselben RAW-Dateien)."""
+        return rms_level(window_s=TAIL_QUIET_WINDOW_S)
+
     def _lead_trim_ms(self):
         # Vorlauf verwerfen: mit VAD nur den eigenen Start-Ton (VAD macht den
         # Rest — sonst würde das erste Wort doppelt weggeschnitten); ohne VAD
@@ -738,8 +776,7 @@ class DictationCore:
         self._panic_flag = panic
         # Nachlauf: kurz weiter aufnehmen, damit das letzte Wort nicht abschneidet
         # (Bluetooth braucht mehr). Dann stoppen + Stopp-Ton.
-        pad_ms = self._tail_pad_ms()
-        time.sleep(pad_ms / 1000.0)
+        pad_ms = wait_tail(self._tail_pad_ms(), self._tail_min_ms(), self._tail_level)
         self._stop_level()
         t_stop = time.monotonic()
         # Der Rückgabewert ist die eben geschlossene Rohdatei: ein neues Diktat
@@ -907,8 +944,9 @@ class DictationCore:
             if panic.is_set():
                 self._state("idle")
                 return
-            final = self._finish_text(final, self._insert_cfg(cfg))
-            inserted = self._insert(final)
+            icfg = self._insert_cfg(cfg)
+            final = self._finish_text(final, icfg)
+            inserted = self._insert(final, icfg)
             self.last_paste_len = len(final) if inserted else 0
             if final != value:
                 self._last_raw = value
@@ -929,13 +967,15 @@ class DictationCore:
             if panic.is_set():
                 self._state("idle")
                 return
-            final = self._finish_text(final, self._insert_cfg(cfg))
-            inserted = self._insert(final)
+            icfg = self._insert_cfg(cfg)
+            final = self._finish_text(final, icfg)
+            inserted = self._insert(final, icfg)
             self.last_paste_len = len(final) if inserted else 0
             value = final
         else:
-            mech = self._finish_text(mech, self._insert_cfg(cfg))
-            inserted = self._insert(mech)
+            icfg = self._insert_cfg(cfg)
+            mech = self._finish_text(mech, icfg)
+            inserted = self._insert(mech, icfg)
             self.last_paste_len = len(mech) if inserted else 0
             value = mech
         if inserted:
@@ -969,12 +1009,17 @@ class DictationCore:
         return ok
 
     # ------------------------------------------------------------ Einfügen
-    def _insert(self, text):
+    def _insert(self, text, cfg=None):
         """Text einfügen. False nur, wenn die Plattform ausdrücklich meldet,
         dass der Tastendruck nicht ankam und der Text nur in der
         Zwischenablage liegt (Linux ohne laufendes ydotoold, Audit D57).
-        Plattformen ohne Rückmeldung (None) gelten als erfolgreich."""
+        Plattformen ohne Rückmeldung (None) gelten als erfolgreich.
+        cfg: Profil-Konfiguration für eine zusätzliche Einfügepause
+        (paste_delay_ms) in Anwendungen, die sie brauchen."""
+        delay = (getattr(cfg, "paste_delay_ms", 0) or 0) / 1000.0
         with wakeword.INSERT_GATE.dictation():
+            if delay > 0:
+                return self._paste(text, delay) is not False
             return self._paste(text) is not False
 
     def _clip_read(self):

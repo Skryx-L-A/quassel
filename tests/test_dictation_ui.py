@@ -288,7 +288,7 @@ def test_raw_text_is_kept_in_memory_only_when_cleanup_changed_it(monkeypatch, ac
                         lambda raw, cfg, *a: ("text", "äh hallo"))
     core._refine = lambda text: cleaned
     core._cleanup_active = lambda: active
-    core._insert = lambda text: True
+    core._insert = lambda text, cfg=None: True
     core._forget_text = lambda token: None
     core._after_insert = lambda value, seconds=0.0: None
     core._wake_insert_with(core.cfg, "äh hallo")

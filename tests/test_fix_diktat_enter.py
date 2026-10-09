@@ -24,7 +24,7 @@ def make_core(monkeypatch, raw, profile_seq):
     core._profile_cfg = lambda: seq.pop(0) if len(seq) > 1 else seq[0]
     core._wav_from_raw = lambda data, path: None
     core._refine_mechanical = lambda text: text
-    core._insert = lambda text: calls.append(("insert", text)) or True
+    core._insert = lambda text, cfg=None: calls.append(("insert", text)) or True
     core._send_enter = lambda: calls.append(("enter",))
     core._send_backspaces = lambda n: calls.append(("backspace", n))
     core._state = lambda state, text="": calls.append(("state", state)) or text

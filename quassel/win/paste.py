@@ -9,6 +9,8 @@ import ctypes.wintypes as wt
 import threading
 import time
 
+from .. import clipwait
+
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 
@@ -208,7 +210,14 @@ def _restore_if_ours(delay, generation):
             _write_snapshot(saved)
 
 
-def paste(text):
+# Obergrenze der Wartezeit vor Strg+V: gewartet wird nur, bis die
+# Zwischenablage den Text zurückgibt; die festen Werte waren früher die Pause.
+PASTE_SETTLE = 0.15
+CHUNK_SETTLE = 0.08
+
+
+def paste(text, extra_delay=0.0):
+    """extra_delay: zusätzliche Pause vor Strg+V aus dem Per-App-Profil."""
     global _last_written, _generation
     if _begin() is None:
         _type_unicode(text)
@@ -219,7 +228,9 @@ def paste(text):
         _last_written = text
         _generation += 1
         generation = _generation
-    time.sleep(0.15)
+    clipwait.wait_until_holds(clip_read, text, PASTE_SETTLE)
+    if extra_delay > 0:
+        time.sleep(extra_delay)
     _send_keys([(VK_CONTROL, True), (VK_V, True), (VK_V, False),
                 (VK_CONTROL, False)])
     threading.Thread(target=_restore_if_ours, args=(2, generation), daemon=True).start()
@@ -240,7 +251,7 @@ def type_chunk(text):
     with _slot_lock:
         _last_written = text
         _generation += 1
-    time.sleep(0.08)
+    clipwait.wait_until_holds(clip_read, text, CHUNK_SETTLE)
     _send_keys([(VK_CONTROL, True), (VK_V, True), (VK_V, False),
                 (VK_CONTROL, False)])
 

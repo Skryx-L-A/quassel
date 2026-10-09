@@ -10,6 +10,8 @@ import subprocess
 import threading
 import time
 
+from . import clipwait
+
 try:
     from AppKit import NSPasteboard, NSPasteboardItem, NSStringPboardType
     from Foundation import NSData
@@ -36,7 +38,10 @@ CONCEALED_TYPE = "org.nspasteboard.ConcealedType"
 # Timing (Modul-Konstanten, in Tests verkürzbar). Großzügige Restore-Wartezeit:
 # manche Apps holen den Clipboard-Inhalt verzögert ab — zu frühes
 # Wiederherstellen fügt sonst den ALTEN Inhalt ein.
+# Obergrenze der Wartezeit vor Cmd+V: gewartet wird nur, bis das Pasteboard den
+# Text zurückgibt (clipwait); die festen Werte waren früher die Pause selbst.
 PASTE_SETTLE = 0.25
+CHUNK_SETTLE = 0.12
 RESTORE_DELAY = 6.0
 STREAM_RESTORE_DELAY = 2.0
 
@@ -240,7 +245,9 @@ def _paste_keycode():
     return KEY_V
 
 
-def paste(text):
+def paste(text, extra_delay=0.0):
+    """extra_delay: zusätzliche Pause vor Cmd+V aus dem Per-App-Profil
+    (paste_delay_ms) für Anwendungen, die sie nachweislich brauchen."""
     global _saved_original, _last_written
     with _clip_lock:
         _cancel_restore_locked()
@@ -252,7 +259,9 @@ def paste(text):
         clip_copy(text, concealed=True)
         _last_written = text
         _schedule_restore_locked(RESTORE_DELAY)
-    time.sleep(PASTE_SETTLE)
+    clipwait.wait_until_holds(clip_read, text, PASTE_SETTLE)
+    if extra_delay > 0:
+        time.sleep(extra_delay)
     _send_cmd_v()
 
 
@@ -269,7 +278,7 @@ def type_chunk(text):
             return _type_unicode(text)
         clip_copy(text, concealed=True)
         _last_written = text
-    time.sleep(0.12)
+    clipwait.wait_until_holds(clip_read, text, CHUNK_SETTLE)
     _send_cmd_v()
 
 

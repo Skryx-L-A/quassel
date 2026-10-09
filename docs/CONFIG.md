@@ -214,6 +214,7 @@ never touched.
 | `programmer_mode` | `on`, `off` | `on` works here without the "Code:" address that the global switch requires. |
 | `punctuation` | `on`, `off` | Spoken punctuation. |
 | `allow_enter` | `on`, `off` | `off` is the terminal guard: "press enter" is refused (the pill says "Enter is blocked in this app"), a line break at the end of the text is removed, and live typing writes line breaks as spaces. |
+| `paste_delay_ms` | 0 to 2000 | Extra pause before the paste keystroke, for an app that needs it. Without it Quassel waits only until the clipboard holds the text (at most 250 ms on macOS and Linux, 150 ms on Windows). |
 | `enabled` | `on`, `off` | `off` disables a profile without deleting it. |
 
 Truth values also accept `yes/no`, `true/false`, `1/0`, `an/aus` and

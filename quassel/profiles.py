@@ -29,6 +29,9 @@ Aufbau, je Profil ein Abschnitt, das erste passende gewinnt:
   punctuation        on | off (gesprochene Satzzeichen „Komma", „Punkt")
   allow_enter        on | off; off = Terminal-Schutz: kein „drück Enter",
                      kein Zeilenumbruch am Ende des eingefügten Texts
+  paste_delay_ms     0 bis 2000: zusätzliche Pause vor dem Einfüge-Tastendruck
+                     für Anwendungen, die sie brauchen (sonst wartet Quassel nur,
+                     bis die Zwischenablage den Text hält)
   enabled            off schaltet ein Profil ab, ohne es zu löschen
 
 Was ein Profil nicht nennt, kommt aus config.ini. Ein Profil ändert die
@@ -55,7 +58,8 @@ _FALSE = {"0", "off", "no", "false", "aus", "nein"}
 DEFAULTS = """\
 # Quassel: Per-App-Profile. Das erste passende Profil gilt.
 # Schlüssel: match, language, ai, ai_mode, programmer_mode, punctuation,
-# allow_enter, enabled. Fehlt ein Schlüssel, gilt die normale Einstellung.
+# allow_enter, paste_delay_ms, enabled. Fehlt ein Schlüssel, gilt die normale
+# Einstellung.
 
 [profile:Terminal]
 match = com.apple.terminal, com.googlecode.iterm2, com.mitchellh.ghostty,
@@ -139,6 +143,9 @@ def parse(text):
                 b = _bool(sec[key])
                 if b is not None:
                     settings[key] = b
+        delay = sec.get("paste_delay_ms", "").strip()
+        if delay.isdigit() and 0 <= int(delay) <= 2000:
+            settings["paste_delay_ms"] = int(delay)
         mode = sec.get("ai_mode", "").strip()
         if mode:
             settings["ai_mode"] = None if _bool(mode) is False else mode
@@ -241,6 +248,8 @@ def overrides_for(profile):
         over["punctuation"] = s["punctuation"]
     if "ai" in s:
         over["ai_enabled"] = s["ai"]
+    if "paste_delay_ms" in s:
+        over["paste_delay_ms"] = s["paste_delay_ms"]
     if "ai_mode" in s:
         if s["ai_mode"] is None:
             over["ai_post_process"] = False

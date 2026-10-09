@@ -11,6 +11,8 @@ import time
 import stat
 from types import SimpleNamespace
 
+from . import clipwait
+
 KEY_BACKSPACE = 14
 KEY_ENTER = 28
 SUBPROCESS_TIMEOUT = 3
@@ -216,7 +218,16 @@ def _restore_if_ours(delay, generation):
             clip_copy(old)
 
 
-def paste(text):
+# Obergrenze der Wartezeit vor Shift+Einfg: gewartet wird nur, bis die
+# Zwischenablage den Text zurückgibt (wl-copy übernimmt sie im Hintergrund);
+# die festen Werte waren früher die Pause selbst.
+PASTE_SETTLE = 0.25
+CHUNK_SETTLE = 0.12
+
+
+def paste(text, extra_delay=0.0):
+    """extra_delay: zusätzliche Pause vor dem Tastendruck aus dem
+    Per-App-Profil (paste_delay_ms)."""
     global _original, _last_written, _generation
     old = _begin()
     if old is RICH_TEXT_ONLY:
@@ -231,7 +242,9 @@ def paste(text):
             _last_written = None
             _generation += 1
         notify("Rich clipboard formatting could not be restored; dictated text is in the clipboard")
-        time.sleep(0.25)
+        clipwait.wait_until_holds(clip_read, text, PASTE_SETTLE)
+        if extra_delay > 0:
+            time.sleep(extra_delay)
         return _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"],
                     check=False).returncode == 0
     if old is None:
@@ -245,7 +258,9 @@ def paste(text):
         _last_written = text
         _generation += 1
         generation = _generation
-    time.sleep(0.25)
+    clipwait.wait_until_holds(clip_read, text, PASTE_SETTLE)
+    if extra_delay > 0:
+        time.sleep(extra_delay)
     # Shift+Einfg: KEY_LEFTSHIFT=42, KEY_INSERT=110
     result = _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False)
     if result.returncode == 0:
@@ -269,7 +284,7 @@ def type_chunk(text):
             _last_written = text
             _generation += 1
         notify("Rich clipboard formatting could not be restored; dictated text is in the clipboard")
-        time.sleep(0.12)
+        clipwait.wait_until_holds(clip_read, text, CHUNK_SETTLE)
         return _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"],
                     check=False).returncode == 0
     if old is None:
@@ -282,7 +297,7 @@ def type_chunk(text):
     with _clip_lock:
         _last_written = text
         _generation += 1
-    time.sleep(0.12)
+    clipwait.wait_until_holds(clip_read, text, CHUNK_SETTLE)
     return _run(["ydotool", "key", "42:1", "110:1", "110:0", "42:0"], check=False).returncode == 0
 
 

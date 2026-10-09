@@ -22,7 +22,7 @@ def test_cleanup_inserts_once_after_validation(monkeypatch):
     calls = []
     core._wav_from_raw = lambda data, path: None
     core._refine_mechanical = lambda text: text
-    core._insert = lambda text: calls.append(("insert", text)) or True
+    core._insert = lambda text, cfg=None: calls.append(("insert", text)) or True
     core._send_backspaces = lambda n: calls.append(("backspace", n))
     core._state = lambda state, text="": text
     core._forget_text = lambda text: None
@@ -70,7 +70,7 @@ def test_legacy_ai_also_inserts_once_after_refinement(monkeypatch):
     core._wav_from_raw = lambda data, path: None
     core._refine_mechanical = lambda text: text
     core._ai_refine = lambda text: "corrected"
-    core._insert = lambda text: calls.append(("insert", text)) or True
+    core._insert = lambda text, cfg=None: calls.append(("insert", text)) or True
     core._send_backspaces = lambda n: calls.append(("backspace", n))
     core._state = lambda state, text="": text
     core._forget_text = lambda text: None

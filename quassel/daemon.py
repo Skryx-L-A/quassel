@@ -199,8 +199,8 @@ class Daemon(dictation.DictationCore):
     def _log(self, msg):
         log(msg)
 
-    def _paste(self, text):
-        return paste(text)
+    def _paste(self, text, extra_delay=0.0):
+        return paste(text, extra_delay) if extra_delay else paste(text)
 
     def _send_backspaces(self, n):
         send_backspaces(n)
