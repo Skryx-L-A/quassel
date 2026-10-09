@@ -29,7 +29,7 @@ import queue
 import threading
 import time
 
-from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, i18n,
+from . import (aimodes, beep, cleanup as cleanup_module, config, dictprompt, eszett, i18n,
                power, profiles, progmode, selfheal, stats, textproc, textreplace, vad,
                wakeword, whisperclient)
 from .audio import LevelPump, RATE, SAMPLE_BYTES, rms_level
@@ -92,13 +92,20 @@ def postprocess_transcript(raw_text, cfg, language=None, pcm=None):
     if dictprompt.is_silence_hallucination(raw_text, pcm=pcm):
         return None, None
     if language is None:
-        return textproc.postprocess(raw_text, cfg)
-    cfg_with_language = type("CfgWithLanguage", (), {
-        "commands": getattr(cfg, "commands", True),
-        "punctuation": getattr(cfg, "punctuation", True),
-        "language": language,
-    })()
-    return textproc.postprocess(raw_text, cfg_with_language)
+        kind, value = textproc.postprocess(raw_text, cfg)
+    else:
+        cfg_with_language = type("CfgWithLanguage", (), {
+            "commands": getattr(cfg, "commands", True),
+            "punctuation": getattr(cfg, "punctuation", True),
+            "language": language,
+        })()
+        kind, value = textproc.postprocess(raw_text, cfg_with_language)
+    if kind == "text" and eszett.enabled(
+            getattr(cfg, "eszett", "auto"),
+            config.read_serverenv().get("MODEL_PATH", ""),
+            language or getattr(cfg, "language", "auto")):
+        value = eszett.restore(value)
+    return kind, value
 
 
 def wake_transcribe(cfg, pcm, wav_path, wav_from_raw, log):

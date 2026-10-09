@@ -53,6 +53,7 @@ limit, or it is replaced by the default.
 | `language` | `auto` | `auto`, `mixed`, or a language code such as `de`, `en` | Spoken language. `auto` lets Whisper detect it; `mixed` detects it and adds a German/English primer for code-switching; a code pins the language. |
 | `punctuation` | `true` | boolean | Turn spoken punctuation ("comma", "new line") into characters. |
 | `commands` | `true` | boolean | Voice commands such as "scratch that" and "press enter". |
+| `eszett` | `auto` | `auto`, `on`, `off` | Write "ß" where German spelling needs it ("grosses" becomes "großes"; "dass", "Masse" and English words stay). `auto` turns it on only with a German fine-tuned model, which never writes "ß". Leave it `off` for Swiss German, which uses "ss". |
 | `mic` | `default` | device name | Microphone to record from. `default` follows the system setting. |
 | `programmer_mode` | `false` | boolean | Programmer dictation: spoken symbols and identifiers become code text. Globally it applies when a dictation starts with "Code:"; a per-app profile can turn it on for every dictation. |
 | `auto_learn` | `false` | boolean | Add names and jargon from your dictations to the personal dictionary after two occurrences. Never active together with `programmer_mode`. |

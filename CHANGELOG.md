@@ -96,6 +96,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spoken when text cleanup or number formatting would change them.
 
 ### Added
+- German "ß" is restored where spelling needs it when a German fine-tuned
+  speech model is in use (it writes "grosses" instead of "großes"); "dass",
+  "Masse" and English words stay as they are. Setting `[speech] eszett`
+  (`auto`, `on`, `off`); keep it `off` for Swiss German.
 - Linux: a second Quassel next to the installed one (`QUASSEL_PROFILE`) can
   run its own dictation service from the new template
   `systemd/quasseld@.service`. Its control center, pill and

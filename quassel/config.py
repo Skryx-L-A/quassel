@@ -235,6 +235,11 @@ class Cfg:
         self.language = g("speech", "language", fallback="auto")
         self.punctuation = _getbool(p, "speech", "punctuation", True)
         self.commands = _getbool(p, "speech", "commands", True)
+        # „ss" -> „ß" (quassel/eszett.py): auto = nur mit einem deutschen
+        # Finetune-Modell, das nie „ß" schreibt; on/off erzwingen es.
+        self.eszett = g("speech", "eszett", fallback="auto").strip().lower()
+        if self.eszett not in ("auto", "on", "off"):
+            self.eszett = "auto"
         self.mic = g("speech", "mic", fallback="default")
         self.pill_enabled = _getbool(p, "pill", "enabled", True)
         self.pill_scale = _getfloat(p, "pill", "scale", 1.0, 0.6, 2.0, clamp=True)
