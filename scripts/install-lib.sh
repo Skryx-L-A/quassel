@@ -132,8 +132,12 @@ export LD_LIBRARY_PATH="$here:${LD_LIBRARY_PATH:-}"
 exec "$here/whisper-server" "$@"
 WRAP
     chmod +x "$edir/run-server.sh"
+    # Rückgabe an install.sh, das diese Datei einliest.
+    # shellcheck disable=SC2034
     SERVER_BIN_PATH="$edir/run-server.sh"
+    # shellcheck disable=SC2034
     ENGINE_DESC="vorgebaut: $found"
+    # shellcheck disable=SC2034
     if [[ "$found" == "cuda" ]]; then HAS_GPU=1; else HAS_GPU=0; fi
     return 0
 }

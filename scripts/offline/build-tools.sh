@@ -18,7 +18,7 @@ gather() { # $1 = binary -> kopiere + nicht-System-.so
 }
 
 echo "### ydotool ###"
-cd /tmp && git clone --depth 1 https://github.com/ReimuNotMoe/ydotool yd && cd yd
+cd /tmp && git clone --depth 1 https://github.com/ReimuNotMoe/ydotool yd && cd yd || exit 1
 # manpage-Bau (scdoc) entfernen, damit kein scdoc nötig ist
 sed -i '/manpage/d; /scdoc/Id' CMakeLists.txt 2>/dev/null || true
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1
@@ -26,7 +26,7 @@ cmake --build build --target ydotool ydotoold -j"$(nproc)" 2>&1 | tail -3
 for b in build/ydotool build/ydotoold; do [ -x "$b" ] && gather "$b" && echo "  ok: $b"; done
 
 echo "### wl-clipboard ###"
-cd /tmp && git clone --depth 1 https://github.com/bugaevc/wl-clipboard wl && cd wl
+cd /tmp && git clone --depth 1 https://github.com/bugaevc/wl-clipboard wl && cd wl || exit 1
 meson setup build >/dev/null 2>&1 && ninja -C build 2>&1 | tail -3
 for b in build/src/wl-copy build/src/wl-paste; do [ -x "$b" ] && gather "$b" && echo "  ok: $b"; done
 

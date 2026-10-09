@@ -4,5 +4,5 @@
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="$("$HERE/bin/quassel-python" "$HERE/.venv/bin/python3" \
     python3.13 python3.12 python3.11 python3.10 python3)"
-cd "$HERE"
+cd "$HERE" || exit 1
 exec "$PY" -m quassel.mac_app "$@"

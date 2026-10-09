@@ -772,3 +772,28 @@ def test_cask_comment_no_longer_waits_for_the_ffmpeg_measurement():
     assert "solange die Messung läuft" not in cask
     assert "seit 2.5.0" in cask
     assert '\n  depends_on formula: "ffmpeg"' not in cask
+
+
+def test_dl_model_downloads_into_the_model_file(tmp_path):
+    """`local m="$1" f=... target="$DATA/models/$f"` expandiert alle Werte, bevor
+    `local` sie setzt: target war der Modellordner, `[[ -s ordner ]]` ist wahr,
+    und dl_model kehrte ohne Download zurück. Neue Linux-Installationen hatten
+    so kein Modell (ShellCheck SC2318)."""
+    _need_posix_shell()
+    installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+    start = installer.index("dl_model() {")
+    function = installer[start:installer.index("\n}\n", start) + 3]
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    curl = bindir / "curl"
+    curl.write_text('#!/bin/sh\nwhile [ "$1" != "-o" ]; do shift; done\n'
+                    'printf model > "$2"\n')
+    curl.chmod(0o755)
+    (tmp_path / "data" / "models").mkdir(parents=True)
+    script = ('die() { echo "DIE: $*"; exit 9; }\nHF=https://example.invalid\n'
+              + function + "dl_model tiny\n")
+    result = subprocess.run(["bash", "-c", script], text=True, capture_output=True,
+                            env={"PATH": f"{bindir}:{os.environ['PATH']}",
+                                 "DATA": str(tmp_path / "data")}, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "data" / "models" / "ggml-tiny.bin").read_text() == "model"

@@ -16,6 +16,9 @@ rm -f "$BIN"/quasseld "$BIN"/quassel-pill "$BIN"/quassel-type "$BIN"/quassel-ctl
 rm -f "$HOME/.local/share/applications/quassel.desktop"
 systemctl --user daemon-reload 2>/dev/null || true
 
+# Hinweistext: die Tilde soll so angezeigt werden.
+# shellcheck disable=SC2088
 printf '\033[1;32mFertig.\033[0m Konfiguration/Verlauf in ~/.config/quassel und\n'
+# shellcheck disable=SC2088
 printf '~/.local/share/quassel bleiben erhalten (bei Bedarf manuell löschen).\n'
 printf 'Die uinput-udev-Regel: sudo rm /etc/udev/rules.d/80-quassel-uinput.rules\n'

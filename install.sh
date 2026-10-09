@@ -184,7 +184,10 @@ say "4/8  Sprachmodell(e) laden"
 mkdir -p "$DATA/models"
 HF="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 dl_model() {
-    local m="$1" f="ggml-$1.bin" target="$DATA/models/$f" part="$DATA/models/$f.part"
+    # Zwei Zeilen: in EINEM local werden alle Werte expandiert, bevor f gesetzt
+    # ist; target war dann der Modellordner und es wurde nie geladen.
+    local m="$1" f="ggml-$1.bin"
+    local target="$DATA/models/$f" part="$DATA/models/$f.part"
     [[ -s "$target" ]] && return 0
     echo "    Lade Modell '$m' (75 MB – 1,6 GB)…"
     rm -f "$part"

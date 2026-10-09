@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# Wird von anderen Skripten eingelesen; die Variablen gelten dort.
+# shellcheck disable=SC2034
 # Fester whisper.cpp-Stand fuer alle Linux-Baeume (install.sh, die
 # Engine-Pakete aus .github/workflows/engine-packages.yml, scripts/offline/,
 # packaging/aur/PKGBUILD). Einzige Quelle: hier aendern, nirgends sonst.
