@@ -21,7 +21,7 @@ def _recorder(name, result=None):
 
 def _paste_module():
     mod = types.ModuleType("quassel.win.paste")
-    for name in ("paste", "clip_copy", "send_backspaces", "send_enter", "type_chunk",
+    for name in ("paste", "clip_copy", "clip_read", "send_backspaces", "send_enter", "type_chunk",
                  "streaming_restore"):
         setattr(mod, name, _recorder(name))
     mod.streaming_begin = _recorder("streaming_begin", "clip-backup")

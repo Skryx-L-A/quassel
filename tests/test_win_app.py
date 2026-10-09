@@ -185,3 +185,10 @@ def test_windows_uses_the_shared_flow_and_not_a_copy(win):
     for name in ("_finish_capture", "_transcribe_and_insert", "_fail_with_rescue",
                  "_after_insert", "_ai_refine", "_wake_record_utterance"):
         assert name not in vars(app.WinDictation), name
+
+
+def test_windows_dictation_reads_the_clipboard_for_the_not_inserted_check(win, monkeypatch):
+    app = win.app
+    monkeypatch.setattr(app, "clip_read", lambda: "Diktat")
+    core = app.WinDictation.__new__(app.WinDictation)
+    assert core._clip_read() == "Diktat"

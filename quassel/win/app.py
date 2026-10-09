@@ -33,8 +33,8 @@ from ..state import LevelMeter, level_read
 from . import server
 from .audio_win import Recorder
 from .hook import CHORDS_VK, KeyboardHook
-from .paste import (clip_copy, paste, send_backspaces, send_enter, streaming_begin,
-                    streaming_restore, type_chunk)
+from .paste import (clip_copy, clip_read, paste, send_backspaces, send_enter,
+                    streaming_begin, streaming_restore, type_chunk)
 
 DEBUG_LOG_MAX = 1_000_000   # ab ~1 MB eine Generation wegrotieren
 
@@ -367,6 +367,11 @@ class WinDictation(dictation.DictationCore):
         # Pille läuft im selben Prozess: Pegel direkt an WinApp (thread-sicher,
         # nur ein Tupel wird ersetzt), kein Umweg über eine Datei.
         return getattr(self.owner, "set_level", None)
+
+    def _clip_read(self):
+        # Hält die Ablage nach einem gescheiterten Einfügen das Diktat? Dann
+        # stimmt „liegt in der Zwischenablage", sonst wird gerettet.
+        return clip_read()
 
     def _report_mic_missing(self):
         # Nicht still scheitern: sonst bleibt die Pille grau und der Nutzer
