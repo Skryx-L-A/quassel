@@ -1,0 +1,25 @@
+{
+  "accepted": 87,
+  "by_language": {
+    "de": 100,
+    "en": 100
+  },
+  "cases": 200,
+  "deviations_from_rule": 71,
+  "fallback": 113,
+  "fallback_rate": 0.565,
+  "fallback_reasons": {
+    "entity_changed": 11,
+    "protected_input_changed": 21,
+    "schema_error": 9,
+    "word_diff": 72
+  },
+  "latency_seconds": {
+    "mean": 0.216,
+    "p50": 0.195,
+    "p95": 0.277
+  },
+  "unsafe_changes": 10,
+  "used_llm": 200,
+  "used_llm_rate": 1.0
+}
