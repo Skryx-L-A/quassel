@@ -148,3 +148,25 @@ def test_medium_may_drop_words_but_never_add_one(monkeypatch):
                         lambda *a, **k: ("Wir sehen uns dann morgen im Büro.", None))
     result = cleanup("Wir sehen uns morgen im Büro.", "mittel", cfg())
     assert result.fallback_reason == "word_added"
+
+
+@pytest.mark.parametrize("raw,edited,reason", [
+    # Gemessen 2026-10-09 04:39 (Granite 4 micro, SmolLM3 stark).
+    ("Open https://example.com/lambda.", "Open <https://example.com/lambda>.", "markup_added"),
+    ("Please check FastAPI tomorrow.", "Please check FastAPI tomorrow?", "question_added"),
+    ("Setze `portal=1` in den Code.", "Setze `portal=1` in the code.", "language_changed"),
+])
+def test_guard_rejects_markup_new_questions_and_partial_translation(monkeypatch, raw, edited, reason):
+    monkeypatch.setattr(ai, "chat_cleanup", lambda *a, **k: (edited, None))
+    for level in ("mittel", "stark"):
+        result = cleanup(raw, level, cfg())
+        assert result.text == raw, level
+        assert result.fallback_reason in (reason, "word_added", "word_diff"), (level, result.fallback_reason)
+
+
+def test_guard_still_accepts_a_real_cleanup_in_both_languages(monkeypatch):
+    for raw, edited in (("Ähm, wir sehen uns morgen im Büro.", "Wir sehen uns morgen im Büro."),
+                        ("Um, we meet at the office.", "We meet at the office.")):
+        monkeypatch.setattr(ai, "chat_cleanup", lambda *a, edited=edited, **k: (edited, None))
+        result = cleanup(raw, "mittel", cfg())
+        assert result.fallback_reason is None, (raw, result.fallback_reason)

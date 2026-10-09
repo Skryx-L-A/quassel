@@ -40,6 +40,14 @@ _SENTENCES = re.compile(r"[.!?](?:\s|$)")
 _MEANING_WORDS = {"nicht", "nie", "kein", "keine", "ja", "nein", "not", "never",
                   "no", "yes", "heute", "morgen", "gestern", "today", "tomorrow",
                   "yesterday", "before", "after", "vor", "nach"}
+# Häufige Funktionswörter je Sprache: tauchen im Ergebnis welche der anderen
+# Sprache neu auf, hat das Modell (teilweise) übersetzt.
+_DE_WORDS = {"der", "die", "das", "den", "dem", "des", "und", "ist", "sind", "mit",
+             "für", "nicht", "ein", "eine", "einen", "zu", "wir", "ich", "sie", "auf", "im"}
+_EN_WORDS = {"the", "and", "is", "are", "with", "for", "not", "a", "an", "to", "we",
+             "of", "on", "this", "that", "you", "it"}
+# Zeichen, die ein Modell als Markdown/Markup einfügt, die im Diktat aber nie stehen.
+_MARKUP = set("<>*_#[]|`")
 # Füllwörter, die ein Modell wieder einsetzen darf, ohne etwas umzuformulieren.
 _FILLER_WORDS = {"äh", "ähm", "aeh", "aehm", "öhm", "oehm", "uh", "um", "hm", "hmm"}
 LEVELS = ("aus", "leicht", "mittel", "stark")
@@ -120,6 +128,13 @@ def _check(before: str, after: str, level: str, terms: list[str]) -> str | None:
         return "word_added"
     if _entities(before) != _entities(after):
         return "entity_changed"
+    new_b = set(plain_b) - set(plain_a)
+    if (set(plain_a) & _DE_WORDS and new_b & _EN_WORDS) or (
+            set(plain_a) & _EN_WORDS and new_b & _DE_WORDS):
+        return "language_changed"
+    if any(after.count(ch) > before.count(ch) for ch in _MARKUP):
+        # z. B. <https://…> oder **fett**: im eingefügten Text sichtbarer Müll.
+        return "markup_added"
     if [itn._number(w) for w in a if itn._number(w) is not None] != [itn._number(w) for w in b if itn._number(w) is not None]:
         return "number_changed"
     if [w for w in a if w in _MEANING_WORDS] != [w for w in b if w in _MEANING_WORDS]:
@@ -130,6 +145,8 @@ def _check(before: str, after: str, level: str, terms: list[str]) -> str | None:
             return "dictionary_changed"
     if before.rstrip().endswith("?") and not after.rstrip().endswith("?"):
         return "question_changed"
+    if after.rstrip().endswith("?") and not before.rstrip().endswith("?"):
+        return "question_added"
     added_sentences = len(_SENTENCES.findall(after)) - len(_SENTENCES.findall(before))
     if added_sentences > (0 if before.rstrip().endswith((".", "?", "!")) else 1):
         return "new_sentences"
