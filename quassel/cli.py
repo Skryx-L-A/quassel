@@ -33,12 +33,28 @@ def _daemon_unit():
 
 
 def _daemon_status():
-    """Use the established Linux service mechanism; do not create an IPC API."""
+    """Use the established Linux service mechanism; do not create an IPC API.
+    On macOS and Windows the service leaves its PID in the runtime folder; a
+    missing file stays "unknown" (an older Quassel does not write it)."""
     if sys.platform.startswith("linux"):
         result = subprocess.run(["systemctl", "--user", "is-active", "--quiet", _daemon_unit()],
                                 check=False)
         return "running" if result.returncode == 0 else "stopped"
-    return "unknown"
+    from . import ask, state
+    pid = state.daemon_pid()
+    if pid is None:
+        return "unknown"
+    return "running" if ask.pid_alive(pid) else "stopped"
+
+
+def _daemon_answers():
+    """Can a running service answer a question? Only a service that writes
+    daemon.pid knows the ask protocol, so on macOS and Windows a missing file
+    means no."""
+    status = _daemon_status()
+    if status == "unknown" and not sys.platform.startswith("linux"):
+        return False
+    return status != "stopped"
 
 
 def status_data():
@@ -115,7 +131,7 @@ def _dictate_once(prompt, timeout, program):
     it. Never starts the microphone: the user starts the dictation with the
     hotkey (or the wake phrase); without that the request ends empty."""
     from . import ask, i18n
-    if _daemon_status() == "stopped":
+    if not _daemon_answers():
         print("Quassel is not running: start it, then ask again", file=sys.stderr)
         return EXIT_UNAVAILABLE
     try:

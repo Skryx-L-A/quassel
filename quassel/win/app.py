@@ -744,6 +744,8 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("Quassel")
     app.setWindowIcon(app_icon())
+    from ..state import mark_daemon_running
+    mark_daemon_running()      # Lebensnachweis für dictate --once und MCP ask_user
     win = WinApp(app)          # Referenz halten! Sonst räumt der GC das
     app.exec()                 # Objekt sofort ab -> Qt-Crash (0xC0000005)
     del win

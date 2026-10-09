@@ -89,7 +89,7 @@ def _ask_user(arguments):
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) \
             or not 0 < timeout <= ask.MAX_TIMEOUT:
         return _content({"error": "timeout must be a number of seconds from 1 to 600"}, True)
-    if cli._daemon_status() == "stopped":
+    if not cli._daemon_answers():
         return _content({"error": "Quassel is not running", "reason": "unavailable"}, True)
     try:
         cfg = config.Cfg()

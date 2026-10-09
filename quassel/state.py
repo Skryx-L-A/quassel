@@ -24,6 +24,41 @@ RAW = os.path.join(RUNDIR, "rec.raw")
 WAV = os.path.join(RUNDIR, "rec.wav")
 PARTWAV = os.path.join(RUNDIR, "partial.wav")
 STATE = os.path.join(RUNDIR, "state.json")
+# Lebensnachweis des Diktatdienstes für zweite Prozesse (CLI, MCP) auf macOS
+# und Windows, wo es kein systemctl gibt. Nur der Dienst selbst schreibt sie.
+DAEMON_PID = os.path.join(RUNDIR, "daemon.pid")
+
+
+def mark_daemon_running():
+    """Beim Start des Diktatdienstes: eigene PID ablegen (0600, atomar) und
+    beim Ende wieder entfernen, aber nur, wenn sie noch die eigene ist."""
+    import atexit
+    from . import fsutil
+    pid = os.getpid()
+    try:
+        os.makedirs(RUNDIR, exist_ok=True)
+        fsutil.atomic_write(DAEMON_PID, "%d\n" % pid, mode=0o600)
+    except OSError:
+        return
+
+    def clear():
+        try:
+            with open(DAEMON_PID, encoding="utf-8") as f:
+                if f.read().strip() == str(pid):
+                    os.remove(DAEMON_PID)
+        except OSError:
+            pass
+    atexit.register(clear)
+
+
+def daemon_pid():
+    """PID aus daemon.pid oder None (fehlt, unlesbar)."""
+    try:
+        with open(DAEMON_PID, encoding="utf-8") as f:
+            value = f.read().strip()
+        return int(value) if value.isdigit() else None
+    except OSError:
+        return None
 
 
 # Mikrofonpegel in state.json (H112): der Daemon schreibt ihn während einer

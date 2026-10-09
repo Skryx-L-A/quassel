@@ -741,6 +741,8 @@ def main():
     _install_server_recovery()
     log("quassel-daemon %s gestartet (%s, pid=%d)"
         % (__version__, time.strftime("%Y-%m-%d %H:%M:%S"), os.getpid()))
+    from .state import mark_daemon_running
+    mark_daemon_running()
     try:
         Daemon().run()
     except KeyboardInterrupt:

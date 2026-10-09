@@ -64,7 +64,7 @@ statistics or the learned words, and it is never logged.
 Exit codes: `0` answer printed, `124` nobody answered in time, `130` you
 dismissed the question with the emergency stop (or pressed Ctrl+C), `75`
 another question is already waiting (only one at a time), `5` Quassel is not
-running (Linux; on macOS and Windows the command waits until the timeout).
+running (Linux: the systemd unit; macOS and Windows: the PID the service leaves in its runtime folder).
 Silence or a spoken command such as "press enter" is not an answer: nothing
 is executed and the question keeps waiting. The question and the answer pass
 through two files in the runtime folder (`ask.request`, `ask.answer`, mode
