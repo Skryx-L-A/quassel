@@ -38,6 +38,11 @@ only in the daemon's memory. The pill shows whether there was any raw text.
 On macOS and Windows use "Raw text back" in the menu bar or tray menu; the
 command exits 5 there.
 
+With `QUASSEL_PROFILE` set (a second instance next to the installed one), the
+daemon status and `raw-last` use that profile's service
+`quasseld@<profile>.service` (template `systemd/quasseld@.service`) instead of
+`quasseld.service`, so one instance never hands out the other's text.
+
 `transcribe` accepts an existing supported media file. Plain text is the
 default. `--json` includes text and segments; `--srt` and `--vtt` render the
 timestamped segments returned by the local speech server. When an older server

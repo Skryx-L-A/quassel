@@ -29,6 +29,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spoken when text cleanup or number formatting would change them.
 
 ### Added
+- Linux: a second Quassel next to the installed one (`QUASSEL_PROFILE`) can
+  run its own dictation service from the new template
+  `systemd/quasseld@.service`. Its control center, pill and
+  `quassel-type-cli raw-last` then check, switch and ask only that service,
+  and turning it off no longer stops the installed app's shared helper.
 - Wake word: after the phrase alone, the pill shows "Listening…" while it
   records your dictation; a tone plays only when signal tones are on.
 - Transcribe file: "Save as…" writes the result as a text, SRT or WebVTT file.
