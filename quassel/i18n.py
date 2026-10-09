@@ -102,6 +102,10 @@ STRINGS = {
                        "Quassel darf das Mikrofon nicht benutzen. Freigabe in Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon."),
     "err_mic_open": ("The microphone couldn't be opened. Another app may be using it, or it was unplugged.",
                      "Das Mikrofon ließ sich nicht öffnen. Vielleicht nutzt es eine andere App, oder es wurde abgezogen."),
+    "err_mic_lost": ("The microphone stopped delivering sound during the recording. It may have been unplugged or disconnected.",
+                     "Das Mikrofon hat während der Aufnahme keinen Ton mehr geliefert. Vielleicht wurde es abgezogen oder getrennt."),
+    "err_mic_lost_partial": ("The microphone stopped during the recording. Only the part before that was transcribed.",
+                             "Das Mikrofon ist während der Aufnahme ausgefallen. Nur der Teil davor wurde umgewandelt."),
     "err_recorder_missing": ("The recording program is missing: {tool}.",
                              "Das Aufnahmeprogramm fehlt: {tool}."),
     # Einfügen gescheitert, Text liegt aber in der Zwischenablage (D57)

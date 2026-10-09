@@ -388,6 +388,13 @@ class DictationCore:
     def _mic_error_text(self):
         return tr("err_mic_open")
 
+    def _report_mic_lost(self):
+        """Die Aufnahme riss ab (Gerät weg, Bluetooth getrennt) und es kam
+        zu wenig Audio an: als Fehler melden, nicht als „zu kurz" (D65)."""
+        text = tr("err_mic_lost")
+        self._state("error", text)
+        self._notify(text)
+
     def _tail_pad_ms(self):
         return TAIL_PAD_BT_MS if self._bt else TAIL_PAD_MS
 
@@ -699,18 +706,29 @@ class DictationCore:
             beep.stop()
         self.ducker.restore()
         data = self.rec.raw_bytes(done_path)
+        # Riss die Aufnahme vor dem Loslassen ab? (audio.Recorder.interrupted;
+        # Recorder ohne diese Prüfung melden nichts.)
+        lost = getattr(self.rec, "interrupted", None)
         raw_len = len(data)
         trim_ms = self._lead_trim_ms()
         trim = int(RATE * SAMPLE_BYTES * trim_ms / 1000)
         trim -= trim % SAMPLE_BYTES
         if len(data) > trim + MIN_AUDIO_BYTES:
             data = data[trim:]
-        self._log("dict: bt=%s vad=%s rec=%.2fs trim=%dms pad=%dms" % (
-            self._bt, self._vad, raw_len / (RATE * SAMPLE_BYTES), trim_ms, pad_ms))
+        self._log("dict: bt=%s vad=%s rec=%.2fs trim=%dms pad=%dms lost=%s" % (
+            self._bt, self._vad, raw_len / (RATE * SAMPLE_BYTES), trim_ms, pad_ms,
+            lost or "-"))
         if len(data) < MIN_AUDIO_BYTES:
-            self._tell("too_short")
+            if lost:
+                self._report_mic_lost()
+            else:
+                self._tell("too_short")
             discard(done_path)
             return None
+        if lost:
+            # Der Teil vor dem Abriss wird trotzdem umgewandelt; dass danach
+            # nichts mehr kam, sagt eine Benachrichtigung.
+            self._notify(tr("err_mic_lost_partial"))
         self._state("transcribing")
         return lambda: self._finish_rest(streamer, clip_backup, data, panic, done_path)
 
