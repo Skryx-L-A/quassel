@@ -33,7 +33,10 @@ RAW_B = os.path.join(os.path.dirname(RAW), "rec-b.raw")
 # dylibs gelinkt), deshalb nimmt die App über sounddevice/CoreAudio auf.
 #   "sd16"      Stream direkt auf 16 kHz öffnen — CoreAudio konvertiert
 #   "sdnative"  Stream auf der Geräterate + eigenes Polyphase-Resampling
-#   "ffmpeg"    alter Subprozess-Pfad (nur mit ffmpeg im PATH)
+#   "ffmpeg"    nur zur Diagnose: alter Subprozess-Pfad (ffmpeg/AVFoundation,
+#               nur mit ffmpeg im PATH). Bleibt, weil scripts/bench_mac_capture.py
+#               die Backends gegeneinander misst und docs/CONFIG.md ihn als
+#               Diagnoseschalter nennt; kein Nutzerweg führt dorthin.
 # Umschaltbar zur Laufzeit über QUASSEL_MAC_AUDIO (siehe mac_backend()).
 MAC_BACKEND_DEFAULT = "sd16"
 MAC_BACKENDS = ("sd16", "sdnative", "ffmpeg")
@@ -42,6 +45,14 @@ MAC_BACKENDS = ("sd16", "sdnative", "ffmpeg")
 # CoreAudio-Gerät kehrt PortAudio nie zurück (es wartet auf ein Callback-
 # Signal, das nicht mehr kommt) — danach wird der Stream aufgegeben.
 MAC_STOP_TIMEOUT = 2.0
+
+
+# Abgerissene Aufnahme (Gerät abgezogen, Bluetooth getrennt, Stromereignis,
+# Aufnahmeprozess beendet): kommt so lange kein Audio mehr an, gilt sie als
+# unterbrochen. Der erste Block darf länger brauchen — Bluetooth schaltet beim
+# Öffnen erst das Profil um.
+CAPTURE_STALL_S = 1.0
+CAPTURE_START_S = 3.0
 
 
 def _log(msg):
@@ -193,6 +204,20 @@ class LevelPump:
         if self._thread is not None:
             self._thread.join(timeout=1.0)
             self._thread = None
+
+
+def _quiet_for(last, started, now):
+    """Unterbrechungsgrund nach Zeitstempeln (monotonic): "stalled", wenn
+    seit dem letzten Block bzw. ohne ersten Block seit dem Start zu lange
+    nichts kam, sonst None."""
+    if last is None:
+        return "stalled" if now - started > CAPTURE_START_S else None
+    return "stalled" if now - last > CAPTURE_STALL_S else None
+
+
+def _stream_ended(stream):
+    """PortAudio hat den Stream selbst beendet (Gerät weg)."""
+    return stream is not None and getattr(stream, "active", True) is False
 
 
 def _sd():
@@ -396,6 +421,7 @@ class _MacStream:
         self.in_rate = RATE
         self.overflows = 0         # von PortAudio gemeldete Input-Overflows
         self.first_block = None    # monotonic-Zeit des ersten Audioblocks
+        self.last_block = None     # monotonic-Zeit des letzten Audioblocks
         self._abandoned = False    # Stream aufgegeben -> Callback liefert nichts mehr
 
     @property
@@ -426,8 +452,10 @@ class _MacStream:
                 return
             if status and getattr(status, "input_overflow", False):
                 self.overflows += 1
+            now = time.monotonic()
             if self.first_block is None:
-                self.first_block = time.monotonic()
+                self.first_block = now
+            self.last_block = now
             self.queue.put(bytes(indata))
 
         try:
@@ -445,6 +473,17 @@ class _MacStream:
         self.thread.start()
         self.started = time.monotonic()
         return True
+
+    def interrupted(self, now=None):
+        """Grund, warum die laufende Aufnahme nichts mehr liefert ("ended":
+        PortAudio hat den Stream beendet, "stalled": keine Blöcke mehr), sonst
+        None. Ohne laufenden Stream immer None."""
+        if self.stream is None:
+            return None
+        if _stream_ended(self.stream):
+            return "ended"
+        now = time.monotonic() if now is None else now
+        return _quiet_for(self.last_block, self.started, now)
 
     def _writer(self, resampler):
         while True:
@@ -511,8 +550,23 @@ class _PrerollCapture:
         self.closed = False
         self.bt_before = {}
         self.device_id = None
+        self.opened = 0.0
+        self.last_data = None      # monotonic-Zeit des letzten Audioblocks
+
+    def interrupted(self, now=None):
+        """Wie _MacStream.interrupted: "ended", wenn der Aufnahmeprozess bzw.
+        Stream beendet ist, "stalled", wenn keine Blöcke mehr ankommen."""
+        if self.closed:
+            return None
+        if self.proc is not None and self.proc.poll() is not None:
+            return "ended"
+        if _stream_ended(self.stream):
+            return "ended"
+        now = time.monotonic() if now is None else now
+        return _quiet_for(self.last_data, self.opened, now)
 
     def open(self):
+        self.opened = time.monotonic()
         if sys.platform == "darwin" and mac_backend() != "ffmpeg":
             sd = _sd()
             if sd is None:
@@ -588,6 +642,7 @@ class _PrerollCapture:
             if isinstance(data, threading.Event):
                 data.set()
                 continue
+            self.last_data = time.monotonic()
             if self.resampler is not None:
                 data = self.resampler.feed(data)
             if not data:
@@ -681,6 +736,10 @@ class Recorder:
         self.started = 0.0
         self._bt_before = {}
         self._abandoned = False  # macOS: ein Stream musste aufgegeben werden
+        # Grund, warum die zuletzt beendete Aufnahme vor stop() abriss
+        # ("ended"/"stalled", siehe capture_interrupted), sonst None.
+        self.interrupted = None
+        self._started_wall = 0.0
         if preroll_ms is None:
             preroll_ms = os.environ.get("QUASSEL_PREROLL_MS", "0") if raw_path == RAW else 0
         try:
@@ -705,6 +764,33 @@ class Recorder:
         deshalb neu. Auf Linux und Windows immer False."""
         return self._abandoned
 
+    def capture_interrupted(self, now=None):
+        """Liefert die laufende Aufnahme noch Audio? Grund, falls nicht:
+        "ended" (Aufnahmeprozess/Stream vom System beendet) oder "stalled"
+        (seit CAPTURE_STALL_S kein Audio mehr, Gerät weg). None: läuft, oder
+        es läuft gar keine Aufnahme. Darf während der Aufnahme aus einem
+        anderen Thread gefragt werden (Live-Vorschau, Pille)."""
+        capture, mac, proc = self._buffer, self.mac, self.proc
+        if capture is not None:
+            return capture.interrupted()
+        if mac is not None:
+            return mac.interrupted()
+        if proc is None:
+            return None
+        if proc.poll() is not None:
+            return "ended"
+        # Der Subprozess schreibt direkt in die Rohdatei: deren Änderungszeit
+        # ist der letzte Block (wie bei rms_level).
+        wall = time.time() if now is None else now
+        try:
+            size = os.path.getsize(self.running_path)
+            mtime = os.path.getmtime(self.running_path)
+        except (OSError, TypeError):
+            return None
+        if size == 0:
+            return "stalled" if wall - self._started_wall > CAPTURE_START_S else None
+        return "stalled" if wall - mtime > CAPTURE_STALL_S else None
+
     @property
     def active(self):
         if self._buffer is not None:
@@ -721,6 +807,8 @@ class Recorder:
         if self.mac is not None or self.proc is not None or self._buffer is not None:
             _log("audio: vorherige Aufnahme lief noch -> wird zuerst beendet")
             self.stop()
+        self.interrupted = None
+        self._started_wall = time.time()
         # Nächste Rohdatei wählen: die vorige gehört noch dem vorherigen Diktat,
         # dessen finish() sie unter Umständen erst noch ausliest.
         self._slot = (self._slot + 1) % len(self._paths)
@@ -809,19 +897,33 @@ class Recorder:
         Beenden selbst läuft danach ohne ihn: fällt der Not-Aus aus einem
         anderen Thread hier hinein, findet er nichts mehr vor und kehrt sofort
         zurück, statt auf einem halb abgeräumten Zustand zu arbeiten."""
+        # Vor dem Abräumen fragen: danach läuft kein Prozess/Stream mehr, an
+        # dem sich ein Abriss ablesen ließe.
+        try:
+            reason = self.capture_interrupted()
+        except Exception:  # noqa: BLE001 — Prüfung darf das Beenden nie stören
+            reason = None
         with self._lock:
             path = self.last_path = self.running_path or self.raw_path
+            if self.running_path is not None:
+                self.interrupted = reason
             self.running_path = None
             capture, self._buffer = self._buffer, None
             mac, self.mac = self.mac, None
             proc, self.proc = self.proc, None
             outfile, self.outfile = self.outfile, None
             bt_before, self._bt_before = self._bt_before, {}
+        if reason:
+            _log("audio: Aufnahme abgerissen (%s)" % reason)
         if capture is not None:
             capture.end()
             with self._lock:
                 self._warm = capture
-                timer = threading.Timer(self.preroll_keep_s, self._expire_warm,
+                # Ein abgerissener Eingang wird nicht warm gehalten, sondern
+                # gleich (im Hintergrund) geschlossen: das nächste Diktat
+                # öffnet das Gerät neu.
+                keep = 0.0 if reason else self.preroll_keep_s
+                timer = threading.Timer(keep, self._expire_warm,
                                         args=(capture,))
                 timer.daemon = True
                 self._warm_timer = timer

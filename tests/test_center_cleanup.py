@@ -86,7 +86,7 @@ def test_raw_back_on_linux_signals_the_daemon(c, monkeypatch):
                         lambda *a: sent.append(a) or SimpleNamespace(returncode=0))
     c.controller = None
     c.on_raw_back()
-    assert sent == [("kill", "-s", "HUP", "quasseld")]
+    assert sent == [("kill", "-s", "HUP", "quasseld.service")]
 
 
 def test_raw_back_without_a_running_service(c, monkeypatch):

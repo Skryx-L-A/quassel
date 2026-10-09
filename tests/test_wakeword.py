@@ -56,6 +56,31 @@ def test_normalize_collapses_whitespace_and_keeps_umlauts():
     assert normalize(None) == ""
 
 
+def test_normalize_keeps_accented_and_other_letters_as_one_word():
+    # Akzente, Trema, polnisches ł und kombinierende Zeichen bleiben im Wort;
+    # ß bleibt ß (lower, nicht casefold).
+    assert normalize("Café, naïve Łódź!") == "café naïve łódź"
+    assert normalize("Straße") == "straße"
+    assert normalize("Café Quassel") == "café quassel"
+    assert normalize("नमस्ते Quassel") == "नमस्ते quassel"
+
+
+def test_match_remainder_is_cut_after_the_phrase_with_non_ascii_words():
+    # Wortzaehlung von normalize und Restschnitt muessen dieselben Woerter sehen.
+    assert match_wake("Hé Quassel, schreib Grüße", "Hé Quassel") \
+        == (True, "schreib Grüße")
+    assert match_wake("Hey Quaßel, naïve Idee", "Hey Quaßel") \
+        == (True, "naïve Idee")
+    assert match_wake("Okay Łukasz, mach weiter", "Okay Łukasz") \
+        == (True, "mach weiter")
+    assert match_wake("Ça va Quassel: écris ça", "Ça va Quassel") \
+        == (True, "écris ça")
+    assert match_wake("Hey naïve Quassel, schreib Grüße", "Hey naïve Quassel") \
+        == (True, "schreib Grüße")
+    assert match_wake("Hej Łódź, pisz dalej", "Hej Łódź") \
+        == (True, "pisz dalej")
+
+
 # ----------------------------------------------------------------- match_wake
 def test_match_with_remainder():
     assert match_wake("Hey Quassel, schreib das hier", "Hey Quassel") \

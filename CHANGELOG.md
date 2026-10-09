@@ -30,10 +30,29 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   themselves.
 - On Windows, unavailable media controls no longer toggle muted sound or start
   paused playback when dictation begins.
+- Wake word (macOS and the portable Linux pill): "Listening…" after the
+  phrase now shows above the pill even when the live preview is turned off,
+  so you can see that Quassel is listening. Dictated preview text stays
+  hidden as before.
+- Linux and macOS: if the microphone stops delivering sound during a
+  recording (unplugged, Bluetooth disconnected, system power event), Quassel
+  now notices it and closes the dead input instead of keeping it open for the
+  next dictation.
+- Control center: a Whisper model you set up yourself now shows its file name
+  instead of "small", and choosing it again switches back to it instead of
+  loading a different model.
+- Wake word: phrases and dictations with accented or non-German letters
+  ("naïve", "Łódź", "é") no longer lose a word or cut the dictation in the
+  wrong place after the phrase.
 - Dictated questions and instruction-override examples now stay exactly as
   spoken when text cleanup or number formatting would change them.
 
 ### Added
+- Linux: a second Quassel next to the installed one (`QUASSEL_PROFILE`) can
+  run its own dictation service from the new template
+  `systemd/quasseld@.service`. Its control center, pill and
+  `quassel-type-cli raw-last` then check, switch and ask only that service,
+  and turning it off no longer stops the installed app's shared helper.
 - Wake word: after the phrase alone, the pill shows "Listening…" while it
   records your dictation; a tone plays only when signal tones are on.
 - Transcribe file: "Save as…" writes the result as a text, SRT or WebVTT file.

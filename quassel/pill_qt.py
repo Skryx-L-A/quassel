@@ -20,8 +20,8 @@ from PySide6.QtCore import Qt, QTimer, QRectF, QPoint, QFileSystemWatcher
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QApplication, QWidget
 
-from . import config
-from .i18n import tr
+from . import config, profile
+from .i18n import STRINGS, tr
 from .state import LevelMeter, RUNDIR, level_read, state_read
 
 RESULT_SHOW_S = 3.0
@@ -125,6 +125,11 @@ def reduced_motion():
     return _reduced_motion_cache["val"]
 
 
+def daemon_unit():
+    """Diktat-Dienst dieser Instanz (mit QUASSEL_PROFILE quasseld@<profil>)."""
+    return profile.service("quasseld")
+
+
 def daemon_active():
     if os.name == "nt":
         return True
@@ -133,7 +138,7 @@ def daemon_active():
     now = time.monotonic()
     if now - _daemon_active_cache["ts"] < DAEMON_ACTIVE_CACHE_S:
         return _daemon_active_cache["val"]
-    val = subprocess.run(["systemctl", "--user", "is-active", "--quiet", "quasseld"],
+    val = subprocess.run(["systemctl", "--user", "is-active", "--quiet", daemon_unit()],
                          check=False).returncode == 0
     _daemon_active_cache["ts"] = now
     _daemon_active_cache["val"] = val
@@ -394,13 +399,23 @@ class Pill(QWidget):
         hören: stummgeschaltet, falsches Gerät oder keine Mikrofonfreigabe."""
         return self.mode == "recording" and self.meter.silent()
 
+    def wake_listening(self):
+        """Nimmt Quassel gerade die Äußerung nach der Wake-Phrase auf? Der
+        Dienst schreibt dafür den festen Text "wake_listening" (in seiner
+        Sprache) in den Zustand, nie diktierten Text."""
+        return self.mode == "recording" and self.text in STRINGS["wake_listening"]
+
     def bubble_text(self):
-        """Hinweis „kein Ton" geht vor (auch ohne Vorschau), sonst der
-        Vorschau- bzw. Ergebnistext, wenn eingeschaltet."""
+        """Hinweis „kein Ton" geht vor (auch ohne Vorschau), dann „Sichere
+        Eingabe" und „Hört zu…" nach der Wake-Phrase (auch ohne Vorschau,
+        damit man sieht, dass Quassel zuhört), sonst der Vorschau- bzw.
+        Ergebnistext, wenn eingeschaltet."""
         if self.mic_silent():
             return tr("mic_silent")
         if self.secure_hint() and self.mode in ("ready", "recording"):
             return tr("secure_input")
+        if self.wake_listening():
+            return tr("wake_listening")
         if self.cfg.pill_preview and self.text and \
                 self.mode in ("recording", "done", "error"):
             return self.text
@@ -521,15 +536,16 @@ class Pill(QWidget):
             return
         if os.name == "nt" or sys.platform == "darwin":
             return
+        own = [daemon_unit(), profile.service()]
         if daemon_active():
-            subprocess.run(["systemctl", "--user", "stop", "quasseld",
-                            "quassel-server", "quassel-ydotoold"], check=False)
+            # Ein Profil stoppt den geteilten ydotoold der installierten App nicht.
+            shared = [] if profile.name() else ["quassel-ydotoold"]
+            subprocess.run(["systemctl", "--user", "stop", *own, *shared], check=False)
             daemon_active_invalidate()
             self.on = False
             self.set_mode("off")
         else:
-            subprocess.run(["systemctl", "--user", "start", "quasseld",
-                            "quassel-server"], check=False)
+            subprocess.run(["systemctl", "--user", "start", *own], check=False)
             daemon_active_invalidate()
             self.on = True
             self.set_mode("ready")

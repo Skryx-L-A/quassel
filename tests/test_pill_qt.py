@@ -764,3 +764,39 @@ def test_clearing_the_text_keeps_level_and_timestamp(fresh_level_state):
     state.state_set("recording", "neu")            # _doc wurde mit geleert
     assert state.state_read()["level"] == 0.4
     assert state.state_clear_text(ts) is False     # inzwischen Neues gemeldet
+
+
+# ------------------------------------------- Wake-Word: „Hört zu…" sichtbar
+def _state_doc(state_name, text):
+    import json
+    os.makedirs(os.path.dirname(state.STATE), exist_ok=True)
+    with open(state.STATE, "w", encoding="utf-8") as f:
+        json.dump({"state": state_name, "text": text, "ts": time.time()}, f)
+
+
+@pytest.mark.parametrize("lang", ["en", "de"])
+def test_wake_listening_shows_as_bubble_without_preview(pill, lang):
+    """Wake-Nutzer sollen sehen, dass Quassel nach der Phrase zuhört — auch
+    mit ausgeschalteter Live-Vorschau. Der Text kommt in der Sprache der
+    Pille, gleich in welcher Sprache der Dienst ihn geschrieben hat."""
+    from quassel import i18n
+    i18n.set_language(lang)
+    try:
+        pill.cfg.pill_preview = False
+        for written in i18n.STRINGS["wake_listening"]:
+            _state_doc("recording", written)
+            pill.on = True
+            pill.tick()
+            assert pill.bubble_text() == i18n.tr("wake_listening")
+            assert i18n.tr("wake_listening") in pill.accessible_status()
+    finally:
+        i18n.set_language(None)
+
+
+def test_live_preview_text_stays_hidden_without_preview(pill):
+    """Nur der feste Hinweis darf durch, kein diktierter Vorschautext."""
+    pill.cfg.pill_preview = False
+    _state_doc("recording", "geheimer Vorschautext")
+    pill.on = True
+    pill.tick()
+    assert pill.bubble_text() == ""

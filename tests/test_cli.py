@@ -97,7 +97,7 @@ def test_raw_last_asks_the_linux_daemon_by_signal(monkeypatch, capsys):
     monkeypatch.setattr(cli.sys, "platform", "linux")
     monkeypatch.setattr(cli.subprocess, "run", run)
     assert cli.main(["raw-last"]) == 0
-    assert run.calls[-1] == ["systemctl", "--user", "kill", "-s", "HUP", "quasseld"]
+    assert run.calls[-1] == ["systemctl", "--user", "kill", "-s", "HUP", "quasseld.service"]
     out = capsys.readouterr().out
     assert "clipboard" in out
 

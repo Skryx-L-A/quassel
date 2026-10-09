@@ -15,7 +15,7 @@ import time
 import wave
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPalette
+from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
     QSpinBox,
@@ -25,12 +25,13 @@ from PySide6.QtWidgets import (
 )
 
 from . import (__version__, ai, aimodes, beep, cleanup, config, dictprompt, fsutil, i18n,
-               profiles, stats, transcribe_file, updatecheck, vad, wakeword, whisperclient)
+               profile, profiles, stats, transcribe_file, updatecheck, vad, wakeword, whisperclient)
 from .dictation import failure_text, mac_mic_permission
 from .audio import RATE, mac_backend
 from .config import MODEL_URL, MODELS
 from .i18n import tr
 from .net import download as net_download
+from .pill_qt import app_icon
 from .state import RUNDIR, LevelMeter
 if os.name == "nt":
     from .win.audio_win import list_mics
@@ -43,12 +44,6 @@ else:
     from .platform_linux import clip_copy
 
 FILE_EXT = {"text": ".txt", "srt": ".srt", "vtt": ".vtt"}
-UNITS_START = ["quasseld", "quassel-server", "quassel-pill"]
-UNITS_STOP = ["quasseld", "quassel-server", "quassel-ydotoold"]
-ICON_PATHS = [
-    os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/quassel-voice.svg"),
-    os.path.join(os.path.dirname(__file__), "..", "assets", "quassel.svg"),
-]
 
 # Stylesheet-Vorlage. Die Markenfarbe (Pine-Grün, Direction B "Lokal") wird je
 # nach hellem/dunklem System-Theme eingesetzt — der Rest bleibt bewusst
@@ -179,12 +174,28 @@ def open_text_file(path):
     return False
 
 
+def daemon_unit():
+    """Diktat-Dienst dieser Instanz: quasseld.service, mit QUASSEL_PROFILE die
+    Vorlage quasseld@<profil>.service (systemd/quasseld@.service)."""
+    return profile.service("quasseld")
+
+
+def service_units(start):
+    """systemd-Units für An/Aus dieser Instanz. Ein Profil schaltet nur seine
+    eigenen (Dienst und Server); die geteilten Dienste (ydotoold) und die Pille
+    der installierten App bleiben unberührt."""
+    own = [daemon_unit(), profile.service()]
+    if profile.name():
+        return own
+    return own + (["quassel-pill"] if start else ["quassel-ydotoold"])
+
+
 def daemon_active():
     if IS_WINDOWS or IS_MAC:
         # Windows: Fenster läuft im Tray-App-Prozess selbst. macOS: das
         # Zentrum wird von der laufenden Menüleisten-App geöffnet.
         return True
-    return sysctl("is-active", "--quiet", "quasseld").returncode == 0
+    return sysctl("is-active", "--quiet", daemon_unit()).returncode == 0
 
 
 def autostart_enabled():
@@ -198,7 +209,7 @@ def autostart_enabled():
             return False
     if IS_MAC:
         return os.path.exists(LAUNCH_AGENT_PLIST)
-    return sysctl("is-enabled", "--quiet", "quasseld").returncode == 0
+    return sysctl("is-enabled", "--quiet", daemon_unit()).returncode == 0
 
 
 def mac_app_path():
@@ -287,13 +298,6 @@ def restart_server():
 
 class MicTestError(Exception):
     """Mikrofontest konnte nicht aufnehmen; args[0] ist der i18n-Schlüssel."""
-
-
-def app_icon():
-    for p in ICON_PATHS:
-        if os.path.exists(p):
-            return QIcon(p)
-    return QIcon.fromTheme("quassel-voice")
 
 
 class NoWheel(QObject):
@@ -716,11 +720,17 @@ class Center(QMainWindow):
         g = self.group(tr("model"), lay)
         self.model = self.guard(QComboBox())
         env = config.read_serverenv()
-        current = next((m for m in MODELS if f"ggml-{m}.bin" in env.get("MODEL_PATH", "")),
-                       "small")
+        name = os.path.basename(env.get("MODEL_PATH", ""))
+        current = next((m for m in MODELS if name == f"ggml-{m}.bin"),
+                       env["MODEL_PATH"] if name else "small")
+        if current not in MODELS:
+            # Selbst eingetragenes Modell: mit Dateinamen zeigen statt als
+            # "small" -- sonst lädt die nächste Auswahl ungewollt ein anderes.
+            # Die Daten sind sein voller Pfad, so führt die Auswahl zurück.
+            self.model.addItem(name, current)
         for m in MODELS:
             self.model.addItem(m, m)
-        self.model.setCurrentIndex(MODELS.index(current))
+        self.model.setCurrentIndex(self.model.findData(current))
         self.model.currentIndexChanged.connect(self.on_model)
         self.model.setAccessibleName(tr("model"))
         g.addWidget(self.model)
@@ -1120,11 +1130,11 @@ class Center(QMainWindow):
     def on_raw_back(self):
         """Den Rohtext des letzten Diktats anfordern. Er liegt nur im Speicher
         des Diktat-Dienstes: Windows/macOS über die App im selben Prozess,
-        Linux per SIGHUP an quasseld."""
+        Linux per SIGHUP an den Diktat-Dienst des eigenen Profils."""
         if self.controller is not None and hasattr(self.controller, "raw_back"):
             ok = self.controller.raw_back()
         elif not (IS_WINDOWS or IS_MAC):
-            ok = sysctl("kill", "-s", "HUP", "quasseld").returncode == 0
+            ok = sysctl("kill", "-s", "HUP", daemon_unit()).returncode == 0
         else:
             ok = False
         self.raw_back_status.setText(tr("raw_back_sent") if ok
@@ -1328,9 +1338,9 @@ class Center(QMainWindow):
         if self.controller is not None:
             self.controller.toggle()    # hält Tray-Menü und Pille synchron
         elif daemon_active():
-            sysctl("stop", *UNITS_STOP)
+            sysctl("stop", *service_units(start=False))
         else:
-            sysctl("start", *UNITS_START)
+            sysctl("start", *service_units(start=True))
         self.refresh_status()
 
     def reset_pill_position(self):
@@ -1524,7 +1534,7 @@ class Center(QMainWindow):
         elif IS_MAC:
             mac_autostart_set(on)
         else:
-            sysctl("enable" if on else "disable", "quasseld")
+            sysctl("enable" if on else "disable", daemon_unit())
 
     # ------------------------------------------------------------ Verlauf
     def reload_history(self):
@@ -1549,6 +1559,11 @@ class Center(QMainWindow):
             return
         model = self.model.currentData()
         env = config.read_serverenv()
+        if model not in MODELS:
+            # Eigenes Modell (voller Pfad): zurückwechseln, nie herunterladen.
+            if model != env.get("MODEL_PATH"):
+                self.switch_model(model, os.path.basename(model))
+            return
         modeldir = os.path.dirname(env.get("MODEL_PATH", "")) or \
             config.MODELDIR
         target = os.path.join(modeldir, f"ggml-{model}.bin")

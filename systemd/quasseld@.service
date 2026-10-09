@@ -1,0 +1,20 @@
+[Unit]
+Description=Quassel daemon for the profile %i (hotkey detection for voice typing)
+# Second Quassel next to the installed one (QUASSEL_PROFILE=%i): own config,
+# runtime folder and log, own server quassel-server@%i.service. The shared
+# ydotoold is only wanted, never stopped by this profile. QUASSELD_BIN in
+# daemon.env can point at the quasseld of another checkout; without it the
+# installed launcher runs with this profile.
+Wants=quassel-ydotoold.service quassel-server@%i.service
+After=quassel-ydotoold.service
+
+[Service]
+Type=simple
+Environment=QUASSEL_PROFILE=%i
+EnvironmentFile=-%h/.config/quassel-%i/daemon.env
+ExecStart=/bin/sh -c 'exec "${QUASSELD_BIN:-%h/.local/bin/quasseld}"'
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

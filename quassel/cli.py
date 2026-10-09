@@ -21,10 +21,16 @@ def _model_name(path):
     return None
 
 
+def _daemon_unit():
+    """The dictation service of this instance: quasseld.service, or with
+    QUASSEL_PROFILE the template instance quasseld@<profile>.service."""
+    return profile.service("quasseld")
+
+
 def _daemon_status():
     """Use the established Linux service mechanism; do not create an IPC API."""
     if sys.platform.startswith("linux"):
-        result = subprocess.run(["systemctl", "--user", "is-active", "--quiet", "quasseld"],
+        result = subprocess.run(["systemctl", "--user", "is-active", "--quiet", _daemon_unit()],
                                 check=False)
         return "running" if result.returncode == 0 else "stopped"
     return "unknown"
@@ -80,7 +86,9 @@ def _raw_last():
     if _daemon_status() != "running":
         print("Quassel is not running, so there is no last dictation", file=sys.stderr)
         return EXIT_UNAVAILABLE
-    result = subprocess.run(["systemctl", "--user", "kill", "-s", "HUP", "quasseld"],
+    # Only this profile's daemon: a second instance must never hand out the
+    # raw text of the installed one (or the other way round).
+    result = subprocess.run(["systemctl", "--user", "kill", "-s", "HUP", _daemon_unit()],
                             check=False)
     if result.returncode != 0:
         print("could not reach the dictation service", file=sys.stderr)
