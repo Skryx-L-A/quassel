@@ -178,12 +178,24 @@ def test_list_mics_mac_falls_back_without_sounddevice(monkeypatch):
 
 
 def test_mac_device_resolves_name_index_and_default(monkeypatch):
+    from quassel import coreaudio
     monkeypatch.setattr(audio, "_sd", lambda: _fake_sd(DEVICES))
+    # Nie das echte Standardgerät dieses Rechners abfragen: heißt es wie ein
+    # Eintrag der Attrappe, hinge das Ergebnis an der Hardware.
+    monkeypatch.setattr(coreaudio, "default_input_device", lambda: None)
     assert audio._mac_device("MacBook Pro-Mikrofon") == 2
     assert audio._mac_device("1") == 1          # Index-String bleibt Index
     assert audio._mac_device("default") is None
     assert audio._mac_device("") is None
     assert audio._mac_device("gibt es nicht") is None
+
+
+def test_mac_device_default_follows_the_current_coreaudio_input(monkeypatch):
+    from quassel import coreaudio
+    monkeypatch.setattr(audio, "_sd", lambda: _fake_sd(DEVICES))
+    monkeypatch.setattr(coreaudio, "default_input_device", lambda: 77)
+    monkeypatch.setattr(coreaudio, "device_name", lambda dev: "MacBook Pro-Mikrofon")
+    assert audio._mac_device("default") == 2
 
 
 def test_mac_device_rate(monkeypatch):

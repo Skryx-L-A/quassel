@@ -44,10 +44,13 @@ class FakeRec:
 def make_core(tmp_path, monkeypatch, audio, **cfg):
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "fehlt.ini"))
     core = dictation.DictationCore.__new__(dictation.DictationCore)
-    core.cfg = SimpleNamespace(mic="default", vad_backend="rms", **cfg)
+    core.cfg = SimpleNamespace(mic="default", vad_backend="rms", **{"beep": False, **cfg})
     core.wake = object()
     core.logs = []
     core._log = core.logs.append
+    core.states = []
+    core._state = lambda state, text="": core.states.append((state, text))
+    core._start_level = core._stop_level = lambda: None
     core.rec = SimpleNamespace(active=False)
     rec = FakeRec(audio, str(tmp_path / "wake.raw"))
     core._new_recorder = lambda path: rec
@@ -103,6 +106,8 @@ def test_wake_recording_waits_for_the_spotter_and_followup_does_not(tmp_path, mo
     rec.data = b""
     assert core._wake_record_followup() is not None
     assert spotter.n == 0, "die Folgeaufnahme laeuft ohne Spotter"
+    assert core.states[0] == ("recording", dictation.tr("wake_listening"))
+    assert core.states[-1][0] == "idle"
 
 
 def test_wake_busy_covers_the_whole_dictation_not_only_the_recording(tmp_path, monkeypatch):
