@@ -245,6 +245,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   downloads with checksums are in `scripts/tcpp/`.
 
 ### Changed
+- Automatic dictionary learning is stricter and easier to undo. A word is
+  learned only after it appears in two dictations at least ten minutes apart,
+  hyphenated German compounds such as "Jeff-Artigen" no longer count as jargon,
+  and learned words are kept apart from your own list. They lapse after 30 days
+  unused and after 90 days at the latest. The control center lists them with
+  the date they were first heard: Keep moves one into your own list, Remove
+  deletes it and never learns it again. Spellings you correct in text
+  replacements or clean-up corrections are never learned.
 - Clean up dictation: the Medium and Strong levels now ask the local AI for
   different work. Medium removes only fillers, repeats and false starts and fixes
   punctuation; Strong also smooths sentence structure and grammar. Both keep

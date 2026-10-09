@@ -11,7 +11,7 @@ checked against `quassel/config.py`, `quassel/vad.py`, `quassel/wakeword.py`,
 
 | | Linux | macOS | Windows |
 |---|---|---|---|
-| Settings folder (`config.ini`, `profiles.ini`, `server.env`, `dictionary.txt`, `replacements.txt`, `ai_modes.txt`, `cleanup-corrections.txt`, `dictionary-counts.json`) | `~/.config/quassel` | `~/Library/Application Support/Quassel` | `%APPDATA%\Quassel` |
+| Settings folder (`config.ini`, `profiles.ini`, `server.env`, `dictionary.txt`, `replacements.txt`, `ai_modes.txt`, `cleanup-corrections.txt`, `dictionary-learned.json`) | `~/.config/quassel` | `~/Library/Application Support/Quassel` | `%APPDATA%\Quassel` |
 | Data folder (`history.jsonl`, `stats.json`, `models/`) | `~/.local/share/quassel` | same folder as settings | `%LOCALAPPDATA%\Quassel` |
 | Runtime folder (`state.json`, scratch audio, `rescued-*.wav`) | `$XDG_RUNTIME_DIR/quassel` | `~/Library/Application Support/Quassel/run` | `%LOCALAPPDATA%\Quassel\run` |
 
@@ -56,7 +56,7 @@ limit, or it is replaced by the default.
 | `eszett` | `auto` | `auto`, `on`, `off` | Write "ß" where German spelling needs it ("grosses" becomes "großes"; "dass", "Masse" and English words stay). `auto` turns it on only with a German fine-tuned model, which never writes "ß". Leave it `off` for Swiss German, which uses "ss". |
 | `mic` | `default` | device name | Microphone to record from. `default` follows the system setting. |
 | `programmer_mode` | `false` | boolean | Programmer dictation: spoken symbols and identifiers become code text. Globally it applies when a dictation starts with "Code:"; a per-app profile can turn it on for every dictation. |
-| `auto_learn` | `false` | boolean | Add names and jargon from your dictations to the personal dictionary after two occurrences. Never active together with `programmer_mode`. |
+| `auto_learn` | `false` | boolean | Learn names and jargon from your dictations once they appear in two dictations at least ten minutes apart. Learned words are kept apart from `dictionary.txt`, lapse after 30 days unused and after 90 days at the latest, and can be kept or removed in the control center (a removed word is never learned again). Spellings that are triggers in `replacements.txt` or `cleanup-corrections.txt` are never learned. Never active together with `programmer_mode`. |
 | `preroll_ms` | `0` | 0 to 2000 ms, falls back to 0 | Pre-roll buffer. Above 0, the microphone stays open for about three seconds after a dictation and the next one includes this much audio from before the hotkey press. Linux, macOS and Windows. On macOS and Windows the system microphone indicator stays visible while the input is open. |
 
 ### `[pill]`
@@ -232,11 +232,11 @@ configures the local speech server:
 
 | File | Format |
 |---|---|
-| `dictionary.txt` | One word or name per line. Biases recognition toward these spellings. Quassel keeps the Whisper prompt within the model's 224-token limit, so a very long dictionary is cut. |
+| `dictionary.txt` | Your own words, one word or name per line. Biases recognition toward these spellings; learned words are added after them. Quassel keeps the Whisper prompt within the model's 224-token limit, so a very long dictionary is cut. |
 | `replacements.txt` | `trigger=expansion`, one per line. `#` starts a comment. Matching ignores case; a later duplicate trigger wins. |
 | `cleanup-corrections.txt` | `spoken=written`, one per line, each side at most 100 characters. Applied by the clean-up path with word boundaries, in one pass, so one correction cannot trigger another. |
 | `ai_modes.txt` | `name=instruction`, one per line. The name also works as a spoken phrase ("tweet: ..."). |
-| `dictionary-counts.json` | Internal counter for auto-learn. Do not edit. |
+| `dictionary-learned.json` | Auto-learned words with first and last sighting, count, and the list of removed words. Managed by Quassel; use the control center or `dict learned` / `dict remove`. |
 
 ## Environment variables
 

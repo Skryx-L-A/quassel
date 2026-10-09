@@ -25,6 +25,8 @@ bin/quassel-type-cli transcribe recording.wav --json
 bin/quassel-type-cli model list
 bin/quassel-type-cli model use large-v3-turbo-q5_0
 bin/quassel-type-cli dict add Quassel
+bin/quassel-type-cli dict learned
+bin/quassel-type-cli dict remove Jeff-Artigen
 bin/quassel-type-cli history list --since 2026-10-01T00:00:00Z
 ```
 
@@ -89,7 +91,7 @@ stderr.
 
 `model use` selects an installed model through the existing atomic `server.env`
 writer. It never downloads by default; pass `--download` only to fetch a
-missing model. `dict` uses the atomic dictionary writer. `history list` only
+missing model. `dict` uses the atomic dictionary writer. `dict list` prints the words in effect (your own, then learned ones); `dict learned` lists the learned ones with the date they were first heard; `dict remove` on a learned word removes it and blocks it from being learned again. `history list` only
 reads history when normal Quassel history is enabled.
 
 `profiles init|list|path` manages the per-app profile file `profiles.ini` (see
