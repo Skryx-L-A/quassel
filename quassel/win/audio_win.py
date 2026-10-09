@@ -12,7 +12,7 @@ from collections import deque
 
 import sounddevice as sd
 
-from ..audio import RAW_B, RATE, SAMPLE_BYTES
+from ..audio import RAW_B, RATE, SAMPLE_BYTES, _quiet_for
 from ..state import RAW, RUNDIR
 
 STOP_TIMEOUT = 1.0
@@ -86,6 +86,10 @@ class Recorder:
         self._write_queue = None
         self._writer_thread = None
         self.stream_abandoned = False
+        # Riss die letzte Aufnahme ab? "ended"/"stalled"/None, gesetzt von stop()
+        # (dieselbe Bedeutung wie quassel.audio.Recorder.interrupted, D65).
+        self.interrupted = None
+        self._last_block = None   # monotonic des letzten Callback-Blocks
         # Schützt nur den Besitzwechsel von Stream und Datei: der Not-Aus
         # kann aus einem anderen Thread in ein laufendes stop() fallen.
         self._lock = threading.Lock()
@@ -189,6 +193,7 @@ class Recorder:
                 self.outfile = outfile
                 self.running_path = self.raw_path
                 self.started = time.monotonic()
+                self.interrupted = None
             return True
 
         token = object()
@@ -200,6 +205,7 @@ class Recorder:
             with self._lock:
                 if token is not self._capture_token:
                     return
+                self._last_block = time.monotonic()
                 if self.outfile is not None:
                     self._write_queue.put_nowait(chunk)
                 elif self._max_ring_bytes:
@@ -241,7 +247,22 @@ class Recorder:
             self.stream = stream
             self._device = device
             self.started = time.monotonic()
+            self.interrupted = None
         return True
+
+    def capture_interrupted(self, now=None):
+        """Riss die laufende Aufnahme ab? "ended": der Stream lief aus (Gerät
+        weg, Treiber), "stalled": seit CAPTURE_STALL_S kam kein Block mehr.
+        None: läuft, oder es läuft keine Aufnahme."""
+        with self._lock:
+            if self.running_path is None or self.stream is None:
+                return None
+            stream, last, started = self.stream, self._last_block, self.started
+        if not stream.active:
+            return "ended"
+        if last is not None and last < started:
+            last = None          # Block aus dem Vorlauf zählt nicht als Aufnahme
+        return _quiet_for(last, started, time.monotonic() if now is None else now)
 
     def raw_bytes(self, path=None):
         """Rohdaten lesen. Ohne path die laufende bzw. zuletzt beschriebene
@@ -265,7 +286,15 @@ class Recorder:
     def stop(self):
         """Aufnahme beenden. Rückgabe (und self.last_path): die eben
         geschlossene Rohdatei, für raw_bytes(path)."""
+        # Vor dem Abräumen fragen: danach läuft kein Stream mehr, an dem sich
+        # ein Abriss ablesen ließe.
+        try:
+            reason = self.capture_interrupted()
+        except Exception:  # noqa: BLE001 — Prüfung darf das Beenden nie stören
+            reason = None
         with self._lock:
+            if self.running_path is not None:
+                self.interrupted = reason
             path = self.last_path = self.running_path or self.raw_path
             self.running_path = None
             outfile, self.outfile = self.outfile, None

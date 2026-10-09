@@ -244,3 +244,37 @@ def test_stop_has_deadline_when_stream_close_stalls(paths, monkeypatch):
     finally:
         release.set()
     assert closed.wait(1)
+
+
+def test_a_stream_that_dies_mid_recording_is_reported(paths):
+    raw, _raw_b, sd = paths
+    rec = audio_win.Recorder(raw)
+    assert rec.start()
+    sd.streams[-1].feed(b"\x01\x00" * 160)
+    sd.streams[-1].active = False          # Gerät weg: Treiber beendet den Stream
+    rec.stop()
+    assert rec.interrupted == "ended"
+
+
+def test_silence_from_the_driver_counts_as_a_stall(paths, monkeypatch):
+    raw, _raw_b, sd = paths
+    clock = {"now": 100.0}
+    monkeypatch.setattr(audio_win.time, "monotonic", lambda: clock["now"])
+    rec = audio_win.Recorder(raw)
+    assert rec.start()
+    clock["now"] = 100.2
+    sd.streams[-1].feed(b"\x01\x00" * 160)
+    from quassel import audio
+    clock["now"] = 100.2 + audio.CAPTURE_STALL_S + 0.5
+    assert rec.capture_interrupted() == "stalled"
+    rec.stop()
+    assert rec.interrupted == "stalled"
+
+
+def test_a_healthy_recording_is_not_interrupted(paths):
+    raw, _raw_b, sd = paths
+    rec = audio_win.Recorder(raw)
+    assert rec.start()
+    sd.streams[-1].feed(b"\x01\x00" * 160)
+    rec.stop()
+    assert rec.interrupted is None
