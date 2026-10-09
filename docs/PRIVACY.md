@@ -93,6 +93,7 @@ over HTTPS unless noted.
 | Installing on macOS | `github.com` (installer, DMG and its checksum) | Download requests | Install from the DMG you already have. |
 | Update check | `api.github.com` (`/repos/Skryx-L-A/quassel/releases/latest`) | An anonymous request; GitHub sees your IP address and a user agent, as with any web request | Off by default (`[system] update_check`). The control center button "Check now" does the same once, on request. |
 | Optional AI step or clean-up | the address in `[ai] endpoint`, by default `http://127.0.0.1:11434` | The dictated text and your instruction | Off by default. With a loopback address the text stays on your computer and bypasses system proxy settings. If you enter any other address, the control center asks you to confirm, and warns again if it is not encrypted (`http://`). |
+| Optional clean-up decision check | the address in `[cleanup] decider_url` | The dictated text before and after clean-up | Off by default. Only addresses on your computer are accepted; any other address is ignored, so the text never leaves it. Bypasses system proxy settings. |
 
 Everything else stays on the machine:
 
