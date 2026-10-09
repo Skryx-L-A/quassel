@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Windows recording now writes audio outside the capture callback and returns
+  from a stalled device stop within a deadline.
 - A slowly loading Windows GPU speech engine is no longer replaced with the
   CPU engine; a CPU emergency fallback now retries the preferred engine on
   the next start.

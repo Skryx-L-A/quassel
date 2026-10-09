@@ -187,3 +187,60 @@ def test_warm_stream_is_reopened_when_default_input_changes(paths):
         rec.stop()
     finally:
         rec._close_warm()
+
+
+def test_audio_callback_never_writes_to_file(paths, monkeypatch):
+    import builtins
+    import threading
+    raw, _raw_b, sd = paths
+    writes = []
+    real_open = builtins.open
+
+    class TrackedFile:
+        def __init__(self, file):
+            self.file = file
+
+        def write(self, chunk):
+            writes.append(threading.current_thread().name)
+            return self.file.write(chunk)
+
+        def flush(self):
+            return self.file.flush()
+
+        def close(self):
+            return self.file.close()
+
+    def tracked_open(path, mode, *args, **kwargs):
+        file = real_open(path, mode, *args, **kwargs)
+        return TrackedFile(file) if path == raw and mode == "wb" else file
+
+    monkeypatch.setattr(audio_win, "open", tracked_open, raising=False)
+    rec = audio_win.Recorder()
+    assert rec.start()
+    sd.streams[0].feed(b"\x04\x00" * 10)
+    rec.stop()
+    assert writes
+    assert "MainThread" not in writes
+    assert rec.raw_bytes() == b"\x04\x00" * 10
+
+
+def test_stop_has_deadline_when_stream_close_stalls(paths, monkeypatch):
+    import threading
+    import time
+    _raw, _raw_b, sd = paths
+    rec = audio_win.Recorder()
+    assert rec.start()
+    release = threading.Event()
+    closed = threading.Event()
+    monkeypatch.setattr(audio_win, "STOP_TIMEOUT", 0.05)
+    monkeypatch.setattr(sd.streams[0], "stop", lambda: release.wait())
+    monkeypatch.setattr(sd.streams[0], "close", closed.set)
+    try:
+        began = time.monotonic()
+        rec.stop()
+        assert time.monotonic() - began < 0.5
+        assert rec.stream_abandoned
+        assert rec.start() is False
+    finally:
+        release.set()
+    assert closed.wait(1)

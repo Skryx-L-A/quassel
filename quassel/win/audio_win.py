@@ -5,6 +5,7 @@ Linux — damit funktionieren Teiltranskripte (Live-Vorschau) und das
 WAV-Verpacken aus quassel.audio unverändert.
 """
 import os
+import queue
 import threading
 import time
 from collections import deque
@@ -13,6 +14,8 @@ import sounddevice as sd
 
 from ..audio import RAW_B, RATE, SAMPLE_BYTES
 from ..state import RAW, RUNDIR
+
+STOP_TIMEOUT = 1.0
 
 
 def list_mics():
@@ -61,8 +64,6 @@ class Recorder:
     Ein eigener raw_path (Wake-Listener) bleibt bei genau dieser einen Datei,
     damit Wake-Word und Diktat sich nie dieselbe Datei teilen."""
 
-    stream_abandoned = False     # nur macOS kennt aufgegebene Streams
-
     def __init__(self, raw_path=None, preroll_ms=0, preroll_keep_s=3.0):
         raw_path = raw_path or RAW
         self._paths = [raw_path, RAW_B] if raw_path == RAW else [raw_path]
@@ -82,6 +83,9 @@ class Recorder:
         self._capture_token = None
         self._warm_timer = None
         self._warm_generation = 0
+        self._write_queue = None
+        self._writer_thread = None
+        self.stream_abandoned = False
         # Schützt nur den Besitzwechsel von Stream und Datei: der Not-Aus
         # kann aus einem anderen Thread in ein laufendes stop() fallen.
         self._lock = threading.Lock()
@@ -103,18 +107,57 @@ class Recorder:
             self._ring.clear()
             self._ring_bytes = 0
         if stream is not None:
+            def close_stream():
+                try:
+                    stream.stop()
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    stream.close()
+                except Exception:  # noqa: BLE001
+                    self.stream_abandoned = True
+            closer = threading.Thread(target=close_stream, name="quassel-win-audio-close",
+                                      daemon=True)
+            closer.start()
+            closer.join(timeout=STOP_TIMEOUT)
+            if closer.is_alive():
+                self.stream_abandoned = True
+
+    def _start_writer(self, outfile):
+        chunks = queue.Queue()
+
+        def write_chunks():
             try:
-                stream.stop()
-                stream.close()
-            except Exception:  # noqa: BLE001
-                pass
+                while True:
+                    item = chunks.get()
+                    if item is None:
+                        break
+                    if isinstance(item, threading.Event):
+                        outfile.flush()
+                        item.set()
+                    else:
+                        outfile.write(item)
+            except OSError:
+                self.stream_abandoned = True
+            finally:
+                outfile.close()
+
+        writer = threading.Thread(target=write_chunks, name="quassel-win-audio-writer",
+                                  daemon=True)
+        self._write_queue = chunks
+        self._writer_thread = writer
+        writer.start()
 
     def start(self, mic="default"):
+        if self.stream_abandoned:
+            return False
         os.makedirs(RUNDIR, exist_ok=True)
         # Ein Vorgänger, den niemand beendet hat, wird zuerst abgeräumt: er
         # hielte sonst das Mikrofon und schriebe still weiter.
         if self.running_path is not None:
             self.stop()
+            if self.stream_abandoned:
+                return False
         try:
             device = resolve_mic(mic)
         except Exception:  # noqa: BLE001 — verschwundenes oder defektes Gerät
@@ -127,6 +170,8 @@ class Recorder:
         if self.stream is not None and (not self.preroll_ms or device != self._device
                                         or not self.stream.active):
             self._close_warm()
+            if self.stream_abandoned:
+                return False
         self._slot = (self._slot + 1) % len(self._paths)
         self.raw_path = self._paths[self._slot]
         try:
@@ -135,9 +180,10 @@ class Recorder:
             return False
 
         if self.stream is not None:
+            self._start_writer(outfile)
             with self._lock:
                 for chunk in self._ring:
-                    outfile.write(chunk)
+                    self._write_queue.put_nowait(chunk)
                 self._ring.clear()
                 self._ring_bytes = 0
                 self.outfile = outfile
@@ -147,6 +193,7 @@ class Recorder:
 
         token = object()
         self._capture_token = token
+        self._start_writer(outfile)
         # A retired stream cannot write into a later dictation.
         def callback(indata, _frames, _time, _status):
             chunk = bytes(indata)
@@ -154,7 +201,7 @@ class Recorder:
                 if token is not self._capture_token:
                     return
                 if self.outfile is not None:
-                    self.outfile.write(chunk)
+                    self._write_queue.put_nowait(chunk)
                 elif self._max_ring_bytes:
                     self._ring.append(chunk)
                     self._ring_bytes += len(chunk)
@@ -185,7 +232,10 @@ class Recorder:
                 self.outfile = None
                 self.running_path = None
                 self._capture_token = None
-            outfile.close()
+            self._write_queue.put_nowait(None)
+            self._writer_thread.join(timeout=STOP_TIMEOUT)
+            if self._writer_thread.is_alive():
+                self.stream_abandoned = True
             return False
         with self._lock:
             self.stream = stream
@@ -200,8 +250,12 @@ class Recorder:
         path = path or self.raw_path
         try:
             with self._lock:
+                barrier = None
                 if self.outfile is not None and path == self.running_path:
-                    self.outfile.flush()
+                    barrier = threading.Event()
+                    self._write_queue.put_nowait(barrier)
+            if barrier is not None:
+                barrier.wait(timeout=STOP_TIMEOUT)
             with open(path, "rb") as f:
                 data = f.read()
             return data[:len(data) - (len(data) % SAMPLE_BYTES)]
@@ -215,9 +269,15 @@ class Recorder:
             path = self.last_path = self.running_path or self.raw_path
             self.running_path = None
             outfile, self.outfile = self.outfile, None
+            chunks, self._write_queue = self._write_queue, None
+            writer, self._writer_thread = self._writer_thread, None
+            if chunks is not None:
+                chunks.put_nowait(None)
             keep_warm = self.preroll_ms > 0 and self.stream is not None
-        if outfile is not None:
-            outfile.close()
+        if writer is not None:
+            writer.join(timeout=STOP_TIMEOUT)
+            if writer.is_alive():
+                self.stream_abandoned = True
         if keep_warm:
             with self._lock:
                 self._warm_generation += 1
