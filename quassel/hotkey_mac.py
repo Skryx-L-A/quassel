@@ -58,6 +58,7 @@ import threading
 import time
 
 from .i18n import tr
+from .platform_mac import _osa_quote  # eine Quelle für das AppleScript-Quoting
 from .win.machine import ChordMachine
 
 # macOS Virtual-Keycodes (Carbon/HIToolbox kVK_*), links + rechts getrennt
@@ -97,16 +98,6 @@ LOCK_WAIT = 1.0        # s: so lange wartet force_finish auf den Maschinen-Lock
 
 def _log(msg):
     print(msg, file=sys.stderr, flush=True)
-
-
-def _osa_quote(s):
-    """AppleScript-Stringliteral: \\ und " escapen, Zeilenumbrüche als \\n
-    (rohe Newlines sind im Literal ein Syntaxfehler -> Notification ginge
-    stumm verloren), übrige Steuerzeichen entfernen."""
-    s = s.replace("\\", "\\\\").replace('"', '\\"')
-    s = s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
-    s = "".join(ch for ch in s if ch >= " " or ch == "\t")
-    return f'"{s}"'
 
 
 def _notify_mac(text, title="Quassel"):
