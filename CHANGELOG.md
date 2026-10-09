@@ -96,6 +96,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spoken when text cleanup or number formatting would change them.
 
 ### Added
+- Scripts and AI agents can ask you something and get your spoken answer:
+  `quassel-type-cli dictate --once --prompt "..."` prints your next dictation
+  instead of inserting it, and the local MCP server offers the same as the
+  tool `ask_user` once you allow it with `[mcp] mcp_ask = true`. Neither ever
+  starts the microphone: the pill and a notification show the question, and
+  your answer is the next dictation you start with the hotkey. Without one
+  the question ends after two minutes (up to ten), and the emergency stop
+  dismisses it. Answers are not added to the history.
 - German "ß" is restored where spelling needs it when a German fine-tuned
   speech model is in use (it writes "grosses" instead of "großes"); "dass",
   "Masse" and English words stay as they are. Setting `[speech] eszett`
