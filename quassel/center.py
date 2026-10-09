@@ -716,11 +716,17 @@ class Center(QMainWindow):
         g = self.group(tr("model"), lay)
         self.model = self.guard(QComboBox())
         env = config.read_serverenv()
-        current = next((m for m in MODELS if f"ggml-{m}.bin" in env.get("MODEL_PATH", "")),
-                       "small")
+        name = os.path.basename(env.get("MODEL_PATH", ""))
+        current = next((m for m in MODELS if name == f"ggml-{m}.bin"),
+                       env["MODEL_PATH"] if name else "small")
+        if current not in MODELS:
+            # Selbst eingetragenes Modell: mit Dateinamen zeigen statt als
+            # "small" -- sonst lädt die nächste Auswahl ungewollt ein anderes.
+            # Die Daten sind sein voller Pfad, so führt die Auswahl zurück.
+            self.model.addItem(name, current)
         for m in MODELS:
             self.model.addItem(m, m)
-        self.model.setCurrentIndex(MODELS.index(current))
+        self.model.setCurrentIndex(self.model.findData(current))
         self.model.currentIndexChanged.connect(self.on_model)
         self.model.setAccessibleName(tr("model"))
         g.addWidget(self.model)
@@ -1549,6 +1555,11 @@ class Center(QMainWindow):
             return
         model = self.model.currentData()
         env = config.read_serverenv()
+        if model not in MODELS:
+            # Eigenes Modell (voller Pfad): zurückwechseln, nie herunterladen.
+            if model != env.get("MODEL_PATH"):
+                self.switch_model(model, os.path.basename(model))
+            return
         modeldir = os.path.dirname(env.get("MODEL_PATH", "")) or \
             config.MODELDIR
         target = os.path.join(modeldir, f"ggml-{model}.bin")

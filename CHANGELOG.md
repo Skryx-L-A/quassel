@@ -15,6 +15,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Control center: a Whisper model you set up yourself now shows its file name
+  instead of "small", and choosing it again switches back to it instead of
+  loading a different model.
 - Wake word: phrases and dictations with accented or non-German letters
   ("naïve", "Łódź", "é") no longer lose a word or cut the dictation in the
   wrong place after the phrase.
