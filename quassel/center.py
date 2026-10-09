@@ -370,7 +370,7 @@ class Center(QMainWindow):
         timer = QTimer(self)
         timer.timeout.connect(self.refresh_status)
         timer.start(2000)
-        QTimer.singleShot(0, self._maybe_onboard)
+        QTimer.singleShot(0, self._onboard_if_shown)
         if self.cfg.update_check:
             QTimer.singleShot(1500, lambda: updatecheck.check_async(
                 __version__, self.bridge.update_done.emit))
@@ -1554,6 +1554,14 @@ class Center(QMainWindow):
         self._refresh_stats()
 
     # ----------------------------------------------------- Erst-Einrichtung (#27)
+    def _onboard_if_shown(self):
+        """Erst-Einrichtung nur für ein Fenster, das tatsächlich gezeigt wird
+        (main() ruft show() vor dem ersten Ereignis). Ein nie gezeigter oder
+        schon geschlossener Center öffnete sonst später einen modalen Dialog
+        aus dem Nichts, in Tests mitten in einem fremden Test."""
+        if self.isVisible():
+            self._maybe_onboard()
+
     def _maybe_onboard(self):
         if self.cfg.onboarded:
             return

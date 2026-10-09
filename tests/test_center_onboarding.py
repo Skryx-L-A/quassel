@@ -263,3 +263,16 @@ def test_onboarding_wake_button_opens_the_beta_page(monkeypatch):
         assert c.sidebar.currentRow() == c._page_keys.index("nav_beta")
     finally:
         c.close()
+
+
+def test_onboarding_waits_for_a_shown_window(monkeypatch):
+    """Ein nie gezeigter Center öffnet den Einrichtungsdialog nicht später aus
+    dem Nichts (er hing den Testlauf in einer fremden Datei)."""
+    opened = []
+    monkeypatch.setattr(center.Center, "_maybe_onboard", lambda self: opened.append(self))
+    c = center.Center()
+    try:
+        QApplication.processEvents()
+        assert opened == []
+    finally:
+        c.close()
