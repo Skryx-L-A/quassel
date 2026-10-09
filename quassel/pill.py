@@ -395,7 +395,7 @@ class Pill(Gtk.Application):
         # außer der Nutzer hat das im Kontrollzentrum abgeschaltet.
         if not self.cfg.pill_click_opens_center:
             return
-        subprocess.Popen(["quassel-type"])
+        subprocess.Popen([sys.executable, "-m", "quassel.center"])
 
     def on_right_click(self, *_a):
         # Bewusste Geste zum An/Aus-Schalten.

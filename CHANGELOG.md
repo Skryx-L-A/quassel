@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- The Linux pill opens Control Center from its own installation even when
+  service startup omits Quassel from `PATH`.
 - Linux now finds an existing Wayland socket instead of assuming `wayland-0`
   when the session does not provide a display name.
 - On Windows, unavailable media controls no longer toggle muted sound or start
