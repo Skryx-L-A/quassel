@@ -30,9 +30,9 @@ Schutzprüfung, sonst Rohtext.
 | 04:17 | Granite 4 micro, mittel | 31,5 % | 34 / 29 | 13 |
 | 04:17 | Granite 4 micro, stark | 43,0 % | 61 / 25 | 11 |
 | 04:17 | SmolLM3, mittel (Wiederholung) | 40,0 % | 63 / 17 | 10 |
-| 04:39 (Schutz-Fix URL, `2763980`) | Qwen3-4B, mittel / stark | 37,5 % / 55,5 % | 55 / 20 · 98 / 13 | 8 / 0 |
-| 04:39 | Granite 4 micro, mittel / stark | 39,0 % / 48,0 % | 49 / 29 · 71 / 25 | 3 / 1 |
-| 04:39 | SmolLM3, mittel / stark | 50,0 % / 51,0 % | 83 / 17 · 86 / 16 | 0 / 1 |
+| 04:40 (Schutz-Fix URL, `2763980`) | Qwen3-4B, mittel / stark | 37,5 % / 55,5 % | 55 / 20 · 98 / 13 | 8 / 0 |
+| 04:40 | Granite 4 micro, mittel / stark | 39,0 % / 48,0 % | 49 / 29 · 71 / 25 | 3 / 1 |
+| 04:40 | SmolLM3, mittel / stark | 50,0 % / 51,0 % | 83 / 17 · 86 / 16 | 0 / 1 |
 | 05:02 (deutsche Stufenanweisung `a5d7191`, Schutz für Markup, Fragen, Sprache `0dac2d3`) | Qwen3-4B, mittel / stark | 30,0 % / **20,5 %** | 40 / 20 · **28** / 13 | 9 / 8 |
 | 05:02 | Granite 4 micro, mittel / stark | 54,5 % / 56,0 % | 77 / 32 · 85 / 27 | 0 / 0 |
 | 05:02 | SmolLM3, mittel / stark | 30,5 % / 26,5 % | 44 / 17 · 37 / 16 | 0 / 3 |
