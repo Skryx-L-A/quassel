@@ -41,9 +41,20 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(models, base[4])  # Modelle bleiben geteilt
         self.assertEqual(server, f"http://127.0.0.1:{port}")
 
-    def test_invalid_profile_falls_back(self):
-        name, port, *_ = _reload({"QUASSEL_PROFILE": "../evil"})
-        self.assertEqual((name, port), ("", 8765))
+    def test_invalid_profile_refuses_to_start(self):
+        # Früher still die installierte Instanz (Pfade, Port 8765, Units).
+        for bad in ("../evil", "next_1", "next.2", "nächstes", "x" * 33):
+            with self.assertRaises(SystemExit):
+                _reload({"QUASSEL_PROFILE": bad})
+
+    def test_profile_may_not_take_the_installed_port(self):
+        from quassel import profile
+        with mock.patch.dict(os.environ, {"QUASSEL_PROFILE": "next", "QUASSEL_PORT": "8765"}):
+            with self.assertRaises(SystemExit):
+                profile.port()
+        with mock.patch.dict(os.environ, {"QUASSEL_PORT": "8765"}):
+            os.environ.pop("QUASSEL_PROFILE", None)
+            self.assertEqual(profile.port(), 8765)
 
     def test_port_override(self):
         _, port, *_ = _reload({"QUASSEL_PROFILE": "next", "QUASSEL_PORT": "9123"})

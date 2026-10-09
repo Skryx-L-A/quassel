@@ -14,11 +14,22 @@ BASE_PORT = 8765
 _VALID = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 
 
+class InvalidProfile(SystemExit):
+    """Ungültiger QUASSEL_PROFILE oder ein Port, der der installierten App
+    gehört: der Prozess startet nicht, statt still die Standardinstanz zu
+    benutzen (Pfade, Port 8765, deren systemd-Units)."""
+
+
 def name():
-    """Profilname oder "" für die Standardinstanz. Ungültige Namen zählen als
-    Standard — aus dem Namen werden Pfade gebaut."""
+    """Profilname oder "" für die Standardinstanz. Ein gesetzter, aber
+    ungültiger Name beendet den Start (aus dem Namen werden Pfade gebaut;
+    früher fiel er still auf die installierte Instanz zurück)."""
     raw = os.environ.get("QUASSEL_PROFILE", "").strip().lower()
-    return raw if _VALID.match(raw) else ""
+    if raw and not _VALID.match(raw):
+        raise InvalidProfile(
+            "QUASSEL_PROFILE=%r is invalid: use a-z, 0-9 and '-', at most 32 characters"
+            % raw)
+    return raw
 
 
 def suffix():
@@ -42,9 +53,13 @@ def port():
     """Standardinstanz 8765. Ein Profil bekommt einen festen eigenen Port aus
     seinem Namen (8766..8865); QUASSEL_PORT überschreibt beides."""
     env = os.environ.get("QUASSEL_PORT", "").strip()
-    if env.isdigit() and 1024 <= int(env) <= 65535:
-        return int(env)
     n = name()
+    if env.isdigit() and 1024 <= int(env) <= 65535:
+        if n and int(env) == BASE_PORT:
+            raise InvalidProfile(
+                "QUASSEL_PORT=%d belongs to the installed Quassel; a profile needs its own port"
+                % BASE_PORT)
+        return int(env)
     if not n:
         return BASE_PORT
     return BASE_PORT + 1 + zlib.crc32(n.encode()) % 100
