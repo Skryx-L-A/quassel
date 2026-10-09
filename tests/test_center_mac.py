@@ -32,6 +32,9 @@ def qapp():
 def isolated_cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
+    # onboarded: sonst legt jeder Center den Einrichtungsdialog auf einen
+    # 0-ms-Timer, und der öffnet sich modal im nächsten Test mit processEvents.
+    config.save({("system", "onboarded"): "true"})
 
 
 @pytest.fixture
