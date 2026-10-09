@@ -94,7 +94,9 @@ def _jargon_in(tok: str) -> list[str]:
     if jargon and all(_is_jargon(p) or p.isdigit() or (len(p) == 1 and p.isupper())
                       for p in parts):
         return [tok]
-    return jargon
+    # Zwei Großbuchstaben aus einem Kompositum ("ER-Co-Op-Start-Option",
+    # "MD-File") sind fast nie der gemeinte Name.
+    return [p for p in jargon if len(p) > 2 or _has_digit(p)]
 
 
 def jargon_words(text: str) -> list[str]:

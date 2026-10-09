@@ -213,3 +213,11 @@ def test_the_store_stays_small_and_keeps_active_words_first():
     learn.prune(state, T0 + 7200)
     assert len(state["words"]) == learn.MAX_ENTRIES
     assert learn.active_words(state, T0 + 7200) == ["Aktiv1"]
+
+
+def test_short_capital_fragments_of_compounds_are_not_learned():
+    """Aus dem Wörterbuch auf llpc: "ER-Co-Op-Start-Option", "OX-Alpha-Worker",
+    "MD-File". Zwei Großbuchstaben aus einem Kompositum sind fast nie der Name,
+    um den es ging."""
+    assert learn.jargon_words("ER-Co-Op-Start-Option OX-Alpha-Worker MD-File") == []
+    assert learn.jargon_words("PDF-Variante K8-Cluster") == ["PDF", "K8"]
