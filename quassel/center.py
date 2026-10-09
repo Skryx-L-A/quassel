@@ -182,11 +182,11 @@ def daemon_unit():
 
 def service_units(start):
     """systemd-Units für An/Aus dieser Instanz. Ein Profil schaltet nur seine
-    eigenen (Dienst und Server); die geteilten Dienste (ydotoold) und die Pille
-    der installierten App bleiben unberührt."""
+    eigenen (Dienst, Server und beim Start die eigene Pille); die geteilten
+    Dienste (ydotoold) und die Pille der installierten App bleiben unberührt."""
     own = [daemon_unit(), profile.service()]
     if profile.name():
-        return own
+        return own + ([profile.service("quassel-pill")] if start else [])
     return own + (["quassel-pill"] if start else ["quassel-ydotoold"])
 
 

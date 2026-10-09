@@ -1,0 +1,13 @@
+[Unit]
+Description=Quassel pill overlay for the profile %i
+# Shows the state of quasseld@%i.service (its own runtime folder). It sits
+# next to the installed app's pill; QUASSEL_PILL_BIN in daemon.env can point
+# at the pill of another checkout.
+
+[Service]
+Type=simple
+Environment=QUASSEL_PROFILE=%i
+EnvironmentFile=-%h/.config/quassel-%i/daemon.env
+ExecStart=/bin/sh -c 'exec "${QUASSEL_PILL_BIN:-%h/.local/bin/quassel-pill}"'
+Restart=on-failure
+RestartSec=3

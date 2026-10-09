@@ -114,9 +114,10 @@ def test_center_units_for_the_installed_app(monkeypatch):
 def test_center_units_of_a_profile_leave_shared_services_alone(monkeypatch):
     monkeypatch.setenv("QUASSEL_PROFILE", "next")
     assert center.daemon_unit() == "quasseld@next.service"
-    for start in (True, False):
-        assert center.service_units(start=start) == [
-            "quasseld@next.service", "quassel-server@next.service"]
+    assert center.service_units(start=True) == [
+        "quasseld@next.service", "quassel-server@next.service", "quassel-pill@next.service"]
+    assert center.service_units(start=False) == [
+        "quasseld@next.service", "quassel-server@next.service"]
 
 
 def test_center_raw_back_signals_its_own_profile(monkeypatch):
@@ -145,3 +146,20 @@ def test_pill_toggle_of_a_profile_never_stops_the_shared_ydotoold(monkeypatch):
     pill_qt.Pill._toggle(fake)
     assert calls == [["systemctl", "--user", "stop",
                       "quasseld@next.service", "quassel-server@next.service"]]
+
+
+PILL_UNIT = UNIT.with_name("quassel-pill@.service")
+
+
+def test_pill_template_runs_the_pill_with_the_profile(tmp_path):
+    pill = tmp_path / ".local" / "bin" / "quassel-pill"
+    pill.parent.mkdir(parents=True)
+    pill.write_text('#!/bin/sh\necho "profile=$QUASSEL_PROFILE"\n')
+    pill.chmod(0o755)
+    text = PILL_UNIT.read_text().replace("%i", "next").replace("%h", str(tmp_path))
+    line = next(l for l in text.splitlines() if l.startswith("ExecStart="))
+    out = subprocess.run(shlex.split(line[len("ExecStart="):]), capture_output=True,
+                         text=True, timeout=10,
+                         env={"PATH": os.environ["PATH"], "QUASSEL_PROFILE": "next"}).stdout
+    assert out.strip() == "profile=next"
+    assert "Environment=QUASSEL_PROFILE=%i" in PILL_UNIT.read_text()
