@@ -5,9 +5,9 @@ Vertrag (siehe quassel/mediacontrol.py):
     duck_restore(mode, token) -> None
 
   mode == "all"   : Gesamtton stummschalten ueber Windows Core Audio (pycaw);
-                    Fallback ist ein VK_VOLUME_MUTE-Tastendruck (toggelt).
+                    ohne Statusabfrage bleibt die Ausgabe unveraendert.
   mode == "music" : gerade spielende Medien-Sessions pausieren ueber SMTC/WinRT
-                    (winsdk); Fallback ist ein VK_MEDIA_PLAY_PAUSE-Tastendruck.
+                    (winsdk); ohne Statusabfrage bleibt die Wiedergabe unveraendert.
 
 Alles ist best-effort: jede Operation laeuft in try/except und wird zur
 No-op, wenn ein Backend oder Geraet fehlt — die Audio-Steuerung darf das
@@ -15,16 +15,8 @@ Diktat niemals stoeren. Die Token sind kleine dicts, die festhalten, was
 zurueckzunehmen ist (z.B. war der Ton schon vor dem Diktat stumm, bleibt er
 stumm; eine bereits pausierte Session bleibt pausiert).
 """
-import ctypes
-import ctypes.wintypes as wt
-
-VK_VOLUME_MUTE = 0xAD
-VK_MEDIA_PLAY_PAUSE = 0xB3
-KEYEVENTF_KEYUP = 0x0002
-INPUT_KEYBOARD = 1
-
 # Core Audio (Master stummschalten). Optional — fehlt pycaw, greift der
-# Tastendruck-Fallback. Modulweite Importe, damit PyInstaller sie einsammelt.
+# Modulweite Importe, damit PyInstaller sie einsammelt.
 try:
     from ctypes import POINTER, cast
     from comtypes import CLSCTX_ALL
@@ -34,7 +26,7 @@ except Exception:        # noqa: BLE001 — Backend optional
     _HAVE_PYCAW = False
 
 # SMTC/WinRT (spielende Medien pausieren). Optional — fehlt die Projektion,
-# greift der Tastendruck-Fallback. Bevorzugt das gepflegte winrt-Paket
+# bleibt Ducking aus. Bevorzugt das gepflegte winrt-Paket
 # (pywinrt, mit Wheels fuer aktuelle Python-Versionen); winsdk als Rueckfall
 # fuer aeltere Umgebungen. Beide haben dieselbe SMTC-API.
 try:
@@ -50,29 +42,6 @@ except Exception:        # noqa: BLE001
         _HAVE_SMTC = True
     except Exception:    # noqa: BLE001 — Backend optional
         _HAVE_SMTC = False
-
-
-# ----------------------------------------------------------- Tastendruck (Fallback)
-class _KEYBDINPUT(ctypes.Structure):
-    _fields_ = [("wVk", wt.WORD), ("wScan", wt.WORD), ("dwFlags", wt.DWORD),
-                ("time", wt.DWORD), ("dwExtraInfo", ctypes.POINTER(wt.ULONG))]
-
-
-class _INPUTUNION(ctypes.Union):
-    _fields_ = [("ki", _KEYBDINPUT), ("padding", ctypes.c_byte * 32)]
-
-
-class _INPUT(ctypes.Structure):
-    _fields_ = [("type", wt.DWORD), ("union", _INPUTUNION)]
-
-
-def _tap(vk):
-    """Eine Multimedia-Taste druecken und loslassen (via SendInput)."""
-    arr = (_INPUT * 2)()
-    for i, flag in enumerate((0, KEYEVENTF_KEYUP)):
-        arr[i].type = INPUT_KEYBOARD
-        arr[i].union.ki = _KEYBDINPUT(vk, 0, flag, 0, None)
-    ctypes.windll.user32.SendInput(2, arr, ctypes.sizeof(_INPUT))
 
 
 # ----------------------------------------------------------- "all": Gesamtton
@@ -138,18 +107,16 @@ def duck_apply(mode):
                 was_muted = bool(vol.GetMute())
                 vol.SetMute(1, None)
                 return {"all": True, "was_muted": was_muted}
-            except Exception:    # noqa: BLE001 — auf Tastendruck zurueckfallen
+            except Exception:    # noqa: BLE001 — ohne Status keinen Toggle senden
                 pass
-        _tap(VK_VOLUME_MUTE)                      # toggelt -> Restore toggelt erneut
-        return {"all": True, "fallback": True}
+        return None
     if mode == "music":
         if _HAVE_SMTC:
             try:
                 return {"music": True, "appids": _smtc_pause_playing()}
-            except Exception:    # noqa: BLE001 — auf Tastendruck zurueckfallen
+            except Exception:    # noqa: BLE001 — ohne Status keinen Toggle senden
                 pass
-        _tap(VK_MEDIA_PLAY_PAUSE)                 # pausiert die aktive Session
-        return {"music": True, "fallback": True}
+        return None
     return None
 
 
@@ -157,16 +124,11 @@ def duck_restore(mode, token):
     if not token:
         return
     if token.get("all"):
-        if token.get("fallback"):
-            _tap(VK_VOLUME_MUTE)                  # zurueck-toggeln
-        elif not token.get("was_muted") and _HAVE_PYCAW:
+        if not token.get("was_muted") and _HAVE_PYCAW:
             # nur entstummen, wenn der Ton vor dem Diktat NICHT stumm war
             try:
                 _endpoint_volume().SetMute(0, None)
             except Exception:    # noqa: BLE001
                 pass
     elif token.get("music"):
-        if token.get("fallback"):
-            _tap(VK_MEDIA_PLAY_PAUSE)             # fortsetzen
-        else:
-            _smtc_play(token.get("appids", []))
+        _smtc_play(token.get("appids", []))
