@@ -3,6 +3,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -63,7 +64,15 @@ def _control(command):
         return EXIT_UNAVAILABLE
     installed = shutil.which("quassel-ctl")
     development = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bin", "quassel-ctl")
-    control = installed or development
+    raw_profile = os.environ.get("QUASSEL_PROFILE", "")
+    if raw_profile and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", raw_profile):
+        print("invalid QUASSEL_PROFILE: expected lowercase letters, digits and hyphens (1-32 characters)",
+              file=sys.stderr)
+        return EXIT_USAGE
+    # In a source checkout, an older installed launcher may still target the
+    # default services. Use this checkout's launcher for profile control.
+    control = (development if raw_profile and os.path.isfile(development)
+               else installed or development)
     try:
         return subprocess.run([control, command], check=False).returncode
     except OSError as exc:

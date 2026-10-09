@@ -15,6 +15,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Linux profile commands now start, stop and signal only the selected profile;
+  stopping a profile leaves the shared keyboard helper running.
 - Windows: when the audio driver stops responding while a recording ends,
   Quassel now says to restart it instead of claiming the microphone is busy.
 - Model downloads from Hugging Face show real progress instead of jumping to
