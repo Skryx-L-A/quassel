@@ -7,6 +7,7 @@ Dateien:
   ~/.local/share/quassel/history.jsonl  letzte Diktate (lokal, abschaltbar)
 """
 import configparser
+import contextlib
 import io
 import json
 import math
@@ -451,21 +452,37 @@ def _write_history(entries):
         mode=0o600)
 
 
-def history_append(text, *, history_days=None):
-    entries = history_read(history_days=history_days)
-    entries.append({"text": text, "ts": __import__("time").time()})
-    entries = entries[-HISTORY_MAX:]
-    # 0600: die letzten Diktate sind oft Privates und sollen nur der Nutzer lesen.
-    # Eine bestehende, weiter geöffnete Datei zieht beim nächsten Diktat nach.
-    _write_history(entries)
+@contextlib.contextmanager
+def _history_lock():
+    """Ein Schreiber zur Zeit über alle Prozesse: Daemon (anhängen),
+    Kontrollzentrum, CLI und MCP (Ablauf entfernen, leeren). Ohne Sperre
+    überschrieb ein Leser, der abgelaufene Einträge wegschrieb, ein Diktat,
+    das der Daemon zwischen Lesen und Ersetzen angehängt hatte."""
+    os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
+    fd = os.open(HISTORY + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)   # wartet bis zu ~10 s
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        os.close(fd)          # gibt eine flock-Sperre mit frei
 
 
-def history_read(*, history_days=None):
-    """Liest den Verlauf und entfernt abgelaufene Einträge atomar."""
+def _read_history_file(cutoff):
+    """(gültige Einträge, ob die Datei bereinigt werden muss) — liest nur."""
     out = []
     changed = False
-    days = _history_days(history_days)
-    cutoff = __import__("time").time() - days * 86400 if days else None
     try:
         with open(HISTORY, encoding="utf-8") as f:
             for line in f:
@@ -482,13 +499,40 @@ def history_read(*, history_days=None):
                     changed = True
     except OSError:
         pass
+    return out, changed
+
+
+def _history_cutoff(history_days):
+    days = _history_days(history_days)
+    return __import__("time").time() - days * 86400 if days else None
+
+
+def history_append(text, *, history_days=None):
+    with _history_lock():
+        entries, _ = _read_history_file(_history_cutoff(history_days))
+        entries.append({"text": text, "ts": __import__("time").time()})
+        entries = entries[-HISTORY_MAX:]
+        # 0600: die letzten Diktate sind oft Privates und sollen nur der Nutzer lesen.
+        # Eine bestehende, weiter geöffnete Datei zieht beim nächsten Diktat nach.
+        _write_history(entries)
+
+
+def history_read(*, history_days=None):
+    """Liest den Verlauf und entfernt abgelaufene Einträge atomar (unter der
+    Sperre: ein gleichzeitig angehängtes Diktat geht nicht verloren)."""
+    cutoff = _history_cutoff(history_days)
+    out, changed = _read_history_file(cutoff)
     if changed:
-        _write_history(out)
+        with _history_lock():
+            out, changed = _read_history_file(cutoff)   # Stand unter der Sperre
+            if changed:
+                _write_history(out)
     return out
 
 
 def history_clear():
-    try:
-        os.remove(HISTORY)
-    except OSError:
-        pass
+    with _history_lock():
+        try:
+            os.remove(HISTORY)
+        except OSError:
+            pass
