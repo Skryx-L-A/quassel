@@ -166,8 +166,6 @@ STRINGS = {
                     "{program} wartet auf eine Antwort — Hotkey halten zum Antworten"),
     "ask_a_program": ("A program", "Ein Programm"),
     "ask_sent": ("Answer sent, nothing inserted", "Antwort übergeben, nichts eingefügt"),
-    "ask_gone": ("The question is no longer open — answer not sent, nothing inserted",
-                 "Die Frage ist nicht mehr offen — Antwort nicht übergeben, nichts eingefügt"),
     "ask_no_answer": ("No answer heard — the question is still waiting",
                       "Keine Antwort verstanden — die Frage wartet weiter"),
     "ask_dismissed": ("Question dismissed", "Frage verworfen"),
