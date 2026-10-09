@@ -80,6 +80,9 @@ TAIL_MIN_MS, TAIL_MIN_BT_MS = 80, 250
 TAIL_QUIET_LEVEL = 350 / 8000.0      # rms_level() normiert auf 8000
 TAIL_QUIET_WINDOW_S = 0.08
 TAIL_POLL_S = 0.02
+# Die Stille muss so lange anhalten: Wortenden klingen mit leisen Reibelauten um
+# die Schwelle aus, ein einzelner stiller Messpunkt schnitt im Replay 36 ms ab.
+TAIL_QUIET_HOLD_S = 0.04
 
 
 def wait_tail(pad_ms, min_ms, level, now=time.monotonic, sleep=time.sleep):
@@ -90,6 +93,7 @@ def wait_tail(pad_ms, min_ms, level, now=time.monotonic, sleep=time.sleep):
     start = now()
     deadline = start + max(0, pad_ms) / 1000.0
     sleep(min(max(0, min_ms), max(0, pad_ms)) / 1000.0)
+    quiet_since = None
     while now() < deadline:
         try:
             current = level()
@@ -99,7 +103,12 @@ def wait_tail(pad_ms, min_ms, level, now=time.monotonic, sleep=time.sleep):
             sleep(deadline - now())
             break
         if current < TAIL_QUIET_LEVEL:
-            break
+            if quiet_since is None:
+                quiet_since = now()
+            if now() - quiet_since >= TAIL_QUIET_HOLD_S - 1e-9:
+                break
+        else:
+            quiet_since = None
         sleep(min(TAIL_POLL_S, deadline - now()))
     return int(round((now() - start) * 1000))
 
