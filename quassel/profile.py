@@ -26,6 +26,13 @@ def suffix():
     return f"-{n}" if n else ""
 
 
+def service(base="quassel-server"):
+    """systemd-Unit dieser Instanz: die Standardinstanz nutzt die feste Unit,
+    ein Profil die Vorlage systemd/quassel-server@.service."""
+    n = name()
+    return f"{base}@{n}.service" if n else f"{base}.service"
+
+
 def dirname(base):
     """"Quassel" -> "Quassel-next" (bzw. "quassel" -> "quassel-next")."""
     return base + suffix()

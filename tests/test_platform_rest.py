@@ -5,6 +5,8 @@ import os
 import threading
 from types import SimpleNamespace
 
+import pytest
+
 from quassel import daemon, power
 
 
@@ -107,3 +109,46 @@ def test_source_start_supervisor_answers_restart_requests(monkeypatch):
     app = SimpleNamespace(enabled=True, daemon=SimpleNamespace(poll=lambda: None))
     mac_app.MacApp._supervise(app)
     assert seen == [app]
+
+
+def _unit_exec(instance):
+    """ExecStart of the profile template as systemd would hand it to /bin/sh."""
+    import shlex
+    from pathlib import Path
+    unit = (Path(__file__).resolve().parents[1] / "systemd/quassel-server@.service").read_text()
+    line = next(l for l in unit.splitlines() if l.startswith("ExecStart="))
+    line = line[len("ExecStart="):].replace("%i", instance).replace("%%", "%")
+    return shlex.split(line)
+
+
+@pytest.mark.parametrize("name", ["next", "test-2", "a"])
+def test_profile_unit_listens_on_the_profile_port(monkeypatch, name):
+    import subprocess
+    from quassel import profile
+    argv = _unit_exec(name)
+    env = {"PATH": os.environ["PATH"], "QUASSEL_PROFILE": name,
+           "SERVER_BIN": "echo", "MODEL_PATH": "/m.bin"}
+    out = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=20).stdout
+    monkeypatch.setenv("QUASSEL_PROFILE", name)
+    monkeypatch.delenv("QUASSEL_PORT", raising=False)
+    words = out.split()
+    assert words[words.index("--port") + 1] == str(profile.port())
+    assert words[words.index("--host") + 1] == "127.0.0.1"
+    assert "-m" in words and "/m.bin" in words
+
+
+def test_profile_unit_honours_quassel_port():
+    import subprocess
+    env = {"PATH": os.environ["PATH"], "QUASSEL_PROFILE": "next", "QUASSEL_PORT": "9123",
+           "SERVER_BIN": "echo", "MODEL_PATH": "/m.bin"}
+    out = subprocess.run(_unit_exec("next"), env=env, capture_output=True,
+                         text=True, timeout=20).stdout.split()
+    assert out[out.index("--port") + 1] == "9123"
+
+
+def test_profile_selects_its_own_server_unit(monkeypatch):
+    from quassel import profile
+    monkeypatch.delenv("QUASSEL_PROFILE", raising=False)
+    assert profile.service() == "quassel-server.service"
+    monkeypatch.setenv("QUASSEL_PROFILE", "next")
+    assert profile.service() == "quassel-server@next.service"

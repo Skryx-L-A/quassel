@@ -17,7 +17,7 @@ from . import config, dictprompt, profile
 NOWIN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
 SERVER = f"http://127.0.0.1:{profile.port()}"
-SERVICE = "quassel-server.service"
+SERVICE = profile.service()
 
 
 def _default_starter():

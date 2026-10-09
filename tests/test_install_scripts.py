@@ -731,13 +731,16 @@ def test_pkgbuild_package_installs_every_launcher_unit_and_icon(tmp_path):
 
     units = {p.name: p.read_text(encoding="utf-8")
              for p in (pkg / "usr/lib/systemd/user").glob("*.service")}
-    assert set(units) >= {"quasseld.service", "quassel-server.service"}
+    assert set(units) >= {"quasseld.service", "quassel-server.service",
+                          "quassel-server@.service"}
     # Programmpfade gehören ins Paket; Nutzerdaten (%h/.local/share) bleiben im Home.
     assert all("%h/.local/bin" not in text and "%h/.local/lib" not in text
                for text in units.values())
     assert "ExecStart=/usr/bin/quasseld" in units["quasseld.service"]
     assert "${SERVER_BIN:-/usr/lib/quassel/engine/whisper-server}" \
         in units["quassel-server.service"]
+    assert "${SERVER_BIN:-/usr/lib/quassel/engine/whisper-server}" \
+        in units["quassel-server@.service"]
 
     desktop = (pkg / "usr/share/applications/quassel.desktop").read_text(
         encoding="utf-8")

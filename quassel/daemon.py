@@ -87,7 +87,7 @@ def clip_copy(text):
 def _restart_linux_server():
     """Restart only an active user unit bound to this process's profile."""
     name = profile.name()
-    service = "quassel-server@%s.service" % name if name else "quassel-server.service"
+    service = profile.service()
     try:
         shown = subprocess.run(
             ["systemctl", "--user", "show", "-p", "ActiveState", "-p", "Environment",
