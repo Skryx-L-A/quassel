@@ -317,6 +317,7 @@ class DictationCore:
     _runner = None              # ActionRunner, wo die Plattform einen nutzt
     _handsfree = False          # Freihand-Modus (Doppeltipp) im laufenden Diktat
     _level_pump = None          # misst den Mikrofonpegel für die Pille (H112)
+    _wake_pump = None           # eigene Pegelpumpe der Wake-Folgeaufnahme
     # Unbereinigter Text des letzten Diktats, nur wenn die Bereinigung ihn
     # verändert hat — nur im Speicher, nie auf Platte oder im Log; für
     # „Rohtext zurück" aus dem Kontrollzentrum.
@@ -1151,7 +1152,14 @@ class DictationCore:
         """Die Äußerung nach der reinen Phrase: ohne Spotter, der hat sie gehört.
         Rückmeldung wie beim Hotkey: die Pille zeigt „hört zu" mit Pegel, ein
         Ton nur, wenn die Signaltöne an sind. Danach zurück auf Ruhe; das
-        Ergebnis meldet das Einfügen."""
+        Ergebnis meldet das Einfügen.
+
+        Ein Tastatur-Diktat hat Vorrang: läuft schon eins, keine
+        Folgeaufnahme; startet eins währenddessen, bleiben seine Pille, seine
+        Pegelpumpe und sein Ton unberührt."""
+        if self._busy():
+            self._log("wake: Folgeaufnahme übersprungen (Tastatur-Diktat läuft)")
+            return None
         self._state("recording", tr("wake_listening"))
         if self.cfg.beep:
             beep.start()
@@ -1159,21 +1167,28 @@ class DictationCore:
         try:
             return self._wake_record_utterance(spot=False)
         finally:
-            self._stop_level()
-            if self.cfg.beep:
-                beep.stop()
-            self._state("idle")
+            pump, self._wake_pump = self._wake_pump, None
+            if pump is not None:
+                pump.stop()
+            if not self._busy():
+                if self.cfg.beep:
+                    beep.stop()
+                self._state("idle")
 
     def _start_wake_level(self):
         """Pegel aus der Rohdatei der Wake-Aufnahme, nicht aus der des letzten
-        Diktats (die ist alt -> 0 -> „kein Ton vom Mikrofon")."""
-        self._stop_level()
+        Diktats (die ist alt -> 0 -> „kein Ton vom Mikrofon"). Sobald ein
+        Tastatur-Diktat läuft, meldet nur noch dessen Pumpe."""
         target = self._level_target()
         if target is None:
             return
+
+        def publish(level):
+            if not self.rec.active:
+                target(level)
         try:
-            self._level_pump = LevelPump(
-                target, level=lambda: rms_level(path=WAKE_RAW)).start()
+            self._wake_pump = LevelPump(
+                publish, level=lambda: rms_level(path=WAKE_RAW)).start()
         except Exception as exc:  # noqa: BLE001
             self._log("level: Pegelanzeige nicht gestartet: %r" % exc)
 

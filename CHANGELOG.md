@@ -31,6 +31,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   starting or ending.
 - After saying only the wake phrase, the pill now shows the level of the
   wake recording and no longer warns about a silent microphone while you speak.
+- Starting a dictation with the hotkey while the wake word is listening for
+  your follow-up no longer stops that dictation's level display, plays the stop
+  tone in the middle of it or shows the pill as idle.
 - A damaged settings file is no longer replaced by the part that could still be
   read: Quassel keeps a copy next to it (`config.ini.damaged-…`) before saving.
 - The dictation history could lose a new entry while expired entries were

@@ -582,6 +582,10 @@ class WakeListener(threading.Thread):
             return rem if self._safe_insert(rem) else None
 
         # Nur die Phrase gesagt -> die naechste Aeusserung als Diktat aufnehmen.
+        # Lief inzwischen ein Tastatur-Diktat an, gehoeren Mikrofon, Pille und
+        # Toene ihm: keine Folgeaufnahme.
+        if self._safe_busy():
+            return None
         pcm2 = self._safe_record(followup=True)
         if not pcm2:
             return None
