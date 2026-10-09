@@ -27,6 +27,16 @@ CHAT_SYSTEM = (
     "Remove disfluencies and fix punctuation only. Do not add information. "
     "Return only a JSON object with one string property named cleaned."
 )
+# Stufeneigene Anweisung: steht in der Nutzernachricht VOR dem Diktatfeld.
+# Der Systemprompt bleibt fuer alle Stufen gleich, damit der Server ihn als
+# Praefix im KV-Cache halten kann; das Diktat steht immer zuletzt.
+LEVEL_INSTRUCTIONS = {
+    "mittel": ("Level medium: remove only filler words, repeated words and false "
+               "starts, and fix punctuation. Keep the wording and sentence structure."),
+    "stark": ("Level strong: remove filler words, repetitions and false starts, fix "
+              "punctuation, and also smooth the sentence structure and grammar. Do not "
+              "change the content: keep every fact, name, number, link and the meaning."),
+}
 _CHAT_SCHEMA = {"type": "object", "properties": {"cleaned": {"type": "string"}},
                 "required": ["cleaned"], "additionalProperties": False}
 _THINK = re.compile(r"<think>.*?</think>", re.I | re.S)
@@ -348,7 +358,8 @@ def chat_cleanup(transcript: str, *, model: str, endpoint: str = OLLAMA_DEFAULT,
         return None, "unconfigured"
     if endpoint_warning(endpoint) == "invalid" or not 0 < timeout <= 3600:
         return None, "invalid_endpoint"
-    tagged = "<TRANSCRIPT>\n" + transcript + "\n</TRANSCRIPT>"
+    instruction = LEVEL_INSTRUCTIONS.get(level, LEVEL_INSTRUCTIONS["mittel"])
+    tagged = instruction + "\n<TRANSCRIPT>\n" + transcript + "\n</TRANSCRIPT>"
     max_tokens = min(4096, max(48, math.ceil(len(transcript) / 4 * 1.3) + 32))
     payload = {
         "model": model,

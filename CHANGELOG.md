@@ -125,6 +125,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   downloads with checksums are in `scripts/tcpp/`.
 
 ### Changed
+- Clean up dictation: the Medium and Strong levels now ask the local AI for
+  different work. Medium removes only fillers, repeats and false starts and fixes
+  punctuation; Strong also smooths sentence structure and grammar. Both keep
+  facts, names, numbers, links and the meaning.
 - Transcribe file: you can choose plain text or subtitles (SRT or WebVTT),
   follow the progress and cancel a long file. The result is no longer copied to
   the clipboard automatically, which used to replace whatever you had copied;

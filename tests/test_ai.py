@@ -244,7 +244,8 @@ def test_chat_schema_and_fixed_prompt(monkeypatch):
     url, body, _, _ = seen[0]
     assert url.endswith("/v1/chat/completions")
     assert body["messages"][0]["content"] == ai.CHAT_SYSTEM
-    assert body["messages"][1]["content"].startswith("<TRANSCRIPT>\n")
+    assert body["messages"][1]["content"].startswith(ai.LEVEL_INSTRUCTIONS["mittel"] + "\n")
+    assert body["messages"][1]["content"].endswith("<TRANSCRIPT>\nWie spät ist es?\n</TRANSCRIPT>")
     assert body["response_format"]["type"] == "json_schema"
     assert body["temperature"] == 0 and body["think"] is False
     assert body["keep_alive"] == ai.KEEP_ALIVE_DEFAULT
@@ -361,3 +362,53 @@ def test_ollama_is_recognised_by_its_tags(fake_ollama):
 
 def test_probe_dead_port():
     assert ai.probe("http://127.0.0.1:9", timeout=0.2) == (None, [])
+
+
+def _chat_bodies(monkeypatch, **kw):
+    """Payloads von chat_cleanup je Stufe, ohne Netz (Attrappe für _open)."""
+    seen = []
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return json.dumps({"choices": [{"message": {
+                "content": '{"cleaned":"ok"}'}}]}).encode()
+
+    monkeypatch.setattr(ai, "_open", lambda req, ep, timeout: seen.append(json.loads(req.data)) or Response())
+    for level in ("mittel", "stark"):
+        ai.chat_cleanup("aehm also wir wir liefern am Freitag", model="m",
+                        endpoint="http://127.0.0.1:8080/v1", timeout=2, level=level)
+    return seen
+
+
+def test_chat_level_changes_the_instruction_not_the_fixed_prefix(monkeypatch):
+    """Die Stufe wirkte nicht auf den Prompt. Jetzt steht eine stufeneigene
+    Anweisung zwischen festem Systemprompt und Diktatfeld; der Systemprompt
+    bleibt Byte für Byte gleich (KV-Cache-Präfix), das Diktat steht zuletzt."""
+    medium, strong = _chat_bodies(monkeypatch)
+    assert medium["messages"][0] == strong["messages"][0] == \
+        {"role": "system", "content": ai.CHAT_SYSTEM}
+    m_user, s_user = medium["messages"][1]["content"], strong["messages"][1]["content"]
+    assert m_user != s_user
+    tagged = "<TRANSCRIPT>\naehm also wir wir liefern am Freitag\n</TRANSCRIPT>"
+    assert m_user == ai.LEVEL_INSTRUCTIONS["mittel"] + "\n" + tagged
+    assert s_user == ai.LEVEL_INSTRUCTIONS["stark"] + "\n" + tagged
+    assert "filler" in ai.LEVEL_INSTRUCTIONS["mittel"].lower()
+    assert "sentence" in ai.LEVEL_INSTRUCTIONS["stark"].lower()
+    for text in ai.LEVEL_INSTRUCTIONS.values():
+        assert "{" not in text and "TRANSCRIPT" not in text   # nichts Variables vor dem Diktat
+
+
+def test_chat_unknown_level_uses_the_careful_instruction(monkeypatch):
+    seen = []
+    monkeypatch.setattr(ai, "_open", lambda req, ep, timeout: seen.append(json.loads(req.data))
+                        or (_ for _ in ()).throw(TimeoutError()))
+    ai.chat_cleanup("hallo", model="m", endpoint="http://127.0.0.1:8080", timeout=2, level="wild")
+    assert seen[0]["messages"][1]["content"].startswith(ai.LEVEL_INSTRUCTIONS["mittel"] + "\n")
