@@ -308,8 +308,22 @@ def provision(progress=lambda frac, what: None, full=False):
 
 def ensure_working(progress=lambda frac, what: None):
     """Startprobe: Server hochfahren und Gesundheit prüfen. Scheitert der
-    GPU-Build (z.B. fehlende Treiber/DLLs), wird auf den CPU-Build
-    zurückgefallen (erst lokaler Vorrat, dann Download) und erneut probiert."""
+    GPU-Build tatsächlich, hilft der CPU-Build für diesen Start. Ein noch
+    ladender Prozess bleibt erhalten und ein CPU-Notlauf wird später erneut
+    mit der bevorzugten Engine versucht."""
+    env = config.read_serverenv()
+    if env.get("ENGINE_RETRY") == "gpu":
+        kind = preferred_engine_kind()
+        if os.path.exists(os.path.join(ENGINES_DIR, kind, ENGINE_ZIPS[kind])):
+            stop()
+            if _activate_engine(kind, progress):
+                env["SERVER_BIN"] = server_exe() or ""
+                env.pop("ENGINE_RETRY", None)
+                config.write_serverenv(env)
+                progress(0.0, "Retrying GPU engine")
+            else:
+                _activate_engine("cpu", progress)
+                progress(0.0, "GPU retry unavailable; using CPU engine")
     start()
     for _ in range(60):
         if server_up():
@@ -319,6 +333,10 @@ def ensure_working(progress=lambda frac, what: None):
         time.sleep(1)
     if server_up():
         return True
+    if _proc is None or _proc.poll() is None:
+        progress(0.0, "GPU engine is still loading; retry later")
+        return False
+    progress(0.0, "GPU engine exited; trying CPU engine")
     stop()
     if not _provide_engine_zip("cpu", bundle_dir(), progress):
         return False
@@ -326,6 +344,8 @@ def ensure_working(progress=lambda frac, what: None):
         return False
     env = config.read_serverenv()
     env["SERVER_BIN"] = server_exe() or ""
+    if preferred_engine_kind() != "cpu":
+        env["ENGINE_RETRY"] = "gpu"
     config.write_serverenv(env)
     start()
     for _ in range(60):

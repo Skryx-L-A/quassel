@@ -15,6 +15,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- A slowly loading Windows GPU speech engine is no longer replaced with the
+  CPU engine; a CPU emergency fallback now retries the preferred engine on
+  the next start.
 - The Linux pill opens Control Center from its own installation even when
   service startup omits Quassel from `PATH`.
 - Linux now finds an existing Wayland socket instead of assuming `wayland-0`
