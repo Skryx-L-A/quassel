@@ -204,6 +204,7 @@ class Release:
         _shim(self.bin, "curl", CURL_SHIM.split("\n", 1)[1])
         _shim(self.bin, "uname", 'if [[ "${1:-}" == "-m" ]]; then echo x86_64; '
               'else /usr/bin/uname "$@"; fi\n')
+        _shim(self.bin, "nvidia-smi", "exit 1\n")    # kein GPU-Rechner, egal wo getestet
         self.assets = []
 
     def add_asset(self, evar, members=None, checksum="file", good_sum=True):
