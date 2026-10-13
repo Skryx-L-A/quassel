@@ -83,9 +83,10 @@ def test_paste_uses_key_from_current_layout(monkeypatch):
     monkeypatch.setattr(pm, "_HAS_OBJC", True)
     monkeypatch.setattr(pm, "_paste_keycode", lambda: 42)
     monkeypatch.setattr(pm, "CGEventCreateKeyboardEvent",
-                        lambda _source, key, down: (key, down))
-    monkeypatch.setattr(pm, "CGEventSetFlags", lambda event, flags: None)
-    monkeypatch.setattr(pm, "CGEventPost", lambda tap, event: events.append(event))
+                        lambda _source, key, down: (key, down), raising=False)
+    monkeypatch.setattr(pm, "CGEventSetFlags", lambda event, flags: None, raising=False)
+    monkeypatch.setattr(pm, "CGEventPost", lambda tap, event: events.append(event),
+                        raising=False)
     monkeypatch.setattr(pm, "kCGHIDEventTap", 0, raising=False)
     monkeypatch.setattr(pm, "kCGEventFlagMaskCommand", 1, raising=False)
     pm._send_cmd_v()
