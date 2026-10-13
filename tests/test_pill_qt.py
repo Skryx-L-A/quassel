@@ -20,6 +20,8 @@ from PySide6.QtWidgets import QApplication             # noqa: E402
 
 from quassel import config, pill_qt, state             # noqa: E402
 
+_REAL_DAEMON_ACTIVE = pill_qt.daemon_active
+
 
 @pytest.fixture(scope="module")
 def qapp():
@@ -69,7 +71,10 @@ def no_secure_input(monkeypatch):
 
 
 @pytest.fixture
-def pill(qapp, isolated_cfg):
+def pill(qapp, isolated_cfg, monkeypatch):
+    # Linux fragt sonst `systemctl --user is-active` ab; ohne Nutzer-Dienst
+    # (CI-Runner) wäre die Pille "aus", tick() läse keinen Zustand.
+    monkeypatch.setattr(pill_qt, "daemon_active", lambda: True)
     p = pill_qt.Pill()
     yield p
     p.close()
@@ -339,6 +344,7 @@ def test_toggle_invalidates_cache_so_the_next_poll_does_not_revert_the_mode(pill
     10s-Cache aber auf dem alten Wert stehen. tick() sah beim nächsten Poll
     on != self.on und drehte den gerade gesetzten Modus zurück -- bis zu 10s
     zeigte die Pille das Gegenteil des geschalteten Zustands."""
+    monkeypatch.setattr(pill_qt, "daemon_active", _REAL_DAEMON_ACTIVE)
     monkeypatch.setattr(pill_qt.sys, "platform", "linux")
 
     def fake_run(args, **kw):
