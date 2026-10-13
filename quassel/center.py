@@ -1729,7 +1729,7 @@ class Center(QMainWindow):
             time.sleep(2.5)
             rec.stop()
             return rec.raw_bytes()
-        if sys.platform == "darwin" and mac_backend() != "ffmpeg":
+        if IS_MAC and mac_backend() != "ffmpeg":
             # In-process über sounddevice (kein ffmpeg nötig). Eigene Rohdatei,
             # damit der Test eine laufende Aufnahme des Daemons nicht überschreibt.
             from .audio import Recorder
