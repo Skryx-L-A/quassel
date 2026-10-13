@@ -801,6 +801,9 @@ def _rec_daemon(monkeypatch, rec, **cfg_extra):
     d._vad = True
     d.last_paste_len = 0
     d.ducker = SimpleNamespace(apply=lambda mode: None, restore=lambda: None)
+    # Manche Tests lassen eine Aufnahme laufen; ihre Pegelpumpe schriebe danach
+    # in die state.json späterer Tests (test_pill_qt). Hier gibt es keine Pille.
+    d._start_level = d._stop_level = lambda: None
     cfg = dict(beep=False, beep_output="system", mic="default", mute_mode="off",
                ui_language="auto",
                streaming=False, ai_enabled=False, programmer_mode=False,
