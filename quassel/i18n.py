@@ -108,6 +108,10 @@ STRINGS = {
                      "Das Mikrofon hat während der Aufnahme keinen Ton mehr geliefert. Vielleicht wurde es abgezogen oder getrennt."),
     "err_mic_lost_partial": ("The microphone stopped during the recording. Only the part before that was transcribed.",
                              "Das Mikrofon ist während der Aufnahme ausgefallen. Nur der Teil davor wurde umgewandelt."),
+    "err_disk_stuck": ("The recording couldn't be saved because the disk stopped responding.",
+                       "Die Aufnahme ließ sich nicht speichern, weil der Datenträger nicht mehr reagierte."),
+    "err_disk_stuck_partial": ("The disk stopped responding during the recording, so parts of the audio are missing. What arrived was transcribed.",
+                               "Der Datenträger reagierte während der Aufnahme nicht mehr, deshalb fehlen Teile des Tons. Umgewandelt wurde, was ankam."),
     "err_recorder_missing": ("The recording program is missing: {tool}.",
                              "Das Aufnahmeprogramm fehlt: {tool}."),
     # Einfügen gescheitert, Text liegt aber in der Zwischenablage (D57)

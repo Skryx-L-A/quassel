@@ -55,3 +55,19 @@ def test_a_stuck_audio_driver_asks_for_a_restart():
     assert core._mic_error_text() == i18n.tr("err_audio_stuck")
     core.rec = SimpleNamespace(stream_abandoned=False)
     assert core._mic_error_text() == i18n.tr("err_mic_open")
+
+
+def test_a_hung_disk_is_not_blamed_on_the_microphone(pumps):
+    # Windows: the write queue overflowed because the disk stopped responding.
+    core = lost_core(b"\1\0" * 10, reason="overflow")
+    core.start_recording()
+    assert core._finish_capture() is None
+    assert core.states[-1] == ("error", i18n.tr("err_disk_stuck"))
+    assert core.notes == [i18n.tr("err_disk_stuck")]
+
+
+def test_a_hung_disk_after_some_audio_still_transcribes_and_says_so(pumps):
+    core = lost_core(b"\1\0" * 16000, reason="overflow")
+    core.start_recording()
+    assert core._finish_capture() is not None
+    assert core.notes == [i18n.tr("err_disk_stuck_partial")]

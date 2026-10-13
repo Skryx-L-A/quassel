@@ -453,10 +453,12 @@ class DictationCore:
             return tr("err_audio_stuck")
         return tr("err_mic_open")
 
-    def _report_mic_lost(self):
+    def _report_mic_lost(self, reason=None):
         """Die Aufnahme riss ab (Gerät weg, Bluetooth getrennt) und es kam
-        zu wenig Audio an: als Fehler melden, nicht als „zu kurz" (D65)."""
-        text = tr("err_mic_lost")
+        zu wenig Audio an: als Fehler melden, nicht als „zu kurz" (D65).
+        "overflow" (Windows: Platte hing, Audio verworfen) ist nicht das
+        Mikrofon und bekommt eine eigene Meldung."""
+        text = tr("err_disk_stuck" if reason == "overflow" else "err_mic_lost")
         self._state("error", text)
         self._notify(text)
 
@@ -813,7 +815,7 @@ class DictationCore:
         if len(data) < MIN_AUDIO_BYTES:
             self._ask_release(answer_to)
             if lost:
-                self._report_mic_lost()
+                self._report_mic_lost(lost)
             else:
                 self._tell("too_short")
             discard(done_path)
@@ -821,7 +823,8 @@ class DictationCore:
         if lost:
             # Der Teil vor dem Abriss wird trotzdem umgewandelt; dass danach
             # nichts mehr kam, sagt eine Benachrichtigung.
-            self._notify(tr("err_mic_lost_partial"))
+            self._notify(tr("err_disk_stuck_partial" if lost == "overflow"
+                            else "err_mic_lost_partial"))
         self._state("transcribing")
         return lambda: self._finish_rest(streamer, clip_backup, data, panic, done_path,
                                          ask_doc=answer_to)
