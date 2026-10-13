@@ -1,4 +1,4 @@
-"""Adapter für ``transcribe-cli`` aus transcribe.cpp (Phase 5, docs/next/PLAN.md).
+"""Adapter für ``transcribe-cli`` aus transcribe.cpp (Messrahmen, nicht im Diktatpfad).
 
 CLI-Vertrag aus dem Upstream-Tag (tcpp_families.UPSTREAM_TAG), Datei
 ``examples/cli/main.cpp``:

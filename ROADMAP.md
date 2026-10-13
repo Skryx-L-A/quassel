@@ -19,13 +19,12 @@ not yet released or tried on a real device by the maintainer.
   dictation" ("…, press enter") is open — **S**
 - Other speech engines behind the `SpeechBackend` interface. `transcribe.cpp` runs in the
   benchmark: Cohere Transcribe and Parakeet v3 beat the current model on mixed German and
-  English, but Cohere invents sentences on silence and needs a voice-activity gate first
-  (`docs/measurements/2026-10-09-transcribe-cpp-vier-modelle/`). Open: wire it into
+  English, but Cohere invents sentences on silence (measured 2026-10-09) and needs a
+  voice-activity gate first. Open: wire it into
   dictation behind that gate and measure latency with the model kept loaded. A model only
   replaces the current one if German, mixed language and names are at least as good, or
   the speed gain carries it — **L**
-- Latency: keep trimming the fixed waits per platform after each measurement
-  (see `docs/next/PLAN.md`, phase 3) — **M**
+- Latency: keep trimming the fixed waits per platform after each measurement — **M**
 - Personal dictionary: smarter selection of words when the list outgrows the prompt
   budget (by how often you use them) — **M**
 

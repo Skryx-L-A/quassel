@@ -6,7 +6,7 @@ The cleanup asks it only after the word rules accepted an edit, and keeps the
 cleaned text only on a confident "same meaning". Anything else, including an
 unreachable service, keeps the raw dictation. Measured 2026-10-09: the rules
 let 11 of 20 meaning changes through at the "stark" level; the reference model
-judged all 40 pairs correctly (docs/measurements/2026-10-09-jev-entscheider).
+judged all 40 pairs correctly.
 """
 from __future__ import annotations
 

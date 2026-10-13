@@ -1,4 +1,4 @@
-"""Messrahmen für wiederholbare STT-Messungen (Phase 0, docs/next/PLAN.md).
+"""Messrahmen für wiederholbare STT-Messungen.
 
 Pakete:
   manifest   — Manifest-Format (JSON/CSV) für Testaufnahmen

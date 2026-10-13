@@ -103,7 +103,7 @@ HTTP to the local `whisper-server` of whisper.cpp:
 `backends/transcribe_cpp.py` runs `transcribe.cpp` (Cohere, Parakeet, Qwen3-ASR,
 Canary and others) for the benchmark only; the dictation path does not use it
 yet. Before it does, it needs a voice-activity gate in front: Cohere invented
-sentences on every silence clip (`docs/measurements/2026-10-09-transcribe-cpp-vier-modelle/`).
+sentences on every silence clip in a measurement on 2026-10-09.
 
 ## Platform layers
 

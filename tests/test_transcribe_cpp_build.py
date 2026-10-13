@@ -31,7 +31,7 @@ def test_script_pins_the_same_tag_and_commit_as_the_adapter():
 def test_script_stays_out_of_global_locations():
     lines = SCRIPT.read_text(encoding="utf-8").splitlines()
     text = "\n".join(l for l in lines if not l.lstrip().startswith("#"))
-    assert 'DEST="${HOME}/AI/quassel-bench-data/tcpp"' in text
+    assert 'DEST="${HOME}/quassel-bench-data/tcpp"' in text
     for forbidden in ("sudo", "/usr/local", "make install", "--target install",
                       "pip install", "brew install", "apt-get", "apt install"):
         assert forbidden not in text

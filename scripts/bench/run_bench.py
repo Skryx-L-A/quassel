@@ -504,8 +504,7 @@ def render_markdown(report):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Messrahmen für wiederholbare STT-Messungen "
-                    "(Phase 0, docs/next/PLAN.md).")
+        description="Messrahmen für wiederholbare STT-Messungen.")
     parser.add_argument("manifest", nargs="?",
                         default=str(manifest_mod.DEFAULT_MANIFEST),
                         help="Manifest-Datei (JSON oder CSV)")

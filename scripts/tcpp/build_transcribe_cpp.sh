@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Reproducible build of transcribe-cli from transcribe.cpp at a fixed tag.
 #
-# Everything lands under one directory (default ~/AI/quassel-bench-data/tcpp):
+# Everything lands under one directory (default ~/quassel-bench-data/tcpp):
 #   src/transcribe.cpp-<tag>/        shallow clone of the tag
 #   build/<tag>-<backend>/           CMake build tree
 #   bin/transcribe-cli-<tag>-<backend>   the binary Quassel's adapter calls
@@ -22,7 +22,7 @@ TAG="v0.3.1"
 COMMIT="3f32fbcc7bb3246851a0234263438bc3c0fa1cac"
 REPO="https://github.com/handy-computer/transcribe.cpp.git"
 
-DEST="${HOME}/AI/quassel-bench-data/tcpp"
+DEST="${HOME}/quassel-bench-data/tcpp"
 BACKEND="auto"
 JOBS=""
 DRY_RUN=0

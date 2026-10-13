@@ -177,8 +177,8 @@ transcribed.
 These checks compare words, numbers and entities. They do not see a swapped
 role or an opposite word ("rejected" turned into "accepted"); in a measurement
 on 40 synthetic pairs the `stark` level let 11 of 20 such changes through. The
-optional `decider_url` closes that gap (see
-[the measurement](measurements/2026-10-09-jev-entscheider/README.md)).
+optional `decider_url` closes that gap; a reference decision model judged all
+40 pairs correctly.
 
 ### `[stats]`
 

@@ -217,7 +217,7 @@ def test_the_store_stays_small_and_keeps_active_words_first():
 
 
 def test_short_capital_fragments_of_compounds_are_not_learned():
-    """Aus dem Wörterbuch auf llpc: "ER-Co-Op-Start-Option", "OX-Alpha-Worker",
+    """Aus einem echten Wörterbuch: "ER-Co-Op-Start-Option", "OX-Alpha-Worker",
     "MD-File". Zwei Großbuchstaben aus einem Kompositum sind fast nie der Name,
     um den es ging."""
     assert learn.jargon_words("ER-Co-Op-Start-Option OX-Alpha-Worker MD-File") == []

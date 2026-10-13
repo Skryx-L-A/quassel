@@ -1,7 +1,7 @@
-# transcribe.cpp for the Phase 5 measurements
+# transcribe.cpp for measurements
 
 Everything here is for measuring other speech models next to today's
-whisper-server (docs/next/PLAN.md, Phase 5). The installed app does not use
+whisper-server. The installed app does not use
 any of it. Building and downloading are heavy runs; start them deliberately.
 
 Upstream: <https://github.com/handy-computer/transcribe.cpp>, runtime licensed
@@ -17,9 +17,9 @@ scripts/tcpp/build_transcribe_cpp.sh --backend vulkan
 scripts/tcpp/build_transcribe_cpp.sh --dry-run       # print the commands only
 ```
 
-The script clones the tag into `~/AI/quassel-bench-data/tcpp/src/`, checks
+The script clones the tag into `~/quassel-bench-data/tcpp/src/`, checks
 the commit, builds only `transcribe-cli` and writes
-`~/AI/quassel-bench-data/tcpp/bin/transcribe-cli-v0.3.1-<backend>` plus a JSON
+`~/quassel-bench-data/tcpp/bin/transcribe-cli-v0.3.1-<backend>` plus a JSON
 file with tag, commit, backend and CMake flags. Nothing is installed
 globally. It needs `git` and `cmake`; CUDA needs `nvcc`, Vulkan the Vulkan
 SDK (`glslc`). Windows builds follow upstream `docs/build-windows.md` at the
@@ -30,11 +30,11 @@ separate test case.
 
 GGUF files from the `handy-computer` organisation on Hugging Face. Sizes and
 SHA-256 come from the Hugging Face API (`/api/models/<repo>?blobs=true`,
-read 2026-10-09). Download into `~/AI/quassel-bench-data/tcpp/models/` and
+read 2026-10-09). Download into `~/quassel-bench-data/tcpp/models/` and
 check the hash before the first run:
 
 ```sh
-mkdir -p ~/AI/quassel-bench-data/tcpp/models && cd ~/AI/quassel-bench-data/tcpp/models
+mkdir -p ~/quassel-bench-data/tcpp/models && cd ~/quassel-bench-data/tcpp/models
 curl -L -o cohere-transcribe-03-2026-Q8_0.gguf \
   https://huggingface.co/handy-computer/cohere-transcribe-03-2026-gguf/resolve/ab667acedcb5d8d56837ef3ed3568c3ad50dde47/cohere-transcribe-03-2026-Q8_0.gguf
 shasum -a 256 cohere-transcribe-03-2026-Q8_0.gguf   # Linux: sha256sum
@@ -85,8 +85,8 @@ Download URLs and SHA-256:
 
 ```sh
 python scripts/bench/run_bench.py --backend transcribe-cpp \
-  --transcribe-cpp ~/AI/quassel-bench-data/tcpp/bin/transcribe-cli-v0.3.1-metal \
-  --tcpp-model ~/AI/quassel-bench-data/tcpp/models/cohere-transcribe-03-2026-Q8_0.gguf \
+  --transcribe-cpp ~/quassel-bench-data/tcpp/bin/transcribe-cli-v0.3.1-metal \
+  --tcpp-model ~/quassel-bench-data/tcpp/models/cohere-transcribe-03-2026-Q8_0.gguf \
   --tcpp-family cohere
 ```
 

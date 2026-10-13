@@ -1,6 +1,6 @@
 """Zweite Stufe der Bereinigung: ein lokaler typisierter Entscheider (Jev-Format).
 
-Messung 09.10. (docs/measurements/2026-10-09-jev-entscheider): Die Wortprüfung ließ
+Messung 09.10.: Die Wortprüfung ließ
 auf Stufe "stark" 11 von 20 Bedeutungsänderungen durch (Rollentausch, gestrichene
 Verneinung, "morgen" -> "übermorgen"). Ein Entscheider, der nur gefragt wird, wenn
 die Regeln annehmen, erkannte alle 40 Paare richtig.
