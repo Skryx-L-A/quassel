@@ -1,4 +1,5 @@
 """Tests für quassel/server_mac.py — alles gemockt (kein echter Server)."""
+import glob
 import os
 import subprocess
 import sys
@@ -13,12 +14,13 @@ from quassel import config, fsutil, server_mac, state
 
 @pytest.fixture(autouse=True)
 def _no_pid_file_left():
-    """PID-Datei nach jedem Test entfernen (liegt im umgebogenen Home)."""
+    """PID-Dateien nach jedem Test entfernen (liegen im umgebogenen Home)."""
     yield
-    try:
-        os.remove(server_mac._pid_path())
-    except OSError:
-        pass
+    for path in glob.glob(os.path.join(state.RUNDIR, "whisper-server*")):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def test_build_args_full():
@@ -358,11 +360,23 @@ def _fake_ps(argv_by_pid):
     return fake_run
 
 
+def _own_child(pid):
+    proc = MagicMock()
+    proc.pid = pid
+    proc.poll.return_value = None
+    return proc
+
+
+def _start_env(binpath):
+    return {"SERVER_BIN": str(binpath), "MODEL_PATH": "m",
+            "WHISPER_THREADS": "4", "WHISPER_DECODE": "-bs 1"}
+
+
 def test_pid_file_lives_in_profile_runtime_dir():
     """Die PID-Datei liegt im Laufzeitordner des Profils (state.RUNDIR) und
     damit unter dem umgebogenen Home der Tests, nie im echten ~/Library."""
-    path = server_mac._pid_path()
-    assert path == os.path.join(state.RUNDIR, "whisper-server.pid")
+    path = server_mac._pid_path(4321)
+    assert path == os.path.join(state.RUNDIR, "whisper-server.4321.pid")
     assert path.startswith(os.path.expanduser("~") + os.sep)
     real_home = os.environ.get("QUASSEL_TEST_REAL_HOME", "")
     assert not (real_home and path.startswith(real_home + os.sep))
@@ -372,19 +386,14 @@ def test_start_writes_pid_file_of_own_child(tmp_path):
     binpath = tmp_path / "whisper-server"
     binpath.write_text("")
     binpath.chmod(0o755)
-    env = {"SERVER_BIN": str(binpath), "MODEL_PATH": "m",
-           "WHISPER_THREADS": "4", "WHISPER_DECODE": "-bs 1"}
-    proc = MagicMock()
-    proc.pid = 4321
-    proc.poll.return_value = None
     server_mac._proc = None
     try:
         with patch.object(server_mac, "ensure_env", return_value=True), \
              patch.object(server_mac, "port_in_use", return_value=False), \
-             patch.object(config, "read_serverenv", return_value=env), \
-             patch.object(subprocess, "Popen", return_value=proc):
+             patch.object(config, "read_serverenv", return_value=_start_env(binpath)), \
+             patch.object(subprocess, "Popen", return_value=_own_child(4321)):
             assert server_mac.start() is True
-        path = server_mac._pid_path()
+        path = server_mac._pid_path(4321)
         with open(path, encoding="utf-8") as f:
             assert f.read() == "4321\n"
         assert os.stat(path).st_mode & 0o777 == 0o600
@@ -392,35 +401,94 @@ def test_start_writes_pid_file_of_own_child(tmp_path):
         server_mac._proc = None
 
 
-def test_stop_removes_pid_file_of_own_child():
-    proc = MagicMock()
-    proc.pid = 4321
-    proc.poll.return_value = None
-    server_mac._proc = proc
+def test_two_starts_each_keep_their_own_pid_file(tmp_path, monkeypatch):
+    """Startrennen: zwei Prozesse starten je einen Server. Jeder schreibt
+    seine eigene Datei, keiner überschreibt die des anderen. kill_orphans
+    findet und beendet beide, sofern ps sie als eigenen Server meldet."""
+    binpath = tmp_path / "whisper-server"
+    binpath.write_text("")
+    binpath.chmod(0o755)
+    killed = []
+    monkeypatch.setattr(server_mac, "server_bin", lambda: str(binpath))
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
+    argv = str(binpath) + " -m m --host 127.0.0.1 --port 8765 -nt"
+    monkeypatch.setattr(subprocess, "run", _fake_ps({"4001": argv, "4002": argv}))
+    try:
+        with patch.object(server_mac, "ensure_env", return_value=True), \
+             patch.object(server_mac, "port_in_use", return_value=False), \
+             patch.object(config, "read_serverenv", return_value=_start_env(binpath)), \
+             patch.object(subprocess, "Popen",
+                          side_effect=[_own_child(4001), _own_child(4002)]):
+            for _ in range(2):
+                server_mac._proc = None      # zweiter Prozess: kein geerbtes _proc
+                assert server_mac.start() is True
+        assert os.path.exists(server_mac._pid_path(4001))
+        assert os.path.exists(server_mac._pid_path(4002))
+
+        server_mac.kill_orphans()
+    finally:
+        server_mac._proc = None
+
+    assert sorted(killed) == [4001, 4002]
+    assert not os.path.exists(server_mac._pid_path(4001))
+    assert not os.path.exists(server_mac._pid_path(4002))
+
+
+def test_startrace_one_dead_server_only_the_other_is_stopped(tmp_path, monkeypatch):
+    """Ein Server ist schon gestorben (ps leer): nur der lebende bekommt
+    SIGTERM, die tote Datei wird entfernt."""
+    binpath = tmp_path / "whisper-server"
+    binpath.write_text("")
+    binpath.chmod(0o755)
+    monkeypatch.setattr(server_mac, "server_bin", lambda: str(binpath))
+    argv = str(binpath) + " -m m --port 8765"
+    monkeypatch.setattr(subprocess, "run", _fake_ps({"4002": argv}))
+    killed = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
+    server_mac._write_pid(4001)
+    server_mac._write_pid(4002)
+
+    server_mac.kill_orphans()
+
+    assert killed == [4002]
+    assert not os.path.exists(server_mac._pid_path(4001))
+    assert not os.path.exists(server_mac._pid_path(4002))
+
+
+def test_kill_orphans_error_on_one_file_does_not_stop_the_others(monkeypatch):
+    monkeypatch.setattr(server_mac, "server_bin", lambda: BINPATH)
+    argv = BINPATH + " -m m --port 8765"
+
+    def fake_run(args, **kw):
+        if args[-1] == "4001":
+            raise OSError("ps kaputt")
+        return MagicMock(stdout=argv + "\n")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    killed = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
+    server_mac._write_pid(4001)
+    server_mac._write_pid(4002)
+
+    server_mac.kill_orphans()
+
+    assert killed == [4002]
+    assert not os.path.exists(server_mac._pid_path(4001))
+    assert not os.path.exists(server_mac._pid_path(4002))
+
+
+def test_stop_removes_only_its_own_pid_file():
+    server_mac._proc = _own_child(4321)
     server_mac._write_pid(4321)
+    server_mac._write_pid(4002)
     with patch.object(server_mac, "terminate_group"):
         server_mac.stop()
-    assert not os.path.exists(server_mac._pid_path())
+    assert not os.path.exists(server_mac._pid_path(4321))
+    assert os.path.exists(server_mac._pid_path(4002))
     assert server_mac._proc is None
 
 
-def test_stop_keeps_pid_file_of_another_process():
-    proc = MagicMock()
-    proc.pid = 4321
-    proc.poll.return_value = None
-    server_mac._proc = proc
-    server_mac._write_pid(999)
-    with patch.object(server_mac, "terminate_group"):
-        server_mac.stop()
-    with open(server_mac._pid_path(), encoding="utf-8") as f:
-        assert f.read() == "999\n"
-
-
 def test_stop_survives_pid_file_errors():
-    proc = MagicMock()
-    proc.pid = 4321
-    proc.poll.return_value = None
-    server_mac._proc = proc
+    server_mac._proc = _own_child(4321)
     server_mac._write_pid(4321)
     with patch.object(server_mac, "terminate_group"), \
          patch.object(os, "remove", side_effect=OSError("busy")):
@@ -429,19 +497,15 @@ def test_stop_survives_pid_file_errors():
 
 
 def test_start_survives_pid_write_error():
-    binpath = "/x/whisper-server"
-    env = {"SERVER_BIN": binpath, "MODEL_PATH": "m",
+    env = {"SERVER_BIN": "/x/whisper-server", "MODEL_PATH": "m",
            "WHISPER_THREADS": "4", "WHISPER_DECODE": "-nf"}
-    proc = MagicMock()
-    proc.pid = 4321
-    proc.poll.return_value = None
     server_mac._proc = None
     try:
         with patch.object(server_mac, "ensure_env", return_value=True), \
              patch.object(server_mac, "port_in_use", return_value=False), \
              patch.object(config, "read_serverenv", return_value=env), \
              patch.object(fsutil, "atomic_write", side_effect=OSError("disk full")), \
-             patch.object(subprocess, "Popen", return_value=proc) as popen:
+             patch.object(subprocess, "Popen", return_value=_own_child(4321)) as popen:
             assert server_mac.start() is True
         assert popen.call_count == 1
     finally:
@@ -464,7 +528,7 @@ def test_kill_orphans_kills_only_verified_own_server(monkeypatch, pid, argv, exp
     server_mac.kill_orphans()
 
     assert killed == ([int(pid)] if expect_kill else [])
-    assert not os.path.exists(server_mac._pid_path())
+    assert not os.path.exists(server_mac._pid_path(int(pid)))
 
 
 def test_kill_orphans_without_pid_file_does_nothing(monkeypatch):
@@ -486,37 +550,66 @@ def test_kill_orphans_removes_stale_pid_file(monkeypatch):
     server_mac.kill_orphans()
 
     kill.assert_not_called()
-    assert not os.path.exists(server_mac._pid_path())
+    assert not os.path.exists(server_mac._pid_path(555))
 
 
-@pytest.mark.parametrize("content", ["0\n", "1\n", "-1\n", "abc\n", ""])
-def test_kill_orphans_never_signals_for_invalid_pid(monkeypatch, content):
-    """PID 0 oder 1 würde os.kill an eine Prozessgruppe bzw. launchd schicken."""
+@pytest.mark.parametrize("filename, content", [
+    ("whisper-server.0.pid", "0\n"),
+    ("whisper-server.1.pid", "1\n"),
+    ("whisper-server.1234.pid", "-1\n"),
+    ("whisper-server.1234.pid", "abc\n"),
+    ("whisper-server.1234.pid", ""),
+    ("whisper-server.4001.pid", "4002\n"),    # Name und Inhalt nennen verschiedene PIDs
+])
+def test_kill_orphans_never_signals_for_invalid_pid_file(monkeypatch, filename, content):
+    """Ungültige Datei: nichts beenden, Datei entfernen. PID 0 oder 1 würde
+    os.kill an die eigene Prozessgruppe bzw. launchd schicken."""
+    argv = BINPATH + " --port 8765"
     monkeypatch.setattr(server_mac, "server_bin", lambda: BINPATH)
-    monkeypatch.setattr(subprocess, "run", _fake_ps({"0": BINPATH + " --port 8765",
-                                                     "1": BINPATH + " --port 8765"}))
+    monkeypatch.setattr(subprocess, "run", _fake_ps(
+        {"0": argv, "1": argv, "1234": argv, "4001": argv, "4002": argv}))
     kill = MagicMock()
     monkeypatch.setattr(os, "kill", kill)
     os.makedirs(state.RUNDIR, exist_ok=True)
-    with open(server_mac._pid_path(), "w", encoding="utf-8") as f:
+    path = os.path.join(state.RUNDIR, filename)
+    with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
     server_mac.kill_orphans()
 
     kill.assert_not_called()
-    assert not os.path.exists(server_mac._pid_path())
+    assert not os.path.exists(path)
 
 
 def test_kill_orphans_survives_unreadable_pid_file(monkeypatch):
     monkeypatch.setattr(server_mac, "server_bin", lambda: BINPATH)
     kill = MagicMock()
     monkeypatch.setattr(os, "kill", kill)
-    os.makedirs(server_mac._pid_path())        # Datei-Platz belegt: lesen schlägt fehl
+    os.makedirs(server_mac._pid_path(4321))   # Name belegt: lesen schlägt fehl
     try:
-        server_mac.kill_orphans()              # darf nicht werfen
+        server_mac.kill_orphans()             # darf nicht werfen
     finally:
-        os.rmdir(server_mac._pid_path())
+        os.rmdir(server_mac._pid_path(4321))
     kill.assert_not_called()
+
+
+def test_kill_orphans_ignores_old_single_pid_file(monkeypatch):
+    """Die Einzeldatei whisper-server.pid aus 650628e wurde nie ausgeliefert;
+    das neue Muster erkennt sie nicht und fasst sie nicht an."""
+    monkeypatch.setattr(server_mac, "server_bin", lambda: BINPATH)
+    monkeypatch.setattr(subprocess, "run", _fake_ps({"4002": BINPATH + " --port 8765"}))
+    kill = MagicMock()
+    monkeypatch.setattr(os, "kill", kill)
+    os.makedirs(state.RUNDIR, exist_ok=True)
+    old = os.path.join(state.RUNDIR, "whisper-server.pid")
+    with open(old, "w", encoding="utf-8") as f:
+        f.write("4002\n")
+    try:
+        server_mac.kill_orphans()
+        kill.assert_not_called()
+        assert os.path.exists(old)
+    finally:
+        os.remove(old)
 
 
 def test_kill_orphans_noop_without_binary(monkeypatch):

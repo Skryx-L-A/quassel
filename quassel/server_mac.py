@@ -16,6 +16,7 @@ nie eine schon getroffene Wahl (gleiches Prinzip wie install.sh/win-provision)
 auf "-bs 1" gehoben (siehe ensure_env()).
 """
 import os
+import re
 import secrets
 import signal
 import socket
@@ -56,9 +57,22 @@ def _drain_log(pipe):
         pipe.close()
 
 
-def _pid_path():
-    """PID-Datei des eigenen Servers im Laufzeitordner des Profils."""
-    return os.path.join(state.RUNDIR, "whisper-server.pid")
+_PID_FILE = re.compile(r"whisper-server\.(\d+)\.pid")
+
+
+def _pid_path(pid):
+    """PID-Datei eines Servers im Laufzeitordner des Profils. Der Name trägt
+    die PID, damit zwei Prozesse einander nie überschreiben."""
+    return os.path.join(state.RUNDIR, f"whisper-server.{pid}.pid")
+
+
+def _pid_files():
+    """Alle PID-Dateien dieses Profils."""
+    try:
+        names = os.listdir(state.RUNDIR)
+    except OSError:
+        return []
+    return [os.path.join(state.RUNDIR, n) for n in names if _PID_FILE.fullmatch(n)]
 
 
 def _write_pid(pid):
@@ -66,40 +80,33 @@ def _write_pid(pid):
     die spätere Aufräumhilfe, nie den Start."""
     try:
         os.makedirs(state.RUNDIR, mode=0o700, exist_ok=True)
-        fsutil.atomic_write(_pid_path(), "%d\n" % pid, mode=0o600)
+        fsutil.atomic_write(_pid_path(pid), "%d\n" % pid, mode=0o600)
     except OSError as e:
         print(f"server_mac: PID-Datei nicht geschrieben: {e}",
               file=sys.stderr, flush=True)
 
 
-def _forget_pid(pid):
-    """PID-Datei entfernen, aber nur, solange sie noch auf dieses Kind zeigt."""
+def _remove_file(path):
     try:
-        with open(_pid_path(), encoding="utf-8") as f:
-            if f.read().strip() == str(pid):
-                os.remove(_pid_path())
-    except (OSError, ValueError):
-        pass
-
-
-def _remove_pid_file():
-    try:
-        os.remove(_pid_path())
+        os.remove(path)
     except OSError:
         pass
 
 
-def _read_pid():
-    """PID aus der PID-Datei oder None (fehlt, unlesbar, keine echte PID).
-    PID 0 und 1 scheiden aus: os.kill(0) träfe die eigene Prozessgruppe."""
+def _read_pid(path):
+    """PID einer PID-Datei oder None. Gültig nur, wenn Name und Inhalt
+    dieselbe PID > 1 nennen. PID 0 und 1 scheiden aus: os.kill(0) träfe die
+    eigene Prozessgruppe."""
+    match = _PID_FILE.fullmatch(os.path.basename(path))
     try:
-        with open(_pid_path(), encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             value = f.read().strip()
     except (OSError, ValueError):
         return None
-    if not (value.isascii() and value.isdigit()) or int(value) <= 1:
+    if not match or not (value.isascii() and value.isdigit()):
         return None
-    return int(value)
+    pid = int(value)
+    return pid if pid > 1 and pid == int(match.group(1)) else None
 
 
 def _repo_root():
@@ -301,7 +308,7 @@ def stop():
             terminate_group(_proc)
         else:
             _proc.wait()
-        _forget_pid(pid)
+        _remove_file(_pid_path(pid))
     _proc = None
 
 
@@ -321,18 +328,20 @@ def _is_own_server(pid, binpath):
 
 
 def kill_orphans():
-    """Server-Waisen aus abgestürzten früheren Läufen beenden. Liest nur die
-    PID-Datei des Profils; vor dem SIGTERM prüft _is_own_server() per ps, dass
-    diese PID noch unser Server ist (PIDs werden wiederverwendet). Ohne Datei
-    passiert nichts; eine veraltete Datei wird entfernt."""
+    """Server-Waisen aus abgestürzten früheren Läufen beenden. Liest alle
+    whisper-server.<pid>.pid des Profils; vor dem SIGTERM prüft _is_own_server()
+    per ps, dass die PID noch unser Server ist (PIDs werden wiederverwendet).
+    Eine Datei, die nicht passt oder fehlerhaft ist, hält die übrigen nicht auf.
+    Geprüfte Dateien werden danach entfernt."""
     binpath = server_bin()
     if not binpath:
         return
-    pid = _read_pid()
-    try:
-        if pid is not None and _is_own_server(pid, binpath):
-            os.kill(pid, signal.SIGTERM)
-    except OSError:
-        pass
-    finally:
-        _remove_pid_file()
+    for path in _pid_files():
+        pid = _read_pid(path)
+        try:
+            if pid is not None and _is_own_server(pid, binpath):
+                os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        finally:
+            _remove_file(path)
