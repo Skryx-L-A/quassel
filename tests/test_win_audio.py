@@ -278,3 +278,101 @@ def test_a_healthy_recording_is_not_interrupted(paths):
     sd.streams[-1].feed(b"\x01\x00" * 160)
     rec.stop()
     assert rec.interrupted is None
+
+
+class BlockingFile:
+    """Datei-Attrappe: write() wartet, bis gate gesetzt ist (Platte hängt)."""
+
+    def __init__(self, file, gate):
+        self.file = file
+        self.gate = gate
+
+    def write(self, chunk):
+        self.gate.wait()
+        return self.file.write(chunk)
+
+    def flush(self):
+        return self.file.flush()
+
+    def close(self):
+        return self.file.close()
+
+
+@pytest.fixture
+def hung_disk(paths, monkeypatch):
+    """Die Rohdatei hängt: der Writer kommt erst weiter, wenn gate gesetzt ist."""
+    import builtins
+    import threading
+    raw = paths[0]
+    gate = threading.Event()
+    real_open = builtins.open
+
+    def hung_open(path, mode, *args, **kwargs):
+        file = real_open(path, mode, *args, **kwargs)
+        return BlockingFile(file, gate) if path == raw and mode == "wb" else file
+
+    monkeypatch.setattr(audio_win, "open", hung_open, raising=False)
+    yield gate
+    gate.set()
+
+
+def test_full_queue_drops_audio_and_marks_the_recording_interrupted(paths, hung_disk, monkeypatch):
+    """Platte hängt: Blöcke über der Grenze fallen weg, die Aufnahme gilt als
+    unterbrochen. Der Callback wartet dabei nie."""
+    raw, _raw_b, sd = paths
+    monkeypatch.setattr(audio_win, "MAX_PENDING_BYTES", 1000, raising=False)
+    rec = audio_win.Recorder(raw)
+    assert rec.start()
+    for _ in range(8):
+        sd.streams[-1].feed(b"\x01\x00" * 100)     # je 200 B
+    hung_disk.set()
+    rec.stop()
+    assert rec.interrupted == "overflow"
+    assert len(rec.raw_bytes(raw)) == 1000         # genau fünf Blöcke passen
+
+
+def test_stop_returns_in_time_when_the_queue_is_full(paths, hung_disk, monkeypatch):
+    """stop() an voller Warteschlange: kein Hänger, keine Ausnahme. Das Ende-
+    Zeichen kommt durch, auch solange die Platte noch hängt."""
+    import time
+    raw, _raw_b, sd = paths
+    monkeypatch.setattr(audio_win, "MAX_PENDING_BYTES", 1000, raising=False)
+    monkeypatch.setattr(audio_win, "STOP_TIMEOUT", 0.05)
+    rec = audio_win.Recorder(raw)
+    assert rec.start()
+    writer = rec._writer_thread
+    for _ in range(8):
+        sd.streams[-1].feed(b"\x01\x00" * 100)
+    began = time.monotonic()
+    rec.stop()
+    assert time.monotonic() - began < 0.5
+    assert rec.stream_abandoned                    # Writer hängt noch: wie bisher
+    hung_disk.set()
+    writer.join(1)
+    assert not writer.is_alive()                   # das Ende-Zeichen kam an
+
+
+def test_normal_recording_keeps_every_block(paths):
+    raw, _raw_b, sd = paths
+    rec = audio_win.Recorder(raw)
+    assert rec.start()
+    for i in range(20):
+        sd.streams[-1].feed(bytes([i]) * 200)
+    rec.stop()
+    assert rec.interrupted is None
+    assert rec.raw_bytes(raw) == b"".join(bytes([i]) * 200 for i in range(20))
+
+
+def test_preroll_ring_counts_against_the_queue_limit(paths, monkeypatch):
+    raw, _raw_b, sd = paths
+    monkeypatch.setattr(audio_win, "MAX_PENDING_BYTES", 1000, raising=False)
+    rec = audio_win.Recorder(raw, preroll_ms=100, preroll_keep_s=10)
+    try:
+        assert rec.start()
+        rec.stop()                                 # Stream bleibt warm
+        sd.streams[0].feed(b"\x02\x00" * 2000)     # Ring hält 100 ms = 3200 B
+        assert rec.start()                         # Vorlauf passt nicht in 1000 B
+        rec.stop()
+        assert rec.interrupted == "overflow"
+    finally:
+        rec._close_warm()

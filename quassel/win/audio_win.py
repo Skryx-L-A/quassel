@@ -16,6 +16,43 @@ from ..audio import RAW_B, RATE, SAMPLE_BYTES, _quiet_for
 from ..state import RAW, RUNDIR
 
 STOP_TIMEOUT = 1.0
+# Obergrenze der Schreib-Warteschlange in Bytes: 60 s Audio (16 kHz, mono,
+# 16 bit = 32 000 B/s, rund 1,9 MB). Ein kurzer Hänger der Platte verliert so
+# keine Aufnahme; hängt sie dauerhaft, wächst der Speicher nicht weiter.
+MAX_PENDING_BYTES = 60 * RATE * SAMPLE_BYTES
+
+
+class _WriteQueue:
+    """Warteschlange vom Audio-Callback zum Writer, begrenzt in Bytes.
+
+    Audio geht nur über put_audio hinein und wird verworfen, wenn die Grenze
+    überschritten wäre; das blockiert nie. Steuerzeichen (Ende, Barriere)
+    gehen über put_control und zählen nicht gegen die Grenze."""
+
+    def __init__(self, max_bytes):
+        self._items = queue.Queue()
+        self._max_bytes = max_bytes
+        self._pending = 0          # Bytes in der Schlange plus im laufenden write
+        self._lock = threading.Lock()
+
+    def put_audio(self, chunk):
+        with self._lock:
+            if self._pending + len(chunk) > self._max_bytes:
+                return False
+            self._pending += len(chunk)
+            self._items.put_nowait(chunk)
+            return True
+
+    def put_control(self, item):
+        self._items.put_nowait(item)
+
+    def get(self):
+        return self._items.get()
+
+    def done(self, chunk):
+        """Der Writer hat den Block geschrieben: er belegt die Grenze nicht mehr."""
+        with self._lock:
+            self._pending -= len(chunk)
 
 
 def list_mics():
@@ -86,9 +123,12 @@ class Recorder:
         self._write_queue = None
         self._writer_thread = None
         self.stream_abandoned = False
-        # Riss die letzte Aufnahme ab? "ended"/"stalled"/None, gesetzt von stop()
-        # (dieselbe Bedeutung wie quassel.audio.Recorder.interrupted, D65).
+        # Riss die letzte Aufnahme ab? "ended"/"stalled"/"overflow"/None, gesetzt
+        # von stop() ("ended"/"stalled": dieselbe Bedeutung wie
+        # quassel.audio.Recorder.interrupted, D65; "overflow": die Schreib-
+        # Warteschlange war voll, Audio ging verloren).
         self.interrupted = None
+        self._dropped = False     # Block der laufenden Aufnahme verworfen?
         self._last_block = None   # monotonic des letzten Callback-Blocks
         # Schützt nur den Besitzwechsel von Stream und Datei: der Not-Aus
         # kann aus einem anderen Thread in ein laufendes stop() fallen.
@@ -128,7 +168,7 @@ class Recorder:
                 self.stream_abandoned = True
 
     def _start_writer(self, outfile):
-        chunks = queue.Queue()
+        chunks = _WriteQueue(MAX_PENDING_BYTES)
 
         def write_chunks():
             try:
@@ -141,6 +181,7 @@ class Recorder:
                         item.set()
                     else:
                         outfile.write(item)
+                        chunks.done(item)
             except OSError:
                 self.stream_abandoned = True
             finally:
@@ -186,8 +227,10 @@ class Recorder:
         if self.stream is not None:
             self._start_writer(outfile)
             with self._lock:
+                self._dropped = False
                 for chunk in self._ring:
-                    self._write_queue.put_nowait(chunk)
+                    if not self._write_queue.put_audio(chunk):
+                        self._dropped = True
                 self._ring.clear()
                 self._ring_bytes = 0
                 self.outfile = outfile
@@ -207,7 +250,8 @@ class Recorder:
                     return
                 self._last_block = time.monotonic()
                 if self.outfile is not None:
-                    self._write_queue.put_nowait(chunk)
+                    if not self._write_queue.put_audio(chunk):
+                        self._dropped = True
                 elif self._max_ring_bytes:
                     self._ring.append(chunk)
                     self._ring_bytes += len(chunk)
@@ -224,6 +268,7 @@ class Recorder:
             with self._lock:
                 self.outfile = outfile
                 self.running_path = self.raw_path
+                self._dropped = False
             stream = sd.RawInputStream(
                 samplerate=RATE, channels=1, dtype="int16",
                 device=device, callback=callback)
@@ -238,7 +283,7 @@ class Recorder:
                 self.outfile = None
                 self.running_path = None
                 self._capture_token = None
-            self._write_queue.put_nowait(None)
+            self._write_queue.put_control(None)
             self._writer_thread.join(timeout=STOP_TIMEOUT)
             if self._writer_thread.is_alive():
                 self.stream_abandoned = True
@@ -252,14 +297,18 @@ class Recorder:
 
     def capture_interrupted(self, now=None):
         """Riss die laufende Aufnahme ab? "ended": der Stream lief aus (Gerät
-        weg, Treiber), "stalled": seit CAPTURE_STALL_S kam kein Block mehr.
+        weg, Treiber), "overflow": die Schreib-Warteschlange war voll (Platte
+        hängt), "stalled": seit CAPTURE_STALL_S kam kein Block mehr.
         None: läuft, oder es läuft keine Aufnahme."""
         with self._lock:
             if self.running_path is None or self.stream is None:
                 return None
             stream, last, started = self.stream, self._last_block, self.started
+            dropped = self._dropped
         if not stream.active:
             return "ended"
+        if dropped:
+            return "overflow"
         if last is not None and last < started:
             last = None          # Block aus dem Vorlauf zählt nicht als Aufnahme
         return _quiet_for(last, started, time.monotonic() if now is None else now)
@@ -274,7 +323,7 @@ class Recorder:
                 barrier = None
                 if self.outfile is not None and path == self.running_path:
                     barrier = threading.Event()
-                    self._write_queue.put_nowait(barrier)
+                    self._write_queue.put_control(barrier)
             if barrier is not None:
                 barrier.wait(timeout=STOP_TIMEOUT)
             with open(path, "rb") as f:
@@ -301,7 +350,7 @@ class Recorder:
             chunks, self._write_queue = self._write_queue, None
             writer, self._writer_thread = self._writer_thread, None
             if chunks is not None:
-                chunks.put_nowait(None)
+                chunks.put_control(None)
             keep_warm = self.preroll_ms > 0 and self.stream is not None
         if writer is not None:
             writer.join(timeout=STOP_TIMEOUT)
