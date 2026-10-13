@@ -4,9 +4,21 @@ import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from quassel import config, server_mac
+from quassel import config, fsutil, server_mac, state
+
+
+@pytest.fixture(autouse=True)
+def _no_pid_file_left():
+    """PID-Datei nach jedem Test entfernen (liegt im umgebogenen Home)."""
+    yield
+    try:
+        os.remove(server_mac._pid_path())
+    except OSError:
+        pass
 
 
 def test_build_args_full():
@@ -334,30 +346,177 @@ def test_terminate_group_falls_back_when_killpg_fails(monkeypatch):
     proc.terminate.assert_called_once()
 
 
-def test_kill_orphans_matches_only_exact_bin_and_port(monkeypatch):
-    binpath = "/repo/vendor/whisper.cpp/build/bin/whisper-server"
-    argv_by_pid = {
-        "111": binpath + " -m model.bin --host 127.0.0.1 --port 8765 -nt",
-        "222": "tail -f whisper-server.log --port 8765",     # fremder Prozess
-        "333": binpath + " -m model.bin --port 9999",        # anderer Port
-        "444": binpath + " -m model.bin --port 87651",       # Port mit gleichem Anfang
-    }
+BINPATH = "/repo/vendor/whisper.cpp/build/bin/whisper-server"
 
+
+def _fake_ps(argv_by_pid):
+    """subprocess.run-Attrappe: nur ps ist erlaubt (kein pgrep mehr)."""
     def fake_run(args, **kw):
-        if args[0] == "pgrep":
-            return MagicMock(stdout="111\n222\n333\n444\n")
         if args[0] == "ps":
-            return MagicMock(stdout=argv_by_pid[args[-1]] + "\n")
+            return MagicMock(stdout=argv_by_pid.get(args[-1], "") + "\n")
         raise AssertionError(args)
+    return fake_run
 
+
+def test_pid_file_lives_in_profile_runtime_dir():
+    """Die PID-Datei liegt im Laufzeitordner des Profils (state.RUNDIR) und
+    damit unter dem umgebogenen Home der Tests, nie im echten ~/Library."""
+    path = server_mac._pid_path()
+    assert path == os.path.join(state.RUNDIR, "whisper-server.pid")
+    assert path.startswith(os.path.expanduser("~") + os.sep)
+    real_home = os.environ.get("QUASSEL_TEST_REAL_HOME", "")
+    assert not (real_home and path.startswith(real_home + os.sep))
+
+
+def test_start_writes_pid_file_of_own_child(tmp_path):
+    binpath = tmp_path / "whisper-server"
+    binpath.write_text("")
+    binpath.chmod(0o755)
+    env = {"SERVER_BIN": str(binpath), "MODEL_PATH": "m",
+           "WHISPER_THREADS": "4", "WHISPER_DECODE": "-bs 1"}
+    proc = MagicMock()
+    proc.pid = 4321
+    proc.poll.return_value = None
+    server_mac._proc = None
+    try:
+        with patch.object(server_mac, "ensure_env", return_value=True), \
+             patch.object(server_mac, "port_in_use", return_value=False), \
+             patch.object(config, "read_serverenv", return_value=env), \
+             patch.object(subprocess, "Popen", return_value=proc):
+            assert server_mac.start() is True
+        path = server_mac._pid_path()
+        with open(path, encoding="utf-8") as f:
+            assert f.read() == "4321\n"
+        assert os.stat(path).st_mode & 0o777 == 0o600
+    finally:
+        server_mac._proc = None
+
+
+def test_stop_removes_pid_file_of_own_child():
+    proc = MagicMock()
+    proc.pid = 4321
+    proc.poll.return_value = None
+    server_mac._proc = proc
+    server_mac._write_pid(4321)
+    with patch.object(server_mac, "terminate_group"):
+        server_mac.stop()
+    assert not os.path.exists(server_mac._pid_path())
+    assert server_mac._proc is None
+
+
+def test_stop_keeps_pid_file_of_another_process():
+    proc = MagicMock()
+    proc.pid = 4321
+    proc.poll.return_value = None
+    server_mac._proc = proc
+    server_mac._write_pid(999)
+    with patch.object(server_mac, "terminate_group"):
+        server_mac.stop()
+    with open(server_mac._pid_path(), encoding="utf-8") as f:
+        assert f.read() == "999\n"
+
+
+def test_stop_survives_pid_file_errors():
+    proc = MagicMock()
+    proc.pid = 4321
+    proc.poll.return_value = None
+    server_mac._proc = proc
+    server_mac._write_pid(4321)
+    with patch.object(server_mac, "terminate_group"), \
+         patch.object(os, "remove", side_effect=OSError("busy")):
+        server_mac.stop()           # darf nicht werfen
+    assert server_mac._proc is None
+
+
+def test_start_survives_pid_write_error():
+    binpath = "/x/whisper-server"
+    env = {"SERVER_BIN": binpath, "MODEL_PATH": "m",
+           "WHISPER_THREADS": "4", "WHISPER_DECODE": "-nf"}
+    proc = MagicMock()
+    proc.pid = 4321
+    proc.poll.return_value = None
+    server_mac._proc = None
+    try:
+        with patch.object(server_mac, "ensure_env", return_value=True), \
+             patch.object(server_mac, "port_in_use", return_value=False), \
+             patch.object(config, "read_serverenv", return_value=env), \
+             patch.object(fsutil, "atomic_write", side_effect=OSError("disk full")), \
+             patch.object(subprocess, "Popen", return_value=proc) as popen:
+            assert server_mac.start() is True
+        assert popen.call_count == 1
+    finally:
+        server_mac._proc = None
+
+
+@pytest.mark.parametrize("pid, argv, expect_kill", [
+    ("111", BINPATH + " -m model.bin --host 127.0.0.1 --port 8765 -nt", True),
+    ("222", "tail -f whisper-server.log --port 8765", False),   # fremder Prozess unter der PID
+    ("333", BINPATH + " -m model.bin --port 9999", False),      # eigener Server, anderer Port
+    ("444", BINPATH + " -m model.bin --port 87651", False),     # Port mit gleichem Anfang
+])
+def test_kill_orphans_kills_only_verified_own_server(monkeypatch, pid, argv, expect_kill):
+    monkeypatch.setattr(server_mac, "server_bin", lambda: BINPATH)
+    monkeypatch.setattr(subprocess, "run", _fake_ps({pid: argv}))
     killed = []
-    monkeypatch.setattr(server_mac, "server_bin", lambda: binpath)
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
+    monkeypatch.setattr(os, "kill", lambda p, sig: killed.append(p))
+    server_mac._write_pid(int(pid))
 
     server_mac.kill_orphans()
 
-    assert killed == [111]
+    assert killed == ([int(pid)] if expect_kill else [])
+    assert not os.path.exists(server_mac._pid_path())
+
+
+def test_kill_orphans_without_pid_file_does_nothing(monkeypatch):
+    monkeypatch.setattr(server_mac, "server_bin", lambda: BINPATH)
+    with patch.object(subprocess, "run") as run, \
+         patch.object(os, "kill") as kill:
+        server_mac.kill_orphans()
+    run.assert_not_called()             # insbesondere kein pgrep
+    kill.assert_not_called()
+
+
+def test_kill_orphans_removes_stale_pid_file(monkeypatch):
+    monkeypatch.setattr(server_mac, "server_bin", lambda: BINPATH)
+    monkeypatch.setattr(subprocess, "run", _fake_ps({}))   # PID 555 existiert nicht mehr
+    kill = MagicMock()
+    monkeypatch.setattr(os, "kill", kill)
+    server_mac._write_pid(555)
+
+    server_mac.kill_orphans()
+
+    kill.assert_not_called()
+    assert not os.path.exists(server_mac._pid_path())
+
+
+@pytest.mark.parametrize("content", ["0\n", "1\n", "-1\n", "abc\n", ""])
+def test_kill_orphans_never_signals_for_invalid_pid(monkeypatch, content):
+    """PID 0 oder 1 würde os.kill an eine Prozessgruppe bzw. launchd schicken."""
+    monkeypatch.setattr(server_mac, "server_bin", lambda: BINPATH)
+    monkeypatch.setattr(subprocess, "run", _fake_ps({"0": BINPATH + " --port 8765",
+                                                     "1": BINPATH + " --port 8765"}))
+    kill = MagicMock()
+    monkeypatch.setattr(os, "kill", kill)
+    os.makedirs(state.RUNDIR, exist_ok=True)
+    with open(server_mac._pid_path(), "w", encoding="utf-8") as f:
+        f.write(content)
+
+    server_mac.kill_orphans()
+
+    kill.assert_not_called()
+    assert not os.path.exists(server_mac._pid_path())
+
+
+def test_kill_orphans_survives_unreadable_pid_file(monkeypatch):
+    monkeypatch.setattr(server_mac, "server_bin", lambda: BINPATH)
+    kill = MagicMock()
+    monkeypatch.setattr(os, "kill", kill)
+    os.makedirs(server_mac._pid_path())        # Datei-Platz belegt: lesen schlägt fehl
+    try:
+        server_mac.kill_orphans()              # darf nicht werfen
+    finally:
+        os.rmdir(server_mac._pid_path())
+    kill.assert_not_called()
 
 
 def test_kill_orphans_noop_without_binary(monkeypatch):

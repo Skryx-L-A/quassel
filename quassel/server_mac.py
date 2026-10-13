@@ -24,7 +24,7 @@ import sys
 import io
 import threading
 
-from . import config, hwdetect, profile
+from . import config, fsutil, hwdetect, profile, state
 
 MODEL_DIR = config.MODELDIR
 HOST, PORT = "127.0.0.1", str(profile.port())
@@ -54,6 +54,52 @@ def _drain_log(pipe):
                 log.write(chunk)
     finally:
         pipe.close()
+
+
+def _pid_path():
+    """PID-Datei des eigenen Servers im Laufzeitordner des Profils."""
+    return os.path.join(state.RUNDIR, "whisper-server.pid")
+
+
+def _write_pid(pid):
+    """PID des eigenen Kinds ablegen (0600, atomar). Ein Fehler kostet nur
+    die spätere Aufräumhilfe, nie den Start."""
+    try:
+        os.makedirs(state.RUNDIR, mode=0o700, exist_ok=True)
+        fsutil.atomic_write(_pid_path(), "%d\n" % pid, mode=0o600)
+    except OSError as e:
+        print(f"server_mac: PID-Datei nicht geschrieben: {e}",
+              file=sys.stderr, flush=True)
+
+
+def _forget_pid(pid):
+    """PID-Datei entfernen, aber nur, solange sie noch auf dieses Kind zeigt."""
+    try:
+        with open(_pid_path(), encoding="utf-8") as f:
+            if f.read().strip() == str(pid):
+                os.remove(_pid_path())
+    except (OSError, ValueError):
+        pass
+
+
+def _remove_pid_file():
+    try:
+        os.remove(_pid_path())
+    except OSError:
+        pass
+
+
+def _read_pid():
+    """PID aus der PID-Datei oder None (fehlt, unlesbar, keine echte PID).
+    PID 0 und 1 scheiden aus: os.kill(0) träfe die eigene Prozessgruppe."""
+    try:
+        with open(_pid_path(), encoding="utf-8") as f:
+            value = f.read().strip()
+    except (OSError, ValueError):
+        return None
+    if not (value.isascii() and value.isdigit()) or int(value) <= 1:
+        return None
+    return int(value)
 
 
 def _repo_root():
@@ -222,6 +268,7 @@ def start():
         build_args(env), cwd=os.path.dirname(env["SERVER_BIN"]) or None,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         start_new_session=True)
+    _write_pid(_proc.pid)
     if isinstance(_proc.stdout, io.IOBase):
         threading.Thread(target=_drain_log, args=(_proc.stdout,), daemon=True).start()
     return True
@@ -249,34 +296,43 @@ def stop():
     Waisen aus abgestürzten Läufen räumt kill_orphans() beim Start weg."""
     global _proc
     if _proc is not None:
+        pid = _proc.pid
         if _proc.poll() is None:
             terminate_group(_proc)
         else:
             _proc.wait()
+        _forget_pid(pid)
     _proc = None
 
 
+def _is_own_server(pid, binpath):
+    """Läuft unter dieser PID noch unser Server? argv muss mit dem Binärpfad
+    beginnen und --port PORT als eigenes Argumentpaar enthalten."""
+    ps = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                        capture_output=True, text=True, check=False)
+    argv = ps.stdout.strip()
+    rest = argv[len(binpath):]
+    if not argv.startswith(binpath) or (rest and not rest[0].isspace()):
+        return False
+    words = rest.split()
+    # Port als eigenes Argument, nicht als Teilstring: ein Profil auf
+    # einem anderen Port darf nie den Server der installierten App treffen.
+    return any(a == "--port" and b == str(PORT) for a, b in zip(words, words[1:]))
+
+
 def kill_orphans():
-    """Server-Waisen aus abgestürzten früheren Läufen beenden. Trifft nur
-    Prozesse, deren argv exakt mit unserem SERVER_BIN-Pfad beginnt UND
-    unseren Port enthält (pgrep-Kandidaten, dann per ps verifiziert) —
-    nie fremde Prozesse, die den Namen nur irgendwo in der Kommandozeile
-    tragen."""
+    """Server-Waisen aus abgestürzten früheren Läufen beenden. Liest nur die
+    PID-Datei des Profils; vor dem SIGTERM prüft _is_own_server() per ps, dass
+    diese PID noch unser Server ist (PIDs werden wiederverwendet). Ohne Datei
+    passiert nichts; eine veraltete Datei wird entfernt."""
     binpath = server_bin()
     if not binpath:
         return
+    pid = _read_pid()
     try:
-        r = subprocess.run(["pgrep", "-f", binpath],
-                           capture_output=True, text=True, check=False)
-        for pid in r.stdout.split():
-            ps = subprocess.run(["ps", "-o", "command=", "-p", pid],
-                                capture_output=True, text=True, check=False)
-            argv = ps.stdout.strip()
-            words = argv[len(binpath):].split()
-            # Port als eigenes Argument, nicht als Teilstring: ein Profil auf
-            # einem anderen Port darf nie den Server der installierten App treffen.
-            own_port = any(a == "--port" and b == str(PORT) for a, b in zip(words, words[1:]))
-            if argv.startswith(binpath) and own_port:
-                os.kill(int(pid), signal.SIGTERM)
-    except (OSError, ValueError):
+        if pid is not None and _is_own_server(pid, binpath):
+            os.kill(pid, signal.SIGTERM)
+    except OSError:
         pass
+    finally:
+        _remove_pid_file()
