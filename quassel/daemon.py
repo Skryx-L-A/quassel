@@ -277,7 +277,7 @@ class Daemon(dictation.DictationCore):
     def panic_stop(self, *_args):
         # Sleep can arrive with keys held but no active recording. Reset the
         # Linux key table even when the shared panic path has nothing to stop.
-        if sys.platform.startswith("linux"):
+        if sys.platform.startswith("linux") and hasattr(self, "_linux_reset"):
             self._linux_reset.set()
         return super().panic_stop(*_args)
 
