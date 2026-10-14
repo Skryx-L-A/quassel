@@ -33,6 +33,9 @@ def test_the_name_is_safe_for_a_pipe(monkeypatch):
 def test_profile_and_missing_session(monkeypatch):
     app = win_stubs.load_win_app(monkeypatch)
     monkeypatch.setenv("QUASSEL_PROFILE", "next")
+    # ohne angegebene Sitzung fragt ipc_name Windows; "fehlt" heißt, sie ist
+    # nicht zu ermitteln (auf einem echten Windows ist sie es)
+    monkeypatch.setattr(app, "_session_id", lambda: None)
     assert app.ipc_name("alice", None) == "quassel-app-next-alice"
 
 

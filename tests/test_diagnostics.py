@@ -217,10 +217,12 @@ def test_tail_file_returns_last_lines(tmp_path):
 def test_log_paths_per_platform(monkeypatch):
     monkeypatch.delenv("QUASSEL_PROFILE", raising=False)
     monkeypatch.setattr(sys, "platform", "darwin")
-    assert diagnostics.daemon_log_file().endswith(
+    # normpath: der Produktpfad mischt "/" und os.sep, auf Windows "/" und "\\"
+    assert os.path.normpath(diagnostics.daemon_log_file()).endswith(
         os.path.join("Library", "Logs", "Quassel", "daemon.log"))
     monkeypatch.setenv("QUASSEL_PROFILE", "next")
-    assert os.path.join("Logs", "Quassel-next", "daemon.log") in diagnostics.daemon_log_file()
+    assert os.path.join("Logs", "Quassel-next", "daemon.log") in os.path.normpath(
+        diagnostics.daemon_log_file())
     monkeypatch.setattr(sys, "platform", "linux")
     if os.name != "nt":
         assert diagnostics.daemon_log_file() is None

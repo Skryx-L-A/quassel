@@ -438,7 +438,15 @@ def test_h3_blocking_rest_does_not_block_events():
         assert second_start.wait(2), "zweiter start nie gefeuert: %s" % order
         assert "rest-end" not in order        # Rest 1 läuft noch
         assert listener.current_action == "finish"
+        # Der Ereignis-Thread muss weitertickten, solange Rest 1 hängt. Die Uhr
+        # (Windows: ~15 ms) kann zwei Ticks im selben Takt gleich stempeln; also
+        # auf den nächsten Poll-Tick warten (alle POLL_INTERVAL), nicht raten.
+        ende = time.monotonic() + 2.0
+        while (listener.last_event_tick <= tick and "rest-end" not in order
+               and time.monotonic() < ende):
+            time.sleep(0.005)
         assert listener.last_event_tick > tick, "Ereignis-Thread steht"
+        assert "rest-end" not in order        # und zwar während Rest 1 noch läuft
         assert all_done.wait(3), order
     finally:
         listener._stop_poll.set()
@@ -1349,8 +1357,10 @@ def test_install_diagnostics_registers_sigusr1_only_on_mac(monkeypatch):
         monkeypatch.setattr(daemon_mod.signal, "SIGUSR1", 10, raising=False)
     monkeypatch.setattr(daemon_mod.faulthandler, "enable",
                         lambda *a, **k: seen.append("enable"))
+    # faulthandler.register gibt es unter Windows nicht
     monkeypatch.setattr(daemon_mod.faulthandler, "register",
-                        lambda sig, all_threads=False: seen.append((sig, all_threads)))
+                        lambda sig, all_threads=False: seen.append((sig, all_threads)),
+                        raising=False)
     monkeypatch.setattr(daemon_mod.sys, "platform", "linux")
     daemon_mod.install_diagnostics()
     assert seen == ["enable"]                    # Linux behält SIGUSR1 unverändert

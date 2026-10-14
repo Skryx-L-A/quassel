@@ -120,6 +120,7 @@ def test_scan_devices_reports_closed_devices_before_reuse(monkeypatch):
     listing = ["event0", "event1"]
     closed = []
     opened = iter([10, 11, 12])
+    monkeypatch.setattr(daemon_mod.os, "O_NONBLOCK", 0o4000, raising=False)  # fehlt unter Windows
     monkeypatch.setattr(daemon_mod.os, "listdir", lambda p: list(listing))
     monkeypatch.setattr(daemon_mod.os, "open", lambda p, flags: next(opened))
     monkeypatch.setattr(daemon_mod.os, "close", closed.append)

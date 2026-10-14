@@ -271,8 +271,15 @@ def test_no_page_needs_horizontal_scrolling(tmp_path, monkeypatch, qapp, lang):
         for i, key in enumerate(c._page_keys):
             c.sidebar.setCurrentRow(i)
             qapp.processEvents()
-            if c.stack.widget(i).horizontalScrollBar().maximum() > 0:
-                too_wide.append(key)
+            page = c.stack.widget(i)
+            bar = page.horizontalScrollBar()
+            if bar.maximum() > 0:
+                # Maß und Breiten mit ausgeben: bei einem Fehlschlag nur auf einer
+                # Plattform (Windows-CI) ist das die einzige Spur.
+                too_wide.append((key, bar.maximum(), page.viewport().width(),
+                                 page.widget().minimumSizeHint().width(),
+                                 page.verticalScrollBar().width(),
+                                 page.font().family(), page.font().pointSizeF()))
         assert too_wide == []
     finally:
         c.hide()
