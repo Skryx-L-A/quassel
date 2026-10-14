@@ -80,6 +80,15 @@ def test_ci_checks_every_shell_entrypoint_without_masking_shellcheck():
         not in workflow
 
 
+def test_ci_windows_jobs_do_not_block_until_a_first_green_run():
+    # Decision 14.10.: the Windows suite never ran on a real runner. Its jobs
+    # report but do not fail the workflow until the first green run; then this
+    # line goes and the jobs are required like the others.
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8")
+    assert "continue-on-error: ${{ matrix.os == 'windows-latest' }}" in workflow
+
+
 def test_ci_runs_the_full_offline_pytest_suite():
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8")
