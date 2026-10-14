@@ -20,10 +20,10 @@ import os
 import sys
 
 try:
-    if os.name == "nt":
-        from .win import audioctl as _backend
-    elif sys.platform == "darwin":
+    if sys.platform == "darwin":
         from . import platform_mac as _backend
+    elif os.name == "nt":
+        from .win import audioctl as _backend
     else:
         from . import platform_linux as _backend
 except Exception:        # noqa: BLE001 — Backend ist optional

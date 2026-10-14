@@ -422,12 +422,12 @@ def _play(path):
     if not path or not os.path.exists(path):
         return
     try:
+        if sys.platform == "darwin":
+            _player().play(path)
+            return
         if os.name == "nt":
             import winsound
             winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-            return
-        if sys.platform == "darwin":
-            _player().play(path)
             return
         play_path = path
         if path == START_WAV and _linux_bluetooth_sink():

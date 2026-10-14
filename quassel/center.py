@@ -8,6 +8,7 @@ Einstellungen wirken sofort (der Daemon liest die Config live).
 """
 import os
 import plistlib
+import posixpath
 import subprocess
 import sys
 import threading
@@ -225,8 +226,9 @@ def mac_app_path():
     Contents/MacOS); None außerhalb eines Bundles."""
     if not getattr(sys, "frozen", False):
         return None
-    app = os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.abspath(sys.executable))))
+    # Ein Bundle ist ein POSIX-Pfad, auch wenn ein Test das auf Windows prüft.
+    app = posixpath.dirname(posixpath.dirname(posixpath.dirname(
+        posixpath.abspath(sys.executable))))
     return app if app.endswith(".app") else None
 
 
