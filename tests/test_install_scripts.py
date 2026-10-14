@@ -89,6 +89,18 @@ def test_ci_windows_jobs_do_not_block_until_a_first_green_run():
     assert "continue-on-error: ${{ matrix.os == 'windows-latest' }}" in workflow
 
 
+def test_ci_gives_qt_what_it_needs_without_a_screen():
+    # First public run, 14.10.: ubuntu-latest lacks libEGL, so every test that
+    # imports PySide6 stopped at collection. Qt draws offscreen everywhere, as
+    # in the local runs; no runner window is needed.
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8")
+    assert "QT_QPA_PLATFORM: offscreen" in workflow
+    for lib in ("libportaudio2", "libegl1", "libgl1", "libxkbcommon0",
+                "libfontconfig1", "libdbus-1-3"):
+        assert lib in workflow, lib
+
+
 def test_ci_runs_the_full_offline_pytest_suite():
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8")
