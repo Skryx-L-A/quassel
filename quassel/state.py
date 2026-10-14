@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 
-from . import profile
+from . import fsutil, profile
 
 if os.name == "nt":
     RUNDIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
@@ -33,7 +33,6 @@ def mark_daemon_running():
     """Beim Start des Diktatdienstes: eigene PID ablegen (0600, atomar) und
     beim Ende wieder entfernen, aber nur, wenn sie noch die eigene ist."""
     import atexit
-    from . import fsutil
     pid = os.getpid()
     try:
         os.makedirs(RUNDIR, mode=0o700, exist_ok=True)
@@ -44,8 +43,9 @@ def mark_daemon_running():
     def clear():
         try:
             with open(DAEMON_PID, encoding="utf-8") as f:
-                if f.read().strip() == str(pid):
-                    os.remove(DAEMON_PID)
+                mine = f.read().strip() == str(pid)
+            if mine:                     # Windows löscht keine offene Datei
+                os.remove(DAEMON_PID)
         except OSError:
             pass
     atexit.register(clear)
@@ -77,7 +77,7 @@ def _write(doc):
     tmp = STATE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(doc, f)
-    os.replace(tmp, STATE)
+    fsutil.replace(tmp, STATE)
 
 
 def state_set(state, text=""):
@@ -85,7 +85,14 @@ def state_set(state, text=""):
     Meldung (für state_clear_text)."""
     global _doc
     with _lock:
-        doc = {"state": state, "text": text, "ts": time.time()}
+        # ts kennzeichnet die Meldung (state_clear_text, Pille). Die Windows-Uhr
+        # tickt nur alle ~15 ms: zwei Meldungen kurz nacheinander bekämen sonst
+        # dasselbe ts und wären nicht zu unterscheiden.
+        ts = time.time()
+        prev = _doc.get("ts", 0.0)
+        if ts <= prev:
+            ts = math.nextafter(prev, math.inf)
+        doc = {"state": state, "text": text, "ts": ts}
         if state == "recording" and _doc.get("state") == "recording" \
                 and "level" in _doc:
             # Vorschautext während der Aufnahme: der Pegel bleibt stehen

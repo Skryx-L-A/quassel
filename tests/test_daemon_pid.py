@@ -28,6 +28,32 @@ def test_service_writes_its_pid_privately(pidfile, monkeypatch):
     assert not pidfile.exists()
 
 
+def test_cleanup_removes_the_pid_file_after_closing_it(pidfile, monkeypatch):
+    """Windows löscht keine offene Datei: das Entfernen darf nicht innerhalb des
+    open() stehen, sonst bleibt die PID stehen und CLI/MCP halten den Dienst für
+    lebendig."""
+    registered = []
+    monkeypatch.setattr("atexit.register", registered.append)
+    state.mark_daemon_running()
+    real_remove = os.remove
+    open_files = []
+    real_open = open
+
+    def tracking_open(file, *a, **kw):
+        f = real_open(file, *a, **kw)
+        if str(file) == str(pidfile):
+            open_files.append(f)
+        return f
+
+    def strict_remove(path):
+        assert all(f.closed for f in open_files), "Datei noch offen beim Entfernen"
+        real_remove(path)
+    monkeypatch.setattr("builtins.open", tracking_open)
+    monkeypatch.setattr(state.os, "remove", strict_remove)
+    registered[0]()
+    assert not pidfile.exists()
+
+
 def test_cleanup_leaves_a_newer_service_alone(pidfile, monkeypatch):
     registered = []
     monkeypatch.setattr("atexit.register", registered.append)

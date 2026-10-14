@@ -191,6 +191,16 @@ def test_state_clear_text_keeps_state_and_timestamp(monkeypatch, tmp_path):
     assert st == {"state": "done", "text": "", "ts": ts}
 
 
+def test_state_set_gives_every_message_its_own_timestamp(monkeypatch, tmp_path):
+    """Die Windows-Uhr tickt nur alle ~15 ms: zwei Meldungen im selben Takt
+    müssen trotzdem unterscheidbar bleiben (state_clear_text, Pille)."""
+    _state_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(state.time, "time", lambda: 1700000000.0)   # eingefrorene Uhr
+    stamps = [state.state_set("recording", str(i)) for i in range(3)]
+    assert stamps == sorted(set(stamps))
+    assert state.state_read()["ts"] == stamps[-1]
+
+
 def test_state_clear_text_leaves_a_newer_message_alone(monkeypatch, tmp_path):
     _state_paths(monkeypatch, tmp_path)
     old = state.state_set("done", "alt")
