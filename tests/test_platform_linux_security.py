@@ -9,6 +9,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
 def _linux(monkeypatch, runtime):
+    if not hasattr(os, "getuid"):               # Windows: find_ydotool_socket fragt die UID
+        monkeypatch.setattr(os, "getuid", lambda: 1000, raising=False)
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
     monkeypatch.delenv("YDOTOOL_SOCKET", raising=False)
     sys.modules.pop("quassel.platform_linux", None)

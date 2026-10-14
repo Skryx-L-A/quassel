@@ -38,6 +38,7 @@ def _module_attrs(platform_name, module, attrs):
 
 
 # ---------------------------------------------------------------- config/state
+@pytest.mark.skipif(os.name == "nt", reason="der Unterprozess setzt nur sys.platform; unter Windows gewinnt os.name == 'nt' in config/state")
 def test_config_paths_darwin():
     got = _module_attrs("darwin", "config",
                         ["CONFDIR", "DATADIR", "CONFIG", "SERVERENV"])
@@ -48,6 +49,7 @@ def test_config_paths_darwin():
     assert got["SERVERENV"] == os.path.join(expect, "server.env")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="der Unterprozess setzt nur sys.platform; unter Windows gewinnt os.name == 'nt' in config/state")
 def test_config_paths_linux_unchanged():
     got = _module_attrs("linux", "config", ["CONFDIR", "DATADIR"])
     assert "Application Support" not in got["CONFDIR"]
@@ -56,6 +58,7 @@ def test_config_paths_linux_unchanged():
         or (xdg and got["CONFDIR"] == os.path.join(xdg, "quassel"))
 
 
+@pytest.mark.skipif(os.name == "nt", reason="der Unterprozess setzt nur sys.platform; unter Windows gewinnt os.name == 'nt' in config/state")
 def test_state_rundir_darwin():
     got = _module_attrs("darwin", "state", ["RUNDIR", "STATE"])
     # Application Support, NICHT Caches: Caches darf das System bei
@@ -65,6 +68,7 @@ def test_state_rundir_darwin():
     assert got["STATE"] == os.path.join(expect, "state.json")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="der Unterprozess setzt nur sys.platform; unter Windows gewinnt os.name == 'nt' in config/state")
 def test_state_rundir_linux_unchanged():
     got = _module_attrs("linux", "state", ["RUNDIR"])
     assert "Library" not in got["RUNDIR"]

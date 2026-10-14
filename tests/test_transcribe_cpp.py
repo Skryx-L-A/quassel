@@ -99,8 +99,9 @@ def test_health_requires_executable_binary_model_and_family(tmp_path):
     assert TranscribeCppBackend(binary=binary, model=other).health() is False
     assert TranscribeCppBackend(binary=binary, model=other,
                                 family="parakeet").health() is True
-    binary.chmod(0o644)   # nicht ausführbar
-    assert TranscribeCppBackend(binary=binary, model=model).health() is False
+    if os.name != "nt":   # Windows kennt kein Exec-Bit: os.access(X_OK) ist dort immer wahr
+        binary.chmod(0o644)   # nicht ausführbar
+        assert TranscribeCppBackend(binary=binary, model=model).health() is False
 
 
 def test_warmup_is_an_explicit_no_op(tmp_path):

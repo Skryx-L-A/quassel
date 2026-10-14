@@ -319,6 +319,7 @@ def test_cfg_timer_keeps_running_while_pill_disabled(pill):
 
 
 # ---------------------------------------------------------- daemon_active-Cache
+@pytest.mark.skipif(os.name == "nt", reason='daemon_active() ist unter Windows hart True (kein systemctl); der Cache-Zweig ist nur Linux')
 def test_daemon_active_caches_systemctl_result(monkeypatch):
     monkeypatch.setattr(pill_qt.sys, "platform", "linux")
     monkeypatch.setattr(pill_qt, "_daemon_active_cache",
@@ -339,6 +340,7 @@ def test_daemon_active_caches_systemctl_result(monkeypatch):
     assert len(calls) == 2
 
 
+@pytest.mark.skipif(os.name == "nt", reason='daemon_active() ist unter Windows hart True (kein systemctl); der Cache-Zweig ist nur Linux')
 def test_toggle_invalidates_cache_so_the_next_poll_does_not_revert_the_mode(pill, monkeypatch):
     """Regression: _toggle() schaltete self.on/mode von Hand, ließ den
     10s-Cache aber auf dem alten Wert stehen. tick() sah beim nächsten Poll

@@ -36,5 +36,6 @@ def test_history_file_stays_private(tmp_path, monkeypatch):
     import stat
     monkeypatch.setattr(config, "HISTORY", str(tmp_path / "history.jsonl"))
     config.history_append("x", history_days=7)
-    assert stat.S_IMODE(os.stat(config.HISTORY).st_mode) == 0o600
-    assert stat.S_IMODE(os.stat(config.HISTORY + ".lock").st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(os.stat(config.HISTORY).st_mode) == 0o600
+        assert stat.S_IMODE(os.stat(config.HISTORY + ".lock").st_mode) == 0o600

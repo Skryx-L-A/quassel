@@ -121,6 +121,7 @@ def _unit_exec(instance):
     return shlex.split(line)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="startet die systemd-ExecStart-Zeile über /bin/sh")
 @pytest.mark.parametrize("name", ["next", "test-2", "a"])
 def test_profile_unit_listens_on_the_profile_port(monkeypatch, name):
     import subprocess
@@ -137,6 +138,7 @@ def test_profile_unit_listens_on_the_profile_port(monkeypatch, name):
     assert "-m" in words and "/m.bin" in words
 
 
+@pytest.mark.skipif(os.name == "nt", reason='startet die systemd-ExecStart-Zeile über /bin/sh')
 def test_profile_unit_honours_quassel_port():
     import subprocess
     env = {"PATH": os.environ["PATH"], "QUASSEL_PROFILE": "next", "QUASSEL_PORT": "9123",

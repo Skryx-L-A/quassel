@@ -1,7 +1,12 @@
 """Profile control must never address the default Linux services."""
+import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.name == "nt", reason="bash bin/quassel-ctl mit #!/bin/sh-Shim und PATH /usr/bin:/bin")
 
 ROOT = Path(__file__).resolve().parents[1]
 

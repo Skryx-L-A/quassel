@@ -9,6 +9,8 @@ from quassel import daemon as daemon_mod
 
 
 def install(monkeypatch, d):
+    if not hasattr(daemon_mod.signal, "SIGUSR2"):   # Windows: der Test prüft den Thread, nicht das Signal
+        monkeypatch.setattr(daemon_mod.signal, "SIGUSR2", 12, raising=False)
     handlers = {}
     monkeypatch.setattr(daemon_mod.signal, "signal",
                         lambda sig, fn: handlers.__setitem__(sig, fn))

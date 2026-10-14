@@ -109,7 +109,7 @@ def test_profile_control_prefers_checkout_launcher(monkeypatch):
     monkeypatch.setattr(cli.shutil, "which", lambda _: "/old/quassel-ctl")
     monkeypatch.setattr(cli.subprocess, "run", run)
     assert cli._control("toggle") == 0
-    assert run.calls[0][0].endswith("/bin/quassel-ctl")
+    assert run.calls[0][0].endswith(os.path.join("bin", "quassel-ctl"))
 
 
 def test_invalid_profile_control_never_calls_installed_launcher(monkeypatch):

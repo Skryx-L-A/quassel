@@ -6,6 +6,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 
 def _load(monkeypatch, runtime):
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
@@ -20,6 +22,7 @@ def test_no_wayland_socket_leaves_display_unset(tmp_path, monkeypatch):
     assert "WAYLAND_DISPLAY" not in os.environ
 
 
+@pytest.mark.skipif(os.name == "nt", reason='AF_UNIX-Sockets gibt es in Pythons socket-Modul unter Windows nicht')
 def test_existing_wayland_socket_is_selected(tmp_path, monkeypatch):
     with tempfile.TemporaryDirectory(prefix=".wl-", dir=Path.cwd() / "tests") as runtime:
         path = Path(runtime) / "wayland-1"
@@ -51,6 +54,7 @@ def test_session_env_import_does_nothing_without_a_display(tmp_path, monkeypatch
     assert calls == []
 
 
+@pytest.mark.skipif(os.name == "nt", reason='bash bin/quassel-ctl mit #!/bin/sh-Shim und PATH /usr/bin:/bin')
 def test_quassel_ctl_imports_the_session_display_before_start(tmp_path):
     import subprocess
     root = Path(__file__).resolve().parents[1]

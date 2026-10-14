@@ -1331,6 +1331,8 @@ def test_sigusr2_handler_calls_panic_stop(monkeypatch):
     d = daemon_mod.Daemon.__new__(daemon_mod.Daemon)
     calls = []
     d.panic_stop = lambda *_: calls.append(1)
+    if not hasattr(daemon_mod.signal, "SIGUSR2"):   # Windows kennt das Signal nicht
+        monkeypatch.setattr(daemon_mod.signal, "SIGUSR2", 12, raising=False)
     handlers = {}
     monkeypatch.setattr(daemon_mod.signal, "signal",
                         lambda sig, fn: handlers.__setitem__(sig, fn))
@@ -1343,6 +1345,8 @@ def test_sigusr2_handler_calls_panic_stop(monkeypatch):
 def test_install_diagnostics_registers_sigusr1_only_on_mac(monkeypatch):
     from quassel import daemon as daemon_mod
     seen = []
+    if not hasattr(daemon_mod.signal, "SIGUSR1"):   # Windows kennt das Signal nicht
+        monkeypatch.setattr(daemon_mod.signal, "SIGUSR1", 10, raising=False)
     monkeypatch.setattr(daemon_mod.faulthandler, "enable",
                         lambda *a, **k: seen.append("enable"))
     monkeypatch.setattr(daemon_mod.faulthandler, "register",

@@ -43,6 +43,7 @@ def _exec_argv(name, home):
     return shlex.split(line)
 
 
+@pytest.mark.skipif(os.name == "nt", reason='startet die systemd-ExecStart-Zeile über /bin/sh mit #!/bin/sh-Shim')
 def test_template_runs_the_installed_launcher_with_the_profile(tmp_path):
     launcher = tmp_path / ".local" / "bin" / "quasseld"
     launcher.parent.mkdir(parents=True)
@@ -54,6 +55,7 @@ def test_template_runs_the_installed_launcher_with_the_profile(tmp_path):
     assert out.strip() == "profile=next"
 
 
+@pytest.mark.skipif(os.name == "nt", reason='startet die systemd-ExecStart-Zeile über /bin/sh mit #!/bin/sh-Shim')
 def test_template_honours_quasseld_bin(tmp_path):
     other = tmp_path / "checkout-quasseld"
     other.write_text('#!/bin/sh\necho "other $QUASSEL_PROFILE"\n')
@@ -133,6 +135,7 @@ def test_center_raw_back_signals_its_own_profile(monkeypatch):
     assert sent == [("kill", "-s", "HUP", "quasseld@next.service")]
 
 
+@pytest.mark.skipif(os.name == "nt", reason='Pill._toggle kehrt unter Windows vor systemctl zurück')
 def test_pill_toggle_of_a_profile_never_stops_the_shared_ydotoold(monkeypatch):
     monkeypatch.setenv("QUASSEL_PROFILE", "next")
     monkeypatch.setattr(pill_qt.sys, "platform", "linux")
@@ -151,6 +154,7 @@ def test_pill_toggle_of_a_profile_never_stops_the_shared_ydotoold(monkeypatch):
 PILL_UNIT = UNIT.with_name("quassel-pill@.service")
 
 
+@pytest.mark.skipif(os.name == "nt", reason='startet die systemd-ExecStart-Zeile über /bin/sh mit #!/bin/sh-Shim')
 def test_pill_template_runs_the_pill_with_the_profile(tmp_path):
     pill = tmp_path / ".local" / "bin" / "quassel-pill"
     pill.parent.mkdir(parents=True)

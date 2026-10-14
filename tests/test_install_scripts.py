@@ -19,12 +19,14 @@ def run_helper(*candidates):
 
 
 def test_python_helper_accepts_the_running_supported_python():
+    _need_posix_shell()
     result = run_helper(sys.executable)
     assert result.returncode == 0, result.stderr
     assert os.path.samefile(result.stdout.strip(), sys.executable)
 
 
 def test_python_helper_rejects_an_unsupported_candidate(tmp_path):
+    _need_posix_shell()
     old_python = tmp_path / "python3.9"
     old_python.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
     old_python.chmod(0o755)

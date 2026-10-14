@@ -280,9 +280,11 @@ def test_supervise_forgets_restarts_outside_the_window():
     assert mac.enabled is True
 
 
-def test_panic_signals_the_daemon():
+def test_panic_signals_the_daemon(monkeypatch):
     """Not-Aus aus dem Menü: SIGUSR2 an den Daemon-Prozess — er beendet die
     Aufnahme selbst, auch wenn sein Hotkey-Thread hängt."""
+    if not hasattr(signal, "SIGUSR2"):          # Windows kennt das Signal nicht
+        monkeypatch.setattr(signal, "SIGUSR2", 12, raising=False)
     mac = mac_app.MacApp(MagicMock())
     daemon = MagicMock()
     daemon.poll.return_value = None
@@ -361,6 +363,7 @@ def test_rotate_log_leaves_small_or_missing_logs_alone(tmp_path):
     assert not (tmp_path / "daemon.log.1").exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="O_APPEND wird an ein geerbtes Windows-Handle nicht weitergegeben; mac_app läuft nur unter macOS")
 def test_rotate_log_while_a_child_keeps_writing(tmp_path):
     """Wie der Daemon: ein eigener Kindprozess schreibt über einen geerbten
     O_APPEND-Dateideskriptor. Nach dem Rotieren landen seine Zeilen am Anfang

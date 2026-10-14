@@ -19,6 +19,8 @@ from quassel import beep, config  # noqa: E402
 
 @pytest.fixture
 def mac(monkeypatch):
+    if not hasattr(os, "getuid"):               # Windows: mac_autostart_set fragt die UID
+        monkeypatch.setattr(os, "getuid", lambda: 501, raising=False)
     monkeypatch.setattr(center, "IS_WINDOWS", False)
     monkeypatch.setattr(center, "IS_MAC", True)
 

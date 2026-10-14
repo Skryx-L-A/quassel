@@ -330,7 +330,8 @@ def test_stop_reaps_already_dead_child():
 
 def test_terminate_group_kills_group_and_reaps(monkeypatch):
     calls = []
-    monkeypatch.setattr(os, "killpg", lambda pgid, sig: calls.append((pgid, sig)))
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: calls.append((pgid, sig)),
+                        raising=False)      # Windows hat kein killpg
     proc = MagicMock()
     proc.pid = 4242
     server_mac.terminate_group(proc)
@@ -341,7 +342,7 @@ def test_terminate_group_kills_group_and_reaps(monkeypatch):
 def test_terminate_group_falls_back_when_killpg_fails(monkeypatch):
     def boom(pgid, sig):
         raise OSError("keine Gruppe")
-    monkeypatch.setattr(os, "killpg", boom)
+    monkeypatch.setattr(os, "killpg", boom, raising=False)   # Windows hat kein killpg
     proc = MagicMock()
     proc.pid = 4242
     server_mac.terminate_group(proc)
@@ -396,7 +397,8 @@ def test_start_writes_pid_file_of_own_child(tmp_path):
         path = server_mac._pid_path(4321)
         with open(path, encoding="utf-8") as f:
             assert f.read() == "4321\n"
-        assert os.stat(path).st_mode & 0o777 == 0o600
+        if os.name != "nt":
+            assert os.stat(path).st_mode & 0o777 == 0o600
     finally:
         server_mac._proc = None
 

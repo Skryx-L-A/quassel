@@ -137,7 +137,8 @@ def test_learned_words_stay_out_of_the_own_dictionary(store):
     with open(config.DICTIONARY, encoding="utf-8") as f:
         assert f.read() == "Alpha\n"
     assert config.dictionary_words(now=T0 + 3600) == ["Alpha", "PyTorch"]
-    assert oct(os.stat(config.LEARNED).st_mode & 0o777) == "0o600"
+    if os.name != "nt":
+        assert oct(os.stat(config.LEARNED).st_mode & 0o777) == "0o600"
 
 
 def test_learned_list_shows_origin(store):
