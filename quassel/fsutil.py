@@ -1,6 +1,25 @@
 """Dateisystem-Helfer, die keine Abhängigkeit auf andere Quassel-Module haben."""
 import os
 import threading
+import time
+
+# Windows: os.replace scheitert mit WinError 5 / 32, solange ein anderer Schreiber
+# oder Leser (Pille, Virenscanner, Indexer) das Ziel im selben Augenblick öffnet
+# oder ersetzt. Das ist kurz; ein paar Wiederholungen genügen.
+_REPLACE_TRIES = 20
+_REPLACE_PAUSE = 0.01
+
+
+def replace(tmp, path):
+    """os.replace mit Wiederholung bei kurzer Windows-Sperre."""
+    for attempt in range(_REPLACE_TRIES):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == _REPLACE_TRIES - 1:
+                raise
+            time.sleep(_REPLACE_PAUSE)
 
 
 def atomic_write(path, text, *, mode=None, encoding="utf-8"):
@@ -41,7 +60,7 @@ def atomic_write(path, text, *, mode=None, encoding="utf-8"):
             os.fsync(f.fileno())
         if keep_mode is not None:
             os.chmod(tmp, keep_mode)
-        os.replace(tmp, path)
+        replace(tmp, path)
     except BaseException:
         try:
             os.remove(tmp)

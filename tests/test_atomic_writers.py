@@ -68,17 +68,62 @@ def test_concurrent_writers_never_leave_a_mixed_file(tmp_path):
     target = str(tmp_path / "x.txt")
     texts = ["A" * 5000, "B" * 5000]
 
+    errors = []
+
     def work(text):
-        for _ in range(40):
-            fsutil.atomic_write(target, text)
+        try:
+            for _ in range(40):
+                fsutil.atomic_write(target, text)
+        except BaseException as exc:      # noqa: BLE001 — ein toter Schreiber zählt
+            errors.append(exc)
     threads = [threading.Thread(target=work, args=(t,)) for t in texts]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
+    assert errors == []
     with open(target, encoding="utf-8") as f:
         assert f.read() in texts
     assert [p.name for p in tmp_path.iterdir()] == ["x.txt"]
+
+
+def test_replace_retries_a_short_windows_lock(tmp_path, monkeypatch):
+    """Unter Windows lehnt os.replace mit PermissionError ab, solange ein anderer
+    das Ziel gerade öffnet oder ersetzt; nach kurzer Pause geht es."""
+    monkeypatch.setattr(fsutil.os, "name", "nt")
+    monkeypatch.setattr(fsutil.time, "sleep", lambda s: None)
+    real = os.replace
+    calls = []
+
+    def flaky(src, dst):
+        calls.append(src)
+        if len(calls) < 3:
+            raise PermissionError(13, "Access is denied")
+        real(src, dst)
+    monkeypatch.setattr(fsutil.os, "replace", flaky)
+    (tmp_path / "a.tmp").write_text("neu", encoding="utf-8")
+    fsutil.replace(str(tmp_path / "a.tmp"), str(tmp_path / "a.txt"))
+    assert len(calls) == 3
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "neu"
+
+
+def test_replace_gives_up_on_a_lasting_lock_and_never_retries_on_posix(tmp_path, monkeypatch):
+    monkeypatch.setattr(fsutil.time, "sleep", lambda s: None)
+    calls = []
+
+    def locked(src, dst):
+        calls.append(src)
+        raise PermissionError(13, "Access is denied")
+    monkeypatch.setattr(fsutil.os, "replace", locked)
+    monkeypatch.setattr(fsutil.os, "name", "posix")
+    with pytest.raises(PermissionError):
+        fsutil.replace("a", "b")
+    assert len(calls) == 1
+    calls.clear()
+    monkeypatch.setattr(fsutil.os, "name", "nt")
+    with pytest.raises(PermissionError):
+        fsutil.replace("a", "b")
+    assert len(calls) == fsutil._REPLACE_TRIES
 
 
 # ---------------------------------------------- jede Datei, die Quassel schreibt
