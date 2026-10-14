@@ -14,6 +14,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-14
+
 ### License
 - Quassel is free software now: GNU General Public License v3.0 or later. Use it
   for any purpose, study it, change it and share it. There is no commercial

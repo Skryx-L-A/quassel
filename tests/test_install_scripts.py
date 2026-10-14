@@ -149,7 +149,7 @@ def test_readme_matches_the_current_platform_behavior():
     assert "real microphone waveform" not in readme
     assert "turning Quassel off frees the GPU memory" not in readme
     assert "Windows build is fresh" not in readme
-    assert "latest (**v2.7.0**)" in readme
+    assert "latest (**v2.8.0**)" in readme
 
 
 def test_install_guide_lists_current_models_and_python_minimum():
