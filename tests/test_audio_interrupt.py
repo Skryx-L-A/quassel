@@ -91,9 +91,13 @@ def test_mac_no_first_block_counts_only_after_the_start_grace(raws, monkeypatch)
     st = Stream()
     rec = mac_recorder(monkeypatch, st)
     assert rec.start()
-    time.sleep(0.07)
-    assert rec.capture_interrupted() is None      # Bluetooth darf brauchen
-    time.sleep(0.1)
+    # Die Grenzen mit festen Zeitpunkten prüfen: ein echtes sleep(0.07) lief
+    # auf einem ausgelasteten CI-Runner schon über die 0,1 s hinaus.
+    started = rec.mac.started
+    assert rec.mac.interrupted(now=started + 0.07) is None   # Bluetooth darf brauchen
+    assert rec.mac.interrupted(now=started + 0.17) == "stalled"
+    # Und über den Recorder, wie die App fragt: nach Ablauf der Frist gemeldet.
+    time.sleep(0.17)
     assert rec.capture_interrupted() == "stalled"
     rec.stop()
 
