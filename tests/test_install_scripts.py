@@ -731,8 +731,7 @@ def test_pkgbuild_package_installs_every_launcher_unit_and_icon(tmp_path):
     for name in ("bin", "systemd", "desktop", "assets", "quassel"):
         shutil.copytree(ROOT / name, src / name,
                         ignore=shutil.ignore_patterns("__pycache__"))
-    for name in ("LICENSE", "ADDITIONAL-PERMISSIONS.md"):
-        shutil.copy(ROOT / name, src / name)
+    shutil.copy(ROOT / "LICENSE", src / "LICENSE")
     engine = tmp_path / "src" / "build-whisper" / "bin"
     engine.mkdir(parents=True)
     (engine / "whisper-server").write_text("#!/bin/sh\n")

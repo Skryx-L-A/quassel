@@ -253,8 +253,8 @@ STRINGS = {
     "nav_system": ("System", "System"),
     "sec_status": ("Status", "Status"),
     "about": ("About", "Über"),
-    "about_text": ("Quassel {version} — local, private voice typing.\nSource available (PolyForm Noncommercial 1.0.0).",
-                   "Quassel {version} — lokale, private Spracheingabe.\nQuelloffen (PolyForm Noncommercial 1.0.0)."),
+    "about_text": ("Quassel {version} — local, private voice typing.\nFree software (GNU GPL v3 or later).",
+                   "Quassel {version} — lokale, private Spracheingabe.\nFreie Software (GNU GPL v3 oder später)."),
     "repo": ("Project page", "Projektseite"),
     # --- Kommandos / Daemon ---
     "pressed_enter": ("Pressed Enter", "Eingabetaste gedrückt"),

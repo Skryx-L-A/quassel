@@ -20,7 +20,7 @@ pkgrel=1
 pkgdesc="Local, private voice typing — hold Ctrl+Meta, speak, release"
 arch=('x86_64')
 url="https://github.com/Skryx-L-A/quassel"
-license=('PolyForm-Noncommercial-1.0.0')
+license=('GPL-3.0-or-later')
 depends=('python' 'python-gobject' 'python-numpy' 'python-sounddevice'
          'pyside6' 'gtk4' 'gtk4-layer-shell' 'ydotool' 'wl-clipboard' 'xclip'
          'pipewire' 'libnotify' 'curl' 'gcc-libs')
@@ -96,6 +96,4 @@ package() {
     install -Dm644 /dev/stdin "$pkgdir/usr/lib/modules-load.d/quassel-uinput.conf"
 
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 ADDITIONAL-PERMISSIONS.md \
-    "$pkgdir/usr/share/licenses/$pkgname/ADDITIONAL-PERMISSIONS.md"
 }

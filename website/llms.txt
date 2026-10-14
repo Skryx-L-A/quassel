@@ -1,12 +1,12 @@
 # Quassel
 
-> Quassel is a free, source-available, 100% offline voice-to-text dictation app for Linux, Windows and macOS: hold a key, speak, release, and your words are typed wherever your cursor is — with no cloud, no account, and no audio ever leaving your computer.
+> Quassel is a free and open-source, 100% offline voice-to-text dictation app for Linux, Windows and macOS: hold a key, speak, release, and your words are typed wherever your cursor is — with no cloud, no account, and no audio ever leaving your computer.
 
-Quassel turns speech into text locally using OpenAI's Whisper models (via whisper.cpp) running on your own hardware. It works in any text field — editors, browsers, chat apps, and even terminals — and supports hold-to-talk or hands-free double-tap. It is source-available under the PolyForm Noncommercial License 1.0.0 and free for personal use.
+Quassel turns speech into text locally using OpenAI's Whisper models (via whisper.cpp) running on your own hardware. It works in any text field — editors, browsers, chat apps, and even terminals — and supports hold-to-talk or hands-free double-tap. It is free software under the GNU General Public License v3 or later.
 
 ## What sets it apart
 - **100% offline / private** — recording and speech recognition run entirely on-device. No cloud service, no account, no telemetry; it works with the network unplugged. (Most popular dictation tools — Wispr Flow, Aqua Voice, superwhisper — are cloud services or Mac-only paid apps.)
-- **Source available (PolyForm Noncommercial 1.0.0)** — the full source is on GitHub and auditable; free for personal use and for individuals' own work, no subscription.
+- **Free software (GNU GPL v3 or later)** — the full source is on GitHub and auditable; free for any use, no subscription.
 - **Types into a terminal** — unlike most dictation tools, Quassel can type directly into a terminal, as well as any other text field.
 - **~100 languages** — uses Whisper's multilingual models; understands around 100 languages, all transcribed locally.
 - **Cross-platform** — Linux (Fedora/Nobara, Ubuntu/Debian/Mint, Arch, openSUSE; Wayland or X11), Windows 10/11, and macOS (Apple Silicon).
@@ -24,7 +24,7 @@ People who want voice dictation without sending their voice to the cloud: privac
 - Type: desktop application (voice typing / speech-to-text dictation)
 - Platforms: Linux, Windows 10/11, macOS (Apple Silicon)
 - Speech engine: OpenAI Whisper via whisper.cpp, running locally
-- License: PolyForm Noncommercial 1.0.0 with additional permissions (free for personal use and individuals' own work; commercial license for organizations)
+- License: GNU General Public License v3.0 or later (GPL-3.0-or-later)
 - Price: free
 - Privacy: fully offline; no cloud, no account, no telemetry
 

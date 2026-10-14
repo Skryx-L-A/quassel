@@ -27,7 +27,8 @@ icons = os.path.join(repo, "assets", "icons")
 datas = [(os.path.join(repo, "assets", "quassel.svg"), "assets"),
          (os.path.join(repo, "assets", "quassel.png"), "assets"),
          (os.path.join(sounds, "start.wav"), "assets/sounds"),
-         (os.path.join(sounds, "stop.wav"), "assets/sounds")]
+         (os.path.join(sounds, "stop.wav"), "assets/sounds"),
+         (os.path.join(repo, "LICENSE"), ".")]
 datas += [(os.path.join(icons, f), "assets/icons")
           for f in sorted(os.listdir(icons)) if f.endswith(".png")]
 

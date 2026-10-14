@@ -14,6 +14,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### License
+- Quassel is free software now: GNU General Public License v3.0 or later. Use it
+  for any purpose, study it, change it and share it. There is no commercial
+  license any more, and contributions need only a sign-off (Developer
+  Certificate of Origin). Earlier versions keep their license: releases up to
+  2.7.0 are MIT, the commit tagged `last-agpl` is AGPL-3.0-only, the commit
+  tagged `last-polyform` is PolyForm Noncommercial 1.0.0. The macOS and Windows
+  packages now include the license text.
+
 ### Fixed
 - macOS: a dictation no longer waits 2 seconds when the microphone stream
   hangs while closing. In the installed app's log this hit about one dictation

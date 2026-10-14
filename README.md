@@ -2,10 +2,10 @@
 
 # Quassel — local, private voice typing
 
-**Hold `Ctrl+Meta` (Ctrl+Windows key), speak, release — your words are typed
-wherever your cursor is.** A clean, minimal pill at the bottom of your screen
-shows an animated listening indicator and a live transcript while you speak — inspired by the
-best commercial dictation apps, but **100 % offline and source-available**: speech
+**Hold `Ctrl+Meta` (Ctrl+Windows key; `Ctrl+Cmd` on a Mac), speak, release — your words
+are typed wherever your cursor is.** A clean, minimal pill at the bottom of your screen
+shows your live microphone level and a live transcript while you speak — inspired by the
+best commercial dictation apps, but **100 % offline and free software**: speech
 recognition runs locally via [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
 No cloud, no account, no subscription, no telemetry. What is stored where, and
 the few network connections that exist, are listed in [docs/PRIVACY.md](docs/PRIVACY.md).
@@ -35,13 +35,18 @@ one-line installer (unsigned — building from source is still available too, se
   entries are deleted after 7 days by default
 - **Works everywhere:** any GUI app *and* terminals; Wayland and X11
 - **Keyboard-layout safe:** pastes via clipboard — QWERTZ/AZERTY umlauts survive
-- **GPU accelerated:** NVIDIA (CUDA) and AMD/Intel (Vulkan) auto-detected
+- **GPU accelerated:** NVIDIA (CUDA) and AMD/Intel (Vulkan) auto-detected on
+  Linux and Windows, Metal on macOS
 - **Bilingual UI:** English and German, follows your system language
 - **Transcribe files:** pick an audio or video file in the control center and
   save the result as text, SRT or WebVTT, or use the command line to get plain
   text, JSON, or subtitles
 - **Raw text back:** after a cleaned-up dictation, put the unedited text on the
   clipboard from the menu (macOS, Windows), the control center or the command line
+- **Guided first start:** a short, skippable onboarding walks through the hotkey,
+  the permissions, a microphone test, the model status and a test dictation
+- **Says why the hotkey is blocked (macOS):** while Secure Input is on, for example
+  in a password field, the pill and the menu bar say so instead of staying silent
 
 ### Optional features — opt-in, default off
 
@@ -90,9 +95,10 @@ explained in [docs/CONFIG.md](docs/CONFIG.md).
 ## Why can't I just bind a normal shortcut?
 
 No desktop environment can bind a **modifier-only** combo like `Ctrl+Meta`.
-Quassel ships a small daemon that watches the keyboard at the evdev level
-(no root needed, via the `input` group) and drives the pipeline:
-record → transcribe locally → paste.
+Quassel watches the keyboard itself and drives the pipeline:
+record → transcribe locally → paste. On Linux a small daemon reads the keyboard at
+the evdev level (no root needed, via the `input` group); on macOS an event tap does
+it (Input Monitoring permission); on Windows a Raw Input listener.
 
 ## Platforms
 
@@ -143,7 +149,7 @@ Keep all parts in one folder, double-click the `.exe` to extract, then run
 `Quassel.exe`. Nothing is ever downloaded.
 
 > **Note:** the offline all-in-one packages are currently **v2.2.0** (an older
-> build); the quick installer above is **v2.4.0** — the Windows build has not
+> build); the quick installer above installs the **2.5.0** Windows build — the Windows build has not
 > caught up with the latest release yet, because it is built on Windows.
 
 > **Status:** the Windows build passed full hands-on testing (dictation,
@@ -270,8 +276,7 @@ existing audio files that are not WAV.
 
 Tips: a single short tap cancels; any other key while holding cancels (your
 normal shortcuts keep working); say "scratch that" / „lösch das" to delete the
-last dictation. On macOS, turning Quassel off stops dictation while the speech
-server remains loaded for a quick restart.
+last dictation. On macOS, turning Quassel off also unloads the speech server.
 
 ## Documentation
 
@@ -292,17 +297,13 @@ server remains loaded for a quick restart.
 
 ## License
 
-Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+Quassel is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of
+the License, or (at your option) any later version. See [LICENSE](LICENSE).
 
-- **Free to use** for personal and other noncommercial purposes, for study and
-  research, by educational, public and nonprofit institutions, and by individuals
-  for their own work, including professional work as freelancer or employee.
-  Organizations may evaluate the software for 60 days. Details:
-  [ADDITIONAL-PERMISSIONS.md](ADDITIONAL-PERMISSIONS.md).
-- **Commercial license required** for use by an organization, such as rolling it
-  out to staff, operating it for others or building it into a product or service:
-  [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
-- Versions up to the tag `last-agpl` remain available under AGPL-3.0-only.
+Earlier versions keep the license they were published under: releases up to `v2.7.0` are MIT,
+the commit tagged `last-agpl` is AGPL-3.0-only, and the commit tagged `last-polyform` is
+PolyForm Noncommercial 1.0.0.
 
 Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).
 

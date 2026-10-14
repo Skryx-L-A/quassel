@@ -18,6 +18,16 @@ def test_microphone_usage_description_is_bilingual():
     assert "Mikrofon" in spec and "microphone" in spec
 
 
+def test_binary_packages_ship_the_license_text():
+    # GPL-3.0-or-later: every binary distribution carries the license text.
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    mac = (root / "packaging/macos/Quassel.spec").read_text()
+    win = (root / "windows/quassel.spec").read_text()
+    assert '(os.path.join(repo, "LICENSE"), ".")' in mac
+    assert "(os.path.join(repo, 'LICENSE'), '.')" in win
+
+
 def _fake_bundle(tmp_path, with_server=True):
     """Minimale .app-Struktur: MacOS/Quassel + Resources/whisper/whisper-server."""
     contents = tmp_path / "Quassel.app" / "Contents"
