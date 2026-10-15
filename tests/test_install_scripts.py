@@ -101,6 +101,15 @@ def test_ci_gives_qt_what_it_needs_without_a_screen():
         assert lib in workflow, lib
 
 
+def test_ci_gives_qt_fonts_on_windows():
+    # Diagnostic run 38599301167, 14.10.: offscreen Qt on the Windows runner
+    # found no font at all (empty family), so check boxes measured too wide.
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8")
+    assert "if: runner.os == 'Windows'" in workflow
+    assert "QT_QPA_FONTDIR=C:\\Windows\\Fonts" in workflow
+
+
 def test_ci_runs_the_full_offline_pytest_suite():
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8")
