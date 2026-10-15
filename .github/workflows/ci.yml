@@ -24,9 +24,6 @@ jobs:
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    # The Windows suite has not run on a real runner yet. Until its first green
-    # run its jobs report without failing the workflow; then this line goes.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     env:
       PYTHONPATH: .
       # Qt draws into memory: the tests never need a window, and ubuntu-latest

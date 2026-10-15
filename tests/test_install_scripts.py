@@ -80,13 +80,13 @@ def test_ci_checks_every_shell_entrypoint_without_masking_shellcheck():
         not in workflow
 
 
-def test_ci_windows_jobs_do_not_block_until_a_first_green_run():
-    # Decision 14.10.: the Windows suite never ran on a real runner. Its jobs
-    # report but do not fail the workflow until the first green run; then this
-    # line goes and the jobs are required like the others.
+def test_ci_windows_jobs_are_required():
+    # Decision 14.10.: Windows did not block until its first green run. Run
+    # 38826003580 (16.10.) was green on all four Python versions, so a red
+    # Windows job fails the workflow like any other.
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8")
-    assert "continue-on-error: ${{ matrix.os == 'windows-latest' }}" in workflow
+    assert "continue-on-error" not in workflow
 
 
 def test_ci_gives_qt_what_it_needs_without_a_screen():
