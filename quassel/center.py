@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-    QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget,
+    QScrollArea, QSlider, QStackedWidget, QStyle, QVBoxLayout, QWidget,
 )
 
 from . import (__version__, ai, aimodes, beep, cleanup, config, diagnostics, dictprompt, fsutil,
@@ -403,6 +403,23 @@ class Center(QMainWindow):
         layout.addWidget(lbl)
         return lbl
 
+    def option(self, box, layout, *texts):
+        """Kästchen mit kurzem Text, darunter die Erklärung als umbrechendes
+        Label auf Höhe des Kästchentexts. QCheckBox bricht nicht um; ein ganzer
+        Satz im Kästchen machte die Seite ab 125 % breiter als das Fenster.
+        Bildschirmleser lesen die Erklärung als Beschreibung des Kästchens.
+        Das Label hat keinen Buddy und nimmt keinen Fokus: ein Klick darauf
+        schaltet nichts um, die Tab-Reihenfolge bleibt."""
+        text = " ".join(texts)
+        box.setAccessibleDescription(text)
+        layout.addWidget(box)
+        lbl = self.desc(text, layout)
+        style = box.style()
+        indent = (style.pixelMetric(QStyle.PM_IndicatorWidth, None, box)
+                  + style.pixelMetric(QStyle.PM_CheckBoxLabelSpacing, None, box))
+        lbl.setContentsMargins(indent, 0, 0, 0)
+        return lbl
+
     def labeled_row(self, label, widget, layout):
         """Beschriftung und Feld verknüpfen: Bildschirmleser nennen den Text,
         ein Klick auf die Beschriftung setzt den Fokus ins Feld."""
@@ -622,7 +639,7 @@ class Center(QMainWindow):
         self.pill_click_center = QCheckBox(tr("pill_click_center"))
         self.pill_click_center.setChecked(self.cfg.pill_click_opens_center)
         self.pill_click_center.toggled.connect(self.save_settings)
-        g.addWidget(self.pill_click_center)
+        self.option(self.pill_click_center, g, tr("pill_click_center_explain"))
         self.pill_preview = QCheckBox(tr("pill_preview"))
         self.pill_preview.setChecked(self.cfg.pill_preview)
         self.pill_preview.toggled.connect(self.save_settings)
@@ -677,8 +694,7 @@ class Center(QMainWindow):
         self.stream_on.setChecked(self.cfg.streaming)
         self.stream_on.toggled.connect(self.save_settings)
         self.stream_on.toggled.connect(self._sync_streaming_enabled)
-        g.addWidget(self.stream_on)
-        self.desc(tr("streaming_hint"), g)
+        self.option(self.stream_on, g, tr("streaming_explain"), tr("streaming_hint"))
         self.stream_mode = self.guard(QComboBox())
         for val, key in (("word", "streaming_word"), ("stable", "streaming_stable")):
             self.stream_mode.addItem(tr(key), val)
@@ -722,7 +738,7 @@ class Center(QMainWindow):
         self.punct = QCheckBox(tr("punctuation"))
         self.punct.setChecked(self.cfg.punctuation)
         self.punct.toggled.connect(self.save_settings)
-        g.addWidget(self.punct)
+        self.option(self.punct, g, tr("punctuation_explain"))
         self.cmds = QCheckBox(tr("commands"))
         self.cmds.setChecked(self.cfg.commands)
         self.cmds.toggled.connect(self.save_settings)
@@ -730,8 +746,7 @@ class Center(QMainWindow):
         self.progmode = QCheckBox(tr("programmer_enable"))
         self.progmode.setChecked(self.cfg.programmer_mode)
         self.progmode.toggled.connect(self.save_settings)
-        g.addWidget(self.progmode)
-        self.desc(tr("programmer_hint"), g)
+        self.option(self.progmode, g, tr("programmer_hint"))
 
         g = self.group(tr("model"), lay)
         self.model = self.guard(QComboBox())
@@ -797,8 +812,7 @@ class Center(QMainWindow):
         self.vad_autostop.setChecked(vs.autostop)
         self.vad_autostop.toggled.connect(self.save_settings)
         self.vad_autostop.toggled.connect(self._sync_vad_enabled)
-        g.addWidget(self.vad_autostop)
-        self.desc(tr("vad_autostop_hint"), g)
+        self.option(self.vad_autostop, g, tr("vad_autostop_hint"))
         self.vad_silence = self.guard(QDoubleSpinBox())
         self.vad_silence.setRange(*vad.AUTOSTOP_SILENCE_RANGE)
         self.vad_silence.setSingleStep(0.1)
@@ -843,8 +857,7 @@ class Center(QMainWindow):
         self.wake_on = QCheckBox(tr("wakeword_enable"))
         self.wake_on.setChecked(self.cfg.wakeword_enabled)
         self.wake_on.toggled.connect(self.save_settings)
-        g.addWidget(self.wake_on)
-        self.desc(tr("wakeword_hint"), g)
+        self.option(self.wake_on, g, tr("wakeword_hint"))
         self.wake_phrase = QLineEdit(self.cfg.wakeword_phrase)
         self.wake_phrase.setPlaceholderText(config.WAKEWORD_DEFAULT)
         self.wake_phrase.editingFinished.connect(self.save_settings)
@@ -869,7 +882,7 @@ class Center(QMainWindow):
         self.wake_verify = QCheckBox(tr("wake_verify"))
         self.wake_verify.setChecked(ws.verify)
         self.wake_verify.toggled.connect(self.save_settings)
-        g.addWidget(self.wake_verify)
+        self.option(self.wake_verify, g, tr("wake_verify_explain"))
 
         lay.addStretch(1)
         return scroll
@@ -953,8 +966,7 @@ class Center(QMainWindow):
         self.auto_learn = QCheckBox(tr("auto_learn"))
         self.auto_learn.setChecked(self.cfg.auto_learn)
         self.auto_learn.toggled.connect(self.save_settings)
-        g.addWidget(self.auto_learn)
-        self.desc(tr("auto_learn_hint"), g)
+        self.option(self.auto_learn, g, tr("auto_learn_hint"))
         self.learned_label = QLabel(tr("learned_title"))
         g.addWidget(self.learned_label)
         self.learned_list = QListWidget()
@@ -1148,8 +1160,7 @@ class Center(QMainWindow):
         self.ai_voice = QCheckBox(tr("ai_voice_enable"))
         self.ai_voice.setChecked(self.cfg.ai_voice_modes)
         self.ai_voice.toggled.connect(self.save_settings)
-        g.addWidget(self.ai_voice)
-        self.desc(tr("ai_voice_hint"), g)
+        self.option(self.ai_voice, g, tr("ai_voice_hint"))
         trow = QHBoxLayout()
         testb = QPushButton(tr("ai_test"))
         testb.clicked.connect(self.on_ai_test)
@@ -1317,7 +1328,7 @@ class Center(QMainWindow):
         self.hist_enable = QCheckBox(tr("history_enable"))
         self.hist_enable.setChecked(self.cfg.history_enabled)
         self.hist_enable.toggled.connect(self.save_settings)
-        g.addWidget(self.hist_enable)
+        self.option(self.hist_enable, g, tr("history_explain"))
         self.desc(tr("history_copy"), g)
         self.hist = QListWidget()
         self.hist.itemClicked.connect(self.on_hist_click)

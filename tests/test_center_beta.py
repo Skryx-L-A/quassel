@@ -255,14 +255,21 @@ def test_open_text_file_per_platform(monkeypatch, platform, qt_ok, expected):
     assert ok is (platform != "linux" or qt_ok)
 
 
+@pytest.mark.parametrize("scale", [1.0, 1.25])
 @pytest.mark.parametrize("lang", ["de", "en"])
-def test_no_page_needs_horizontal_scrolling(tmp_path, monkeypatch, qapp, lang):
+def test_no_page_needs_horizontal_scrolling(tmp_path, monkeypatch, qapp, lang, scale):
     """Lange Einträge (Dropdowns, Pfade) dürfen keine Seite breiter als das
-    Fenster machen; Deutsch hat die längeren Texte. Offscreen-Plattform:
+    Fenster machen; Deutsch hat die längeren Texte. 1,25-fache Schrift steht
+    für 125 % Skalierung bzw. größere Systemschrift. Offscreen-Plattform:
     kein sichtbares Fenster."""
     monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
     monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
     config.save({("ui", "language"): lang, ("system", "onboarded"): "true"})
+    base_font = qapp.font()
+    if scale != 1.0:
+        big = qapp.font()
+        big.setPointSizeF(base_font.pointSizeF() * scale)
+        qapp.setFont(big)
     c = center.Center()
     c.resize(760, 900)
     c.show()
@@ -283,5 +290,46 @@ def test_no_page_needs_horizontal_scrolling(tmp_path, monkeypatch, qapp, lang):
         assert too_wide == []
     finally:
         c.hide()
+        c.close()
+        qapp.setFont(base_font)
+        i18n.set_language(None)
+
+
+# Kästchentexte bleiben kurz; ein ganzer Satz steht als umbrechende Erklärung
+# darunter (QCheckBox bricht nicht um, die Seite würde sonst zu breit).
+CHECKBOX_TEXT_MAX = 40
+SPLIT_OPTIONS = ("pill_click_center", "stream_on", "punct", "progmode", "vad_autostop",
+                 "wake_on", "wake_verify", "auto_learn", "ai_voice", "hist_enable")
+
+
+@pytest.mark.parametrize("lang", ["de", "en"])
+def test_checkbox_texts_stay_short_and_split_options_explain(tmp_path, monkeypatch, qapp,
+                                                              lang):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QCheckBox, QLabel
+    monkeypatch.setattr(config, "CONFIG", str(tmp_path / "config.ini"))
+    monkeypatch.setattr(config, "CONFDIR", str(tmp_path))
+    config.save({("ui", "language"): lang, ("system", "onboarded"): "true"})
+    c = center.Center()
+    try:
+        too_long = [box.text() for box in c.findChildren(QCheckBox)
+                    if len(box.text()) > CHECKBOX_TEXT_MAX]
+        assert too_long == []
+        for name in SPLIT_OPTIONS:
+            box = getattr(c, name)
+            explain = box.accessibleDescription()
+            assert explain, name
+            labels = [lbl for lbl in box.parentWidget().findChildren(QLabel)
+                      if lbl.text() == explain]
+            assert len(labels) == 1, name
+            lbl = labels[0]
+            assert lbl.wordWrap() and lbl.objectName() == "desc"
+            assert lbl.contentsMargins().left() > 0           # auf Höhe des Kästchentexts
+            assert lbl.buddy() is None and lbl.focusPolicy() == Qt.NoFocus
+            before = box.isChecked()
+            QTest.mouseClick(lbl, Qt.LeftButton)
+            assert box.isChecked() is before, name             # Klick schaltet nicht um
+    finally:
         c.close()
         i18n.set_language(None)
