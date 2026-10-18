@@ -14,6 +14,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Quassel moves its speech server to a free port when another program already
+  uses port 8765, instead of failing or talking to the wrong program. It never
+  stops the other program. A port set with `QUASSEL_PORT` is still used as is;
+  if it is taken, Quassel says so. "Copy diagnostics" shows the port in use.
+- Windows: the installer is now built automatically on GitHub. These builds are
+  marked in the installer as not yet tested by hand on a real Windows computer.
+
+### Changed
+- Control center: options with a long description now have a short name next to
+  the check box and the explanation below it, so pages no longer scroll sideways
+  at 125 % scaling or with larger system text. Screen readers read the
+  explanation as the description of the check box.
+
+### Fixed
+- Windows: replacing settings, log and download files retries briefly when
+  another program (for example a virus scanner) holds the file for a moment.
+- macOS (Homebrew): installing the cask no longer prints a deprecation warning
+  with Homebrew 7.
+
 ## [2.8.0] - 2026-10-14
 
 ### License
