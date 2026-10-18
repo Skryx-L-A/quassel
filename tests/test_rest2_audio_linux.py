@@ -18,6 +18,7 @@ from quassel import audio
 @pytest.fixture
 def linux(tmp_path, monkeypatch):
     monkeypatch.setattr(audio.sys, "platform", "linux")
+    monkeypatch.setattr(audio, "IS_MAC", False)
     monkeypatch.setattr(audio, "RAW", str(tmp_path / "rec.raw"))
     monkeypatch.setattr(audio, "RAW_B", str(tmp_path / "rec-b.raw"))
     monkeypatch.setattr(audio, "RUNDIR", str(tmp_path))
