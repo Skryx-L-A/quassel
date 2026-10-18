@@ -26,7 +26,7 @@ import socket
 import subprocess
 import sys
 
-from . import __version__, config, profile
+from . import __version__, config, ports, profile
 
 REDACTED = "<entfernt>"
 LINE_REMOVED = "<entfernt: Zeile könnte diktierten Text enthalten>"
@@ -158,10 +158,19 @@ def part_version():
 def part_instance():
     return [
         "profile: %s" % (profile.name() or "default"),
-        "port: %d" % profile.port(),
+        *part_port(),
         "config dir: %s" % config.CONFDIR,
         "data dir: %s" % config.DATADIR,
     ]
+
+
+def part_port():
+    """Wirksamer Server-Port; wich Quassel aus, auch der Vorgabeport."""
+    port, base = ports.current(), ports.default()
+    lines = ["port: %d" % port]
+    if port != base:
+        lines.append("port note: default port %d was in use, chosen automatically" % base)
+    return lines
 
 
 def part_model():
@@ -200,7 +209,7 @@ def part_server():
     from . import whisperclient
     up = whisperclient.server_up(timeout=SERVER_TIMEOUT)
     return ["reachable: %s" % ("yes" if up else "no"),
-            "address: 127.0.0.1:%d" % profile.port()]
+            "address: 127.0.0.1:%d" % ports.current()]
 
 
 def part_profiles():

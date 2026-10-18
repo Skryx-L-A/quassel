@@ -23,6 +23,9 @@ def isolated_server_files(tmp_path, monkeypatch):
     monkeypatch.setattr(server.config, "DATADIR", str(tmp_path))
     monkeypatch.setattr(server, "PID_FILE", str(tmp_path / "server.pid.json"))
     monkeypatch.setattr(server, "LOG_FILE", str(tmp_path / "server.log"))
+    # Kein echter Port-Test: start() bekommt einen freien Port gemeldet.
+    monkeypatch.setattr(server.ports, "choose",
+                        lambda: server.ports.Choice(8765, server.ports.FREE))
 
 
 def test_start_uses_greedy_decode_with_nvidia(tmp_path):
@@ -130,3 +133,38 @@ def test_log_rotates_to_two_generations(tmp_path):
         out.write(b"new")
     assert open(server.LOG_FILE, "rb").read() == b"new"
     assert os.path.getsize(server.LOG_FILE + ".1") == 1024 * 1024
+
+
+def _start_with_choice(tmp_path, monkeypatch, choice):
+    exe = tmp_path / "whisper-server.exe"
+    exe.write_text("")
+    proc = MagicMock()
+    proc.pid = 4242
+    monkeypatch.setattr(server.ports, "choose", lambda: choice)
+    server._proc = None
+    try:
+        with patch.object(server, "server_exe", return_value=str(exe)), \
+             patch.object(server, "current_model", return_value="m.bin"), \
+             patch.object(server, "has_nvidia", return_value=False), \
+             patch.object(server, "vad_model_path", return_value=None), \
+             patch.object(subprocess, "Popen", return_value=proc) as popen:
+            server.start()
+        return popen
+    finally:
+        server._proc = None
+
+
+def test_start_uses_the_port_chosen_by_ports(tmp_path, monkeypatch):
+    import json
+    popen = _start_with_choice(tmp_path, monkeypatch,
+                               server.ports.Choice(8871, server.ports.FREE))
+    args = popen.call_args.args[0]
+    assert args[args.index("--port") + 1] == "8871"
+    with open(server.PID_FILE, encoding="utf-8") as f:
+        assert json.load(f)["port"] == 8871
+
+
+@pytest.mark.parametrize("status", ["ours", "busy"])
+def test_start_spawns_nothing_when_ours_runs_or_the_port_is_busy(tmp_path, monkeypatch, status):
+    popen = _start_with_choice(tmp_path, monkeypatch, server.ports.Choice(8871, status))
+    popen.assert_not_called()

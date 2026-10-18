@@ -5,7 +5,7 @@ import sys
 import urllib.parse
 import wave
 
-from . import profile
+from . import ports
 
 
 def silence_wav():
@@ -24,7 +24,8 @@ def functional_probe(timeout=3):
     if not whisperclient.server_up(timeout=min(timeout, 1)):
         return False
     url = urllib.parse.urlsplit(whisperclient.server_url())
-    if url.hostname != "127.0.0.1" or url.port != profile.port():
+    port = ports.current()
+    if url.hostname != "127.0.0.1" or url.port != port:
         return False
     boundary = "quassel-probe"
     body = (b"--quassel-probe\r\n"
@@ -33,7 +34,7 @@ def functional_probe(timeout=3):
             b"\r\n--quassel-probe\r\n"
             b'Content-Disposition: form-data; name="response_format"\r\n\r\n'
             b"text\r\n--quassel-probe--\r\n")
-    conn = http.client.HTTPConnection("127.0.0.1", profile.port(), timeout=timeout)
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
     try:
         conn.request("POST", url.path.rstrip("/") + "/inference", body,
                      {"Content-Type": "multipart/form-data; boundary=" + boundary})

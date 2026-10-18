@@ -166,7 +166,7 @@ def _fake_whisper_server(monkeypatch):
     for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("no_proxy", "127.0.0.1")
-    monkeypatch.setattr(wc, "SERVER", "http://127.0.0.1:%d" % srv.server_port)
+    monkeypatch.setattr(wc, "server_base", lambda: "http://127.0.0.1:%d" % srv.server_port)
     return srv, bodies
 
 
@@ -230,15 +230,15 @@ def test_server_up_true_when_probe_succeeds(monkeypatch):
     probe = _FakeProbe()
     monkeypatch.setattr(wc, "_probe", probe)
     assert wc.server_up(timeout=3) is True
-    assert probe.calls == [(wc.SERVER + "/", 3)]
+    assert probe.calls == [(wc.server_base() + "/", 3)]
     assert wc.server_was_up() is True
 
 
 def test_server_url_uses_only_a_safe_stored_request_path(monkeypatch):
     monkeypatch.setattr(wc.config, "read_serverenv", lambda: {"REQUEST_PATH": "/q/random"})
-    assert wc.server_url() == wc.SERVER + "/q/random"
+    assert wc.server_url() == wc.server_base() + "/q/random"
     monkeypatch.setattr(wc.config, "read_serverenv", lambda: {"REQUEST_PATH": "https://bad"})
-    assert wc.server_url() == wc.SERVER
+    assert wc.server_url() == wc.server_base()
 
 
 def test_server_up_false_on_any_exception(monkeypatch):

@@ -22,7 +22,7 @@ import json
 import io
 import threading
 
-from .. import config, hwdetect, profile
+from .. import config, hwdetect, ports
 from ..net import download
 from ..whisperclient import server_up
 
@@ -365,6 +365,12 @@ def start():
     model = current_model()
     if not exe or not model:
         return
+    # Läuft unser Server schon (OURS) oder ist kein Port frei bzw. QUASSEL_PORT
+    # belegt (BUSY, Meldung aus ports.choose()): keinen zweiten starten.
+    # Hält ein fremder Dienst den Vorgabeport, weicht choose() aus.
+    choice = ports.choose()
+    if choice.status != ports.FREE:
+        return
     server_env = config.read_serverenv()
     request_path = server_env.get("REQUEST_PATH", "")
     if not request_path and _supports_request_path(exe):
@@ -389,7 +395,7 @@ def start():
     threads = str(min(8, os.cpu_count() or 4))
     decode = ["-bs", "1"] if has_nvidia() else ["-nf"]
     args = [exe, "-m", model, "-t", threads, *decode,
-            "--host", "127.0.0.1", "--port", str(profile.port()), "-l", "auto", "-nt"]
+            "--host", "127.0.0.1", "--port", str(choice.port), "-l", "auto", "-nt"]
     if request_path and _supports_request_path(exe):
         args += ["--request-path", request_path]
     vad = vad_model_path()
@@ -405,7 +411,7 @@ def start():
     if isinstance(_proc.stdout, io.IOBase):
         threading.Thread(target=_drain_log, args=(_proc.stdout,), daemon=True).start()
     if isinstance(_proc.pid, int):
-        _write_pid(_proc.pid, exe, profile.port())
+        _write_pid(_proc.pid, exe, choice.port)
 
 
 def stop():
@@ -441,7 +447,7 @@ def restart_owned():
         try:
             with open(PID_FILE, encoding="utf-8") as source:
                 record = json.load(source)
-            owned = (record.get("port") == profile.port()
+            owned = (record.get("port") == ports.current()
                      and _owned_orphan(record))
         except (OSError, ValueError, TypeError, AttributeError):
             return False

@@ -1,6 +1,6 @@
 """macOS-Entry-Point: startet Quassel als EINE App in drei Teilen.
 
-  * whisper-server  — Kindprozess (server_mac, Port 8765, Metal)
+  * whisper-server  — Kindprozess (server_mac, Port 8765 oder ein freier aus ports.py, Metal)
   * quassel.daemon  — Kindprozess (CGEventTap-Hotkey, Aufnahme, Einfügen);
                       eigener Prozess wie auf Linux (dort systemd), so bleibt
                       der Qt-Event-Loop frei und ein Daemon-Absturz reißt

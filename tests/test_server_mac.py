@@ -9,7 +9,11 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from quassel import config, fsutil, server_mac, state
+from quassel import config, fsutil, ports, server_mac, state
+
+# ports.choose() ersetzt: die Tests proben nie einen echten Port.
+_FREE = ports.Choice(8765, ports.FREE)
+_OURS = ports.Choice(8765, ports.OURS)
 
 
 @pytest.fixture(autouse=True)
@@ -228,7 +232,7 @@ def test_start_spawns_server_and_is_idempotent(tmp_path):
     server_mac._proc = None
     try:
         with patch.object(server_mac, "ensure_env", return_value=True), \
-             patch.object(server_mac, "port_in_use", return_value=False), \
+             patch.object(server_mac.ports, "choose", return_value=_FREE), \
              patch.object(config, "read_serverenv", return_value=env), \
              patch.object(subprocess, "Popen", return_value=proc) as popen:
             assert server_mac.start() is True
@@ -249,7 +253,7 @@ def test_start_cwd_guard_for_bare_binary_name():
     server_mac._proc = None
     try:
         with patch.object(server_mac, "ensure_env", return_value=True), \
-             patch.object(server_mac, "port_in_use", return_value=False), \
+             patch.object(server_mac.ports, "choose", return_value=_FREE), \
              patch.object(config, "read_serverenv", return_value=env), \
              patch.object(subprocess, "Popen", return_value=proc) as popen:
             assert server_mac.start() is True
@@ -261,7 +265,7 @@ def test_start_cwd_guard_for_bare_binary_name():
 
 def test_start_skips_spawn_when_port_already_bound():
     server_mac._proc = None
-    with patch.object(server_mac, "port_in_use", return_value=True), \
+    with patch.object(server_mac.ports, "choose", return_value=_OURS), \
          patch.object(subprocess, "Popen") as popen:
         assert server_mac.start() is True
     popen.assert_not_called()
@@ -272,7 +276,7 @@ def test_start_reaps_dead_child():
     dead.poll.return_value = 1
     server_mac._proc = dead
     try:
-        with patch.object(server_mac, "port_in_use", return_value=False), \
+        with patch.object(server_mac.ports, "choose", return_value=_FREE), \
              patch.object(server_mac, "ensure_env", return_value=False):
             assert server_mac.start() is False
         dead.wait.assert_called_once()            # Zombie geerntet
@@ -282,7 +286,7 @@ def test_start_reaps_dead_child():
 
 def test_start_fails_without_env():
     server_mac._proc = None
-    with patch.object(server_mac, "port_in_use", return_value=False), \
+    with patch.object(server_mac.ports, "choose", return_value=_FREE), \
          patch.object(server_mac, "ensure_env", return_value=False):
         assert server_mac.start() is False
 
@@ -293,7 +297,7 @@ def test_port_in_use_real_socket(monkeypatch):
     srv.bind(("127.0.0.1", 0))
     srv.listen(1)
     port = srv.getsockname()[1]
-    monkeypatch.setattr(server_mac, "PORT", str(port))
+    monkeypatch.setattr(server_mac.ports, "current", lambda: port)
     try:
         assert server_mac.port_in_use() is True
     finally:
@@ -390,7 +394,7 @@ def test_start_writes_pid_file_of_own_child(tmp_path):
     server_mac._proc = None
     try:
         with patch.object(server_mac, "ensure_env", return_value=True), \
-             patch.object(server_mac, "port_in_use", return_value=False), \
+             patch.object(server_mac.ports, "choose", return_value=_FREE), \
              patch.object(config, "read_serverenv", return_value=_start_env(binpath)), \
              patch.object(subprocess, "Popen", return_value=_own_child(4321)):
             assert server_mac.start() is True
@@ -417,7 +421,7 @@ def test_two_starts_each_keep_their_own_pid_file(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", _fake_ps({"4001": argv, "4002": argv}))
     try:
         with patch.object(server_mac, "ensure_env", return_value=True), \
-             patch.object(server_mac, "port_in_use", return_value=False), \
+             patch.object(server_mac.ports, "choose", return_value=_FREE), \
              patch.object(config, "read_serverenv", return_value=_start_env(binpath)), \
              patch.object(subprocess, "Popen",
                           side_effect=[_own_child(4001), _own_child(4002)]):
@@ -504,7 +508,7 @@ def test_start_survives_pid_write_error():
     server_mac._proc = None
     try:
         with patch.object(server_mac, "ensure_env", return_value=True), \
-             patch.object(server_mac, "port_in_use", return_value=False), \
+             patch.object(server_mac.ports, "choose", return_value=_FREE), \
              patch.object(config, "read_serverenv", return_value=env), \
              patch.object(fsutil, "atomic_write", side_effect=OSError("disk full")), \
              patch.object(subprocess, "Popen", return_value=_own_child(4321)) as popen:

@@ -14,7 +14,7 @@ def _reload(env):
         for m in (profile, config, state, whisperclient):
             importlib.reload(m)
         return (profile.name(), profile.port(), config.CONFDIR, config.DATADIR,
-                config.MODELDIR, state.RUNDIR, whisperclient.SERVER)
+                config.MODELDIR, state.RUNDIR, whisperclient.server_base())
 
 
 class ProfileTest(unittest.TestCase):

@@ -11,12 +11,11 @@ import urllib.parse
 import uuid
 import wave
 
-from . import config, dictprompt, profile
+from . import config, dictprompt, ports, profile
 
 # Windows öffnet sonst für jeden curl-Aufruf kurz ein Konsolenfenster
 NOWIN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
-SERVER = f"http://127.0.0.1:{profile.port()}"
 SERVICE = profile.service()
 
 
@@ -40,12 +39,19 @@ _server_seen = False       # war der Server in dieser Sitzung schon erreichbar?
 _probe = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+def server_base():
+    """Adresse des Servers. Der Port kommt bei jedem Aufruf aus
+    ports.current(): der Server kann nach einer Belegung ausgewichen sein."""
+    return f"http://127.0.0.1:{ports.current()}"
+
+
 def server_url():
     """Local server URL, with the per-installation opaque request prefix."""
+    base = server_base()
     path = config.read_serverenv().get("REQUEST_PATH", "").strip()
     if path and path.startswith("/") and "?" not in path and "#" not in path:
-        return SERVER + path.rstrip("/")
-    return SERVER
+        return base + path.rstrip("/")
+    return base
 
 
 def server_up(timeout=2):

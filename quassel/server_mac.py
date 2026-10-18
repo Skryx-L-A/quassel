@@ -25,10 +25,10 @@ import sys
 import io
 import threading
 
-from . import config, fsutil, hwdetect, profile, state
+from . import config, fsutil, hwdetect, ports, state
 
 MODEL_DIR = config.MODELDIR
-HOST, PORT = "127.0.0.1", str(profile.port())
+HOST = "127.0.0.1"
 
 _proc = None
 _request_path_support = {}
@@ -209,8 +209,10 @@ def ensure_env():
     return bool(env.get("SERVER_BIN")) and current_model() is not None
 
 
-def build_args(env):
-    """Serverargumente aus server.env (Spiegel der systemd-ExecStart-Zeile)."""
+def build_args(env, port=None):
+    """Serverargumente aus server.env (Spiegel der systemd-ExecStart-Zeile).
+    port: von ports.choose() gewählt; ohne Angabe der wirksame Port."""
+    port = ports.current() if port is None else port
     args = [env["SERVER_BIN"], "-m", env["MODEL_PATH"],
             "-t", env.get("WHISPER_THREADS", "4")]
     # Even an older/custom server.env must not enable transcript printing in
@@ -221,7 +223,7 @@ def build_args(env):
     vad = env.get("VAD_MODEL", "")
     if vad and os.path.exists(vad):
         args += ["--vad", "--vad-model", vad]
-    args += ["--host", HOST, "--port", PORT, "-l", "auto", "-nt"]
+    args += ["--host", HOST, "--port", str(port), "-l", "auto", "-nt"]
     request_path = env.get("REQUEST_PATH", "")
     if request_path and _supports_request_path(env.get("SERVER_BIN", "")):
         args += ["--request-path", request_path]
@@ -243,9 +245,10 @@ def _supports_request_path(binary):
 
 
 def port_in_use(timeout=0.5):
-    """True, wenn auf 127.0.0.1:8765 schon etwas antwortet (Connect-Test)."""
+    """True, wenn auf dem wirksamen Port (ports.current()) schon etwas
+    antwortet (Connect-Test)."""
     try:
-        with socket.create_connection((HOST, int(PORT)), timeout=timeout):
+        with socket.create_connection((HOST, ports.current()), timeout=timeout):
             return True
     except OSError:
         return False
@@ -254,16 +257,21 @@ def port_in_use(timeout=0.5):
 def start():
     """whisper-server starten (idempotent). Wird auch von
     whisperclient.STARTER gerufen, wenn der Server nicht erreichbar ist.
-    Läuft schon ein Server auf dem Port (z.B. vom mac_app-Prozess gestartet,
-    während wir im Daemon-Prozess sind), wird KEIN zweiter gespawnt."""
+    Läuft schon unser Server (z.B. vom mac_app-Prozess gestartet, während
+    wir im Daemon-Prozess sind), wird KEIN zweiter gespawnt. Hält ein fremder
+    Dienst den Vorgabeport, wählt ports.choose() einen freien; ist auch das
+    nicht möglich (oder QUASSEL_PORT fest und belegt), startet nichts."""
     global _proc
     if _proc is not None:
         if _proc.poll() is None:
             return True
         _proc.wait()          # von selbst gestorbenes Kind ernten (kein Zombie)
         _proc = None
-    if port_in_use():
+    choice = ports.choose()
+    if choice.status == ports.OURS:
         return True
+    if choice.status == ports.BUSY:      # Meldung kommt aus ports.choose()
+        return False
     if not ensure_env():
         print("server_mac: kein Server-Binary oder Modell gefunden",
               file=sys.stderr, flush=True)
@@ -272,7 +280,7 @@ def start():
     # Upstream examples/server/server.cpp defaults print_realtime and
     # print_progress to false. build_args removes -pr/-pp from config too.
     _proc = subprocess.Popen(
-        build_args(env), cwd=os.path.dirname(env["SERVER_BIN"]) or None,
+        build_args(env, choice.port), cwd=os.path.dirname(env["SERVER_BIN"]) or None,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         start_new_session=True)
     _write_pid(_proc.pid)
@@ -314,7 +322,8 @@ def stop():
 
 def _is_own_server(pid, binpath):
     """Läuft unter dieser PID noch unser Server? argv muss mit dem Binärpfad
-    beginnen und --port PORT als eigenes Argumentpaar enthalten."""
+    beginnen und --port mit dem Vorgabeport oder dem gewählten Port dieses
+    Profils als eigenes Argumentpaar enthalten."""
     ps = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
                         capture_output=True, text=True, check=False)
     argv = ps.stdout.strip()
@@ -324,7 +333,8 @@ def _is_own_server(pid, binpath):
     words = rest.split()
     # Port als eigenes Argument, nicht als Teilstring: ein Profil auf
     # einem anderen Port darf nie den Server der installierten App treffen.
-    return any(a == "--port" and b == str(PORT) for a, b in zip(words, words[1:]))
+    own = {str(ports.default()), str(ports.current())}
+    return any(a == "--port" and b in own for a, b in zip(words, words[1:]))
 
 
 def kill_orphans():

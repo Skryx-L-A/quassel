@@ -26,7 +26,7 @@ def test_probe_posts_silence_to_profile_path(monkeypatch):
 
     monkeypatch.setattr(whisperclient, "server_up", lambda timeout: True)
     monkeypatch.setattr(whisperclient, "server_url", lambda: "http://127.0.0.1:8765/q/secret")
-    monkeypatch.setattr(selfheal.profile, "port", lambda: 8765)
+    monkeypatch.setattr(selfheal.ports, "current", lambda: 8765)
     monkeypatch.setattr(selfheal.http.client, "HTTPConnection", Connection)
     assert selfheal.functional_probe()
     method, path, body, _ = calls[1]
