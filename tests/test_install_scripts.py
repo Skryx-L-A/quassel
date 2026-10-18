@@ -120,7 +120,7 @@ def test_ci_runs_the_full_offline_pytest_suite():
 def test_uninstaller_removes_every_user_file_and_asks_before_system_changes():
     uninstaller = (ROOT / "uninstall.sh").read_text(encoding="utf-8")
     for launcher in ("quasseld", "quassel-type", "quassel-pill", "quassel-ctl",
-                     "quassel-python", "quassel-type-cli"):
+                     "quassel-python", "quassel-type-cli", "quassel-server-port"):
         assert f'"$BIN"/{launcher}' in uninstaller
     assert "quassel-voice.svg" in uninstaller
     assert "quassel-voice.png" in uninstaller
@@ -761,7 +761,7 @@ def test_pkgbuild_package_installs_every_launcher_unit_and_icon(tmp_path):
     pkg = tmp_path / "pkg"
 
     for launcher in ("quasseld", "quassel-type", "quassel-pill", "quassel-ctl",
-                     "quassel-python", "quassel-type-cli"):
+                     "quassel-python", "quassel-type-cli", "quassel-server-port"):
         text = (pkg / "usr" / "bin" / launcher).read_text(encoding="utf-8")
         assert ".local/lib/quassel" not in text
     assert "/usr/lib/quassel" in (pkg / "usr/bin/quasseld").read_text(encoding="utf-8")
