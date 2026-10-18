@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Vor dem Start von quassel-server (ExecStartPre): freien Port wählen und in
+# die Laufzeitdatei legen (quassel/ports.py). Scheitert das, startet die Unit
+# auf dem Vorgabeport wie bisher.
+export PYTHONPATH="$HOME/.local/lib/quassel${PYTHONPATH:+:$PYTHONPATH}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$("$HERE/quassel-python" "$HOME/.local/share/quassel/venv/bin/python3" \
+    python3.13 python3.12 python3.11 python3.10 python3)" || exit 1
+exec "$PY" -m quassel.ports

@@ -1,15 +1,20 @@
 [Unit]
 Description=Whisper.cpp speech-to-text server (for Quassel)
 
+# Port 8765 unless another program holds it: quassel-server-port
+# (quassel/ports.py) then picks a free one and writes it to the runtime file
+# %t/quassel/server.port, which ExecStart and all clients read. Without that
+# file (helper missing or failed) the server stays on QUASSEL_PORT or 8765.
 [Service]
 Type=simple
 EnvironmentFile=-%h/.config/quassel/server.env
-ExecStart=/bin/sh -c 'exec "${SERVER_BIN:-whisper-server}" -m "$MODEL_PATH" -t "${WHISPER_THREADS:-4}" ${WHISPER_DECODE:--nf} ${VAD_MODEL:+--vad --vad-model "$VAD_MODEL"} ${REQUEST_PATH:+--request-path "$REQUEST_PATH"} --host 127.0.0.1 --port 8765 -l auto -nt'
+ExecStartPre=-%h/.local/bin/quassel-server-port
+ExecStart=/bin/sh -c 'PORT="$(cat "%t/quassel/server.port" 2>/dev/null)"; case "$PORT" in ""|*[!0-9]*) PORT="${QUASSEL_PORT:-8765}" ;; esac; exec "${SERVER_BIN:-whisper-server}" -m "$MODEL_PATH" -t "${WHISPER_THREADS:-4}" ${WHISPER_DECODE:--nf} ${VAD_MODEL:+--vad --vad-model "$VAD_MODEL"} ${REQUEST_PATH:+--request-path "$REQUEST_PATH"} --host 127.0.0.1 --port "$PORT" -l auto -nt'
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/.local/share/quassel %h/.config/quassel
+ReadWritePaths=%h/.local/share/quassel %h/.config/quassel -%t/quassel
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

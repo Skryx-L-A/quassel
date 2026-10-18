@@ -3,17 +3,20 @@ Description=Whisper.cpp speech-to-text server for the Quassel profile %i
 
 # Second Quassel next to the installed one (QUASSEL_PROFILE=%i): own config,
 # own port, shared models. The port follows quassel/profile.py port():
-# 8766 + crc32(name) mod 100, unless QUASSEL_PORT is set in server.env.
+# 8766 + crc32(name) mod 100, unless QUASSEL_PORT is set in server.env. If
+# another program holds that port, quassel-server-port picks a free one and
+# writes it to %t/quassel-%i/server.port, which ExecStart and the clients read.
 [Service]
 Type=simple
 Environment=QUASSEL_PROFILE=%i
 EnvironmentFile=-%h/.config/quassel-%i/server.env
-ExecStart=/bin/sh -c 'PORT="${QUASSEL_PORT:-$(python3 -c "import sys, zlib; print(8766 + zlib.crc32(sys.argv[1].encode()) %% 100)" "$QUASSEL_PROFILE")}"; exec "${SERVER_BIN:-whisper-server}" -m "$MODEL_PATH" -t "${WHISPER_THREADS:-4}" ${WHISPER_DECODE:--nf} ${VAD_MODEL:+--vad --vad-model "$VAD_MODEL"} ${REQUEST_PATH:+--request-path "$REQUEST_PATH"} --host 127.0.0.1 --port "$PORT" -l auto -nt'
+ExecStartPre=-%h/.local/bin/quassel-server-port
+ExecStart=/bin/sh -c 'PORT="$(cat "%t/quassel-%i/server.port" 2>/dev/null)"; case "$PORT" in ""|*[!0-9]*) PORT="${QUASSEL_PORT:-$(python3 -c "import sys, zlib; print(8766 + zlib.crc32(sys.argv[1].encode()) %% 100)" "$QUASSEL_PROFILE")}" ;; esac; exec "${SERVER_BIN:-whisper-server}" -m "$MODEL_PATH" -t "${WHISPER_THREADS:-4}" ${WHISPER_DECODE:--nf} ${VAD_MODEL:+--vad --vad-model "$VAD_MODEL"} ${REQUEST_PATH:+--request-path "$REQUEST_PATH"} --host 127.0.0.1 --port "$PORT" -l auto -nt'
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=-%h/.local/share/quassel-%i -%h/.config/quassel-%i
+ReadWritePaths=-%h/.local/share/quassel-%i -%h/.config/quassel-%i -%t/quassel-%i
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

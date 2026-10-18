@@ -90,6 +90,7 @@ EOF
   echo "exec \"$PY\" -m quassel.pill_qt \"\$@\""; } > "$BIN/quassel-pill"
 { echo '#!/usr/bin/env bash'; common_env; echo "exec \"$PY\" -m quassel.center \"\$@\""; } > "$BIN/quassel-type"
 { echo '#!/usr/bin/env bash'; common_env; echo "exec \"$PY\" -m quassel.cli \"\$@\""; } > "$BIN/quassel-type-cli"
+{ echo '#!/usr/bin/env bash'; common_env; echo "exec \"$PY\" -m quassel.ports"; } > "$BIN/quassel-server-port"
 { echo '#!/usr/bin/env bash'
   echo 'if [[ -n "${QUASSEL_PROFILE:-}" ]]; then echo "Profile control is unavailable in this offline bundle" >&2; exit 2; fi'
   echo "case \"\${1:-}\" in"
@@ -97,7 +98,8 @@ EOF
   echo "  stop)  systemctl --user stop quasseld quassel-server quassel-ydotoold ;;"
   echo "  *) echo 'Aufruf: quassel-ctl start|stop' ;;"
   echo "esac"; } > "$BIN/quassel-ctl"
-chmod +x "$BIN/quasseld" "$BIN/quassel-pill" "$BIN/quassel-type" "$BIN/quassel-type-cli" "$BIN/quassel-ctl"
+chmod +x "$BIN/quasseld" "$BIN/quassel-pill" "$BIN/quassel-type" "$BIN/quassel-type-cli" "$BIN/quassel-ctl" \
+    "$BIN/quassel-server-port"
 ok "Launcher in $BIN"
 
 # ---------------------------------------------------------------------------
@@ -110,7 +112,11 @@ Description=Whisper.cpp speech-to-text server (for Quassel)
 [Service]
 Type=simple
 EnvironmentFile=-%h/.config/quassel/server.env
-ExecStart=/bin/sh -c 'exec "\${SERVER_BIN}" -m "\$MODEL_PATH" --host 127.0.0.1 --port 8765 -l auto -nt'
+# Port 8765, außer ein fremdes Programm hält ihn: quassel-server-port
+# (quassel/ports.py) wählt dann einen freien und legt ihn nach
+# %t/quassel/server.port, wo ExecStart und alle Clients ihn lesen.
+ExecStartPre=-$BIN/quassel-server-port
+ExecStart=/bin/sh -c 'PORT="\$(cat "%t/quassel/server.port" 2>/dev/null)"; case "\$PORT" in ""|*[!0-9]*) PORT="\${QUASSEL_PORT:-8765}" ;; esac; exec "\${SERVER_BIN}" -m "\$MODEL_PATH" --host 127.0.0.1 --port "\$PORT" -l auto -nt'
 Restart=on-failure
 RestartSec=3
 EOF
