@@ -198,7 +198,7 @@ runtime included; the NVIDIA driver is used from your system) and **all** speech
 models — nothing is ever downloaded. Runs on x86_64 with glibc ≥ 2.28.
 
 > **Note:** newer releases do not ship offline packages. The quick installer /
-> `git clone … && ./install.sh` above give the latest (**v2.8.0**).
+> `git clone … && ./install.sh` above give the latest (**v2.9.0**).
 
 > **Tested:** Fedora / Nobara (daily driver). **Untested but prepared:**
 > Ubuntu/Debian/Mint, Arch and openSUSE — the package lists are verified in

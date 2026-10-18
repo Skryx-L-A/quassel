@@ -4,7 +4,7 @@
 ; Die Version kommt im CI per "iscc /DMyAppVersion=..." aus quassel/__init__.py;
 ; dieser Wert gilt nur fuer einen Bau von Hand.
 #ifndef MyAppVersion
-  #define MyAppVersion "2.8.0"
+  #define MyAppVersion "2.9.0"
 #endif
 #define MyAppPublisher "Skryx-L-A"
 #define MyAppURL "https://github.com/Skryx-L-A/quassel"

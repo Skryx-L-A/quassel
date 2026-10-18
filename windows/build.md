@@ -22,7 +22,7 @@ From the repository root in PowerShell:
 ```powershell
 py -3.13 -m pip install --requirement windows\requirements-build.txt
 py -3.13 -m PyInstaller --noconfirm --clean --distpath windows\dist --workpath windows\build windows\quassel.spec
-iscc /DMyAppVersion=2.8.0 windows\quassel.iss
+iscc /DMyAppVersion=2.9.0 windows\quassel.iss
 ```
 
 Always build with `--clean` — PyInstaller otherwise caches stale analyses.

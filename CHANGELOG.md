@@ -14,6 +14,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-10-19
+
 ### Added
 - Quassel moves its speech server to a free port when another program already
   uses port 8765, instead of failing or talking to the wrong program. It never

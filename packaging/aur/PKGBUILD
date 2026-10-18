@@ -15,7 +15,7 @@
 pkgname=quassel-type-git
 _name=quassel
 _whisper=1.9.5
-pkgver=2.8.0.r0.g0000000
+pkgver=2.9.0.r0.g0000000
 pkgrel=1
 pkgdesc="Local, private voice typing — hold Ctrl+Meta, speak, release"
 arch=('x86_64')
