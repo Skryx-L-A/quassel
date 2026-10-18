@@ -43,6 +43,7 @@ from .platform import (mic_is_bluetooth, notify, paste, send_backspaces,
 from .state import (PARTWAV, RUNDIR, WAV, level_set, state_clear_text,  # noqa: F401
                     state_set)
 
+IS_MAC = sys.platform == "darwin"
 EVENT_FORMAT = "llHHi"
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
 EV_KEY = 1
@@ -154,7 +155,7 @@ def _request_mac_server_restart(timeout=45):
 def _install_server_recovery():
     """Bind the shared one-retry path to this platform's owned server."""
     original = selfheal.recover
-    restart = _request_mac_server_restart if sys.platform == "darwin" else _restart_linux_server
+    restart = _request_mac_server_restart if IS_MAC else _restart_linux_server
     selfheal.recover = lambda: original(restart=restart)
 
 
@@ -248,14 +249,14 @@ class Daemon(dictation.DictationCore):
 
     def _mic_error_text(self):
         """Warum ließ sich die Aufnahme nicht starten (H113)?"""
-        if sys.platform == "darwin" and mac_backend() != "ffmpeg":
+        if IS_MAC and mac_backend() != "ffmpeg":
             # sounddevice-Pfad: es fehlt kein Programm, sondern ein
             # nutzbares Eingabegerät oder die Mikrofon-Freigabe.
             if dictation.mac_mic_permission() == "denied":
                 return tr("err_mic_denied")
             return tr("err_mic_open")
         if record_command(self.cfg.mic) is None:
-            tool = "ffmpeg" if sys.platform == "darwin" else "pw-record/parecord"
+            tool = "ffmpeg" if IS_MAC else "pw-record/parecord"
             return tr("err_recorder_missing", tool=tool)
         return tr("err_mic_open")
 
@@ -335,7 +336,7 @@ class Daemon(dictation.DictationCore):
 
     # ------------------------------------------------------------- Hauptloop
     def run(self):
-        if sys.platform == "darwin":
+        if IS_MAC:
             self._run_mac()
             return
         self._run_linux()
@@ -728,7 +729,7 @@ def install_diagnostics():
     Log. Nur auf macOS registriert — unter Linux beendet SIGUSR1 den Prozess
     per Voreinstellung, und dieses Verhalten bleibt dort unangetastet."""
     faulthandler.enable()
-    if sys.platform != "darwin" or not hasattr(signal, "SIGUSR1"):
+    if not IS_MAC or not hasattr(signal, "SIGUSR1"):
         return
     try:
         faulthandler.register(signal.SIGUSR1, all_threads=True)

@@ -53,6 +53,7 @@ class SD:
 
 def mac_recorder(monkeypatch, stream):
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.delenv("QUASSEL_MAC_AUDIO", raising=False)
     monkeypatch.setattr(audio, "_sd", lambda: SD(stream))
     monkeypatch.setattr(audio, "_mac_device", lambda mic: None)
@@ -144,6 +145,7 @@ class Proc:
 
 def linux_recorder(monkeypatch, procs):
     monkeypatch.setattr(audio.sys, "platform", "linux")
+    monkeypatch.setattr(audio, "IS_MAC", False)
     monkeypatch.setattr(audio, "record_command", lambda mic: ["pw-record", "-"])
     monkeypatch.setattr(audio, "_bluez_profiles", lambda: {})
 

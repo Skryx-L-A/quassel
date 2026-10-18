@@ -30,6 +30,7 @@ def test_capture_starts_before_profile_query(tmp_path, monkeypatch):
 
     monkeypatch.setattr(audio, "RUNDIR", str(tmp_path))
     monkeypatch.setattr(audio.sys, "platform", "linux")
+    monkeypatch.setattr(audio, "IS_MAC", False)
     monkeypatch.setattr(audio, "record_command", lambda mic: ["pw-record", "-"])
     monkeypatch.setattr(audio, "_bluez_profiles", profiles)
     monkeypatch.setattr(audio.subprocess, "Popen", popen)

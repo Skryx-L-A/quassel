@@ -6,6 +6,7 @@ from quassel import audio
 
 def test_list_mics_uses_stable_pactl_locale(monkeypatch):
     monkeypatch.setattr(audio.sys, "platform", "linux")
+    monkeypatch.setattr(audio, "IS_MAC", False)
     monkeypatch.setenv("LC_ALL", "de_DE.UTF-8")
     calls = []
 

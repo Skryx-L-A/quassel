@@ -1362,10 +1362,12 @@ def test_install_diagnostics_registers_sigusr1_only_on_mac(monkeypatch):
                         lambda sig, all_threads=False: seen.append((sig, all_threads)),
                         raising=False)
     monkeypatch.setattr(daemon_mod.sys, "platform", "linux")
+    monkeypatch.setattr(daemon_mod, "IS_MAC", False)
     daemon_mod.install_diagnostics()
     assert seen == ["enable"]                    # Linux behält SIGUSR1 unverändert
     seen.clear()
     monkeypatch.setattr(daemon_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(daemon_mod, "IS_MAC", True)
     daemon_mod.install_diagnostics()
     assert seen == ["enable", (daemon_mod.signal.SIGUSR1, True)]
 
@@ -1640,6 +1642,7 @@ def test_start_recording_failure_names_missing_piece(monkeypatch):
     hängt das am Aufnahmebackend: beim sounddevice-Pfad fehlt kein Programm,
     sondern die Mikrofon-Freigabe oder ein nutzbares Eingabegerät. Die
     Meldung steht in der Pille und kommt als Benachrichtigung."""
+    from quassel import audio
     from quassel import daemon as daemon_mod
     from quassel import dictation, i18n
     i18n.set_language("en")
@@ -1652,6 +1655,8 @@ def test_start_recording_failure_names_missing_piece(monkeypatch):
     monkeypatch.setattr(daemon_mod, "state_set",
                         lambda s, text="": states.append((s, text)))
     monkeypatch.setattr(daemon_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(daemon_mod, "IS_MAC", True)
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.delenv("QUASSEL_MAC_AUDIO", raising=False)
     try:
         monkeypatch.setattr(dictation, "mac_mic_permission", lambda: "denied")
@@ -1669,6 +1674,8 @@ def test_start_recording_failure_names_missing_piece(monkeypatch):
         assert notes == [daemon_mod.tr("err_recorder_missing", tool="ffmpeg")]
         notes.clear()
         monkeypatch.setattr(daemon_mod.sys, "platform", "linux")
+        monkeypatch.setattr(daemon_mod, "IS_MAC", False)
+        monkeypatch.setattr(audio, "IS_MAC", False)
         assert d.start_recording() is False
         assert notes == [daemon_mod.tr("err_recorder_missing", tool="pw-record/parecord")]
         notes.clear()

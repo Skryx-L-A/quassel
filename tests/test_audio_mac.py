@@ -88,6 +88,7 @@ def raws(tmp_path, monkeypatch):
     monkeypatch.setattr(audio, "RAW_B", str(b))
     monkeypatch.setattr(audio, "RUNDIR", str(tmp_path))
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.delenv("QUASSEL_MAC_AUDIO", raising=False)
     return a, b
 

@@ -77,6 +77,7 @@ def test_state_rundir_linux_unchanged():
 # --------------------------------------------------------------------- audio
 def test_record_command_darwin_default(monkeypatch):
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.setattr(audio.shutil, "which",
                         lambda name: "/opt/homebrew/bin/ffmpeg")
     cmd = audio.record_command()
@@ -89,6 +90,7 @@ def test_record_command_darwin_default(monkeypatch):
 
 def test_record_command_darwin_named_mic(monkeypatch):
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.setattr(audio.shutil, "which", lambda name: "/usr/bin/ffmpeg")
     cmd = audio.record_command("MacBook Pro Microphone")
     assert ":MacBook Pro Microphone" in cmd
@@ -96,6 +98,7 @@ def test_record_command_darwin_named_mic(monkeypatch):
 
 def test_record_command_darwin_no_ffmpeg(monkeypatch):
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.setattr(audio.shutil, "which", lambda name: None)
     assert audio.record_command() is None
 
@@ -123,6 +126,7 @@ def test_list_mics_mac_survives_missing_ffmpeg(monkeypatch):
 
 def test_list_mics_dispatches_to_mac(monkeypatch):
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.setattr(audio, "_list_mics_mac", lambda: [("a", "a")])
     assert audio.list_mics() == [("a", "a")]
 
@@ -212,6 +216,7 @@ def test_mac_device_rate(monkeypatch):
 def test_recorder_uses_mac_stream_on_darwin(monkeypatch, tmp_path):
     """macOS ohne ffmpeg-Backend: kein Subprozess, sondern der Stream."""
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.delenv("QUASSEL_MAC_AUDIO", raising=False)
     monkeypatch.setattr(audio.os, "makedirs", lambda *a, **kw: None)
 
@@ -234,6 +239,7 @@ def test_recorder_uses_mac_stream_on_darwin(monkeypatch, tmp_path):
 
 def test_recorder_start_fails_when_stream_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.delenv("QUASSEL_MAC_AUDIO", raising=False)
     monkeypatch.setattr(audio.os, "makedirs", lambda *a, **kw: None)
     stream = MagicMock()
@@ -246,6 +252,7 @@ def test_recorder_start_fails_when_stream_fails(monkeypatch, tmp_path):
 
 def test_recorder_uses_subprocess_for_ffmpeg_backend(monkeypatch, tmp_path):
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.setenv("QUASSEL_MAC_AUDIO", "ffmpeg")
     monkeypatch.setattr(audio.shutil, "which", lambda name: "/usr/bin/ffmpeg")
     monkeypatch.setattr(audio, "_bluez_profiles", lambda: {})
@@ -261,6 +268,7 @@ def test_recorder_uses_subprocess_for_ffmpeg_backend(monkeypatch, tmp_path):
 def test_recorder_unchanged_on_linux(monkeypatch, tmp_path):
     """Linux nimmt weiterhin über den Subprozess auf — kein Stream."""
     monkeypatch.setattr(audio.sys, "platform", "linux")
+    monkeypatch.setattr(audio, "IS_MAC", False)
     monkeypatch.setattr(audio, "record_command", lambda mic: ["pw-record", "-"])
     monkeypatch.setattr(audio, "_bluez_profiles", lambda: {})
     popen = MagicMock(return_value=MagicMock(poll=lambda: None))

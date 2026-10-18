@@ -68,6 +68,7 @@ def test_recorder_reuses_warm_capture_then_expires(tmp_path, monkeypatch):
 def test_warm_mac_capture_reopens_after_default_input_change(monkeypatch):
     selected = [10]
     monkeypatch.setattr(audio.sys, "platform", "darwin")
+    monkeypatch.setattr(audio, "IS_MAC", True)
     monkeypatch.setattr(coreaudio, "default_input_device", lambda: selected[0])
     capture = audio._PrerollCapture("default", 300)
     capture.device_id = 10

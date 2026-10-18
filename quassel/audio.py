@@ -22,6 +22,7 @@ import wave
 
 from .state import RAW, RUNDIR
 
+IS_MAC = sys.platform == "darwin"
 RATE, SAMPLE_BYTES = 16000, 2
 
 # Zweite Rohdatei für den Diktat-Pfad. Die Aufnahmen wechseln sich zwischen
@@ -66,7 +67,7 @@ def mac_backend():
 
 
 def record_command(mic="default"):
-    if sys.platform == "darwin":
+    if IS_MAC:
         # macOS: ffmpeg/AVFoundation liefert rohes PCM auf stdout (wie
         # pw-record). mic: Gerätename oder -index aus list_mics(), sonst
         # das Standard-Eingabegerät.
@@ -101,7 +102,7 @@ def wav_from_raw(raw_bytes, path):
 
 def list_mics():
     """[(name, beschreibung)] der verfügbaren Aufnahmequellen (ohne Monitore)."""
-    if sys.platform == "darwin":
+    if IS_MAC:
         return _list_mics_mac()
     out = []
     try:
@@ -583,7 +584,7 @@ class _PrerollCapture:
 
     def open(self):
         self.opened = time.monotonic()
-        if sys.platform == "darwin" and mac_backend() != "ffmpeg":
+        if IS_MAC and mac_backend() != "ffmpeg":
             sd = _sd()
             if sd is None:
                 return False
@@ -625,7 +626,7 @@ class _PrerollCapture:
         return True
 
     def device_changed(self):
-        if sys.platform != "darwin" or self.mic not in (None, "default"):
+        if not IS_MAC or self.mic not in (None, "default"):
             return False
         from . import coreaudio
         return coreaudio.default_input_device() != self.device_id
@@ -864,7 +865,7 @@ class Recorder:
                 self.running_path = self.raw_path
                 self.started = time.monotonic()
             return True
-        if sys.platform == "darwin" and mac_backend() != "ffmpeg":
+        if IS_MAC and mac_backend() != "ffmpeg":
             # PortAudio ist nicht threadsicher: erst den alten Stream zu Ende
             # schließen (oder aufgeben), dann den neuen öffnen.
             self._settle_closing()
