@@ -41,7 +41,7 @@ def _log_stream(extra=0):
         for n in (2, 1):
             source = LOG_FILE if n == 1 else LOG_FILE + ".1"
             if os.path.exists(source):
-                os.replace(source, LOG_FILE + f".{n}")
+                fsutil.replace(source, LOG_FILE + f".{n}")
     return open(LOG_FILE, "ab")
 
 

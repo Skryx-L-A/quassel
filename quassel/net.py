@@ -12,6 +12,8 @@ import threading
 import time
 import urllib.request
 
+from . import fsutil
+
 # Hugging Face LFS object IDs, retrieved 2026-10-09 from the model-tree APIs:
 # ggerganov/whisper.cpp and ggml-org/whisper-vad.  They are SHA-256 hashes.
 SHA256 = {
@@ -129,7 +131,7 @@ def download(url, target, progress=None, cancel=None):
     if ok and expected:
         ok = _matches_hash(tmp, expected)
     if ok:
-        os.replace(tmp, target)
+        fsutil.replace(tmp, target)
         if progress:
             progress(1.0)
     else:

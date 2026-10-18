@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 
-from . import audio, config, i18n, profile, server_mac, selfheal
+from . import audio, config, fsutil, i18n, profile, server_mac, selfheal
 from .i18n import tr
 from .state import state_read
 
@@ -68,7 +68,7 @@ def rotate_log(path, max_bytes=LOG_MAX_BYTES, keep=LOG_KEEP):
         for i in range(keep - 1, 0, -1):
             older = "%s.%d" % (path, i)
             if os.path.exists(older):
-                os.replace(older, "%s.%d" % (path, i + 1))
+                fsutil.replace(older, "%s.%d" % (path, i + 1))
         shutil.copyfile(path, path + ".1")
         with open(path, "r+b") as f:
             f.truncate(0)

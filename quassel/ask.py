@@ -233,7 +233,7 @@ def open_request(question, timeout=DEFAULT_TIMEOUT, program="", pid=None, now=No
                 # File system without hard links: check, then replace.
                 if pending(now, rundir) is not None:
                     raise AskError("busy", "another question is already waiting for an answer")
-                os.replace(staging, request)
+                fsutil.replace(staging, request)
                 return doc
         raise AskError("busy", "another question is already waiting for an answer")
     finally:
@@ -335,7 +335,7 @@ def claim(now=None, rundir=None):
                 # File system without hard links: check, then replace.
                 if _claimed(token, rundir):
                     return None
-                os.replace(staging, claim_path)
+                fsutil.replace(staging, claim_path)
                 return doc
         return None
     finally:
