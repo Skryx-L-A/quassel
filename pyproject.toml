@@ -2,6 +2,7 @@
 name = "quassel-voice"
 version = "2.8.0"
 description = "Local, private voice typing"
+license = "GPL-3.0-or-later"
 requires-python = ">=3.10"
 dependencies = [
     "PySide6==6.11.1",
