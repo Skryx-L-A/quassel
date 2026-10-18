@@ -806,6 +806,18 @@ def test_cask_comment_no_longer_waits_for_the_ffmpeg_measurement():
     assert '\n  depends_on formula: "ffmpeg"' not in cask
 
 
+
+def test_cask_clears_quarantine_with_declarative_steps():
+    # Homebrew 7 deprecates the Ruby `postflight` block in favour of
+    # `postflight_steps`; the app is self-signed, so the quarantine flag
+    # still has to go.
+    cask = (ROOT / "packaging" / "homebrew" / "Casks" / "quassel.rb").read_text(
+        encoding="utf-8")
+    assert "postflight do" not in cask
+    assert "postflight_steps do" in cask
+    assert ('run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", '
+            '"{{appdir}}/Quassel.app"]') in cask
+
 def test_dl_model_downloads_into_the_model_file(tmp_path):
     """`local m="$1" f=... target="$DATA/models/$f"` expandiert alle Werte, bevor
     `local` sie setzt: target war der Modellordner, `[[ -s ordner ]]` ist wahr,

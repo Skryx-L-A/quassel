@@ -23,10 +23,9 @@ cask "quassel" do
   # Selbstsigniert ("Quassel Dev"), nicht notarisiert (kein Apple-Developer-
   # Account) — ohne das entfernte Quarantäne-Flag würde Gatekeeper den ersten
   # Start blockieren.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Quassel.app"],
-                   sudo: false
+  # Homebrew 7 ersetzt den Ruby-Block `postflight` durch deklarative Schritte.
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Quassel.app"]
   end
 
   uninstall launchctl: "de.skryx.quassel",
