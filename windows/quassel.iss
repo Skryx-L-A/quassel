@@ -1,7 +1,11 @@
 ; Inno-Setup-Skript für den Quassel-Windows-Installer.
 ; Bauen: Inno Setup über "iscc quassel.iss" (nach dem PyInstaller-Build).
 #define MyAppName "Quassel"
-#define MyAppVersion "2.6.0"
+; Die Version kommt im CI per "iscc /DMyAppVersion=..." aus quassel/__init__.py;
+; dieser Wert gilt nur fuer einen Bau von Hand.
+#ifndef MyAppVersion
+  #define MyAppVersion "2.8.0"
+#endif
 #define MyAppPublisher "Skryx-L-A"
 #define MyAppURL "https://github.com/Skryx-L-A/quassel"
 #define MyAppExeName "Quassel.exe"
@@ -31,8 +35,15 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 [Messages]
 ; SmartScreen-Hinweis direkt auf der Willkommensseite (die exe ist noch
 ; nicht signiert) — zweisprachig, je nach gewählter Setup-Sprache.
-english.WelcomeLabel2=This will install Quassel on your computer.%n%nQuassel is free software and not yet code-signed, so Windows SmartScreen may have warned before this installer started ("Windows protected your PC" - "More info" then "Run anyway"). That warning is expected.%n%nIt is recommended that you close all other applications before continuing.
-german.WelcomeLabel2=Quassel wird auf Ihrem Computer installiert.%n%nQuassel ist quelloffen und noch nicht signiert - Windows SmartScreen warnt daher eventuell, bevor dieser Installer startet ("Der Computer wurde durch Windows geschützt" - auf "Weitere Informationen" und dann "Trotzdem ausführen" klicken). Diese Warnung ist normal.%n%nEs wird empfohlen, vor dem Fortfahren alle anderen Anwendungen zu schließen.
+#ifdef UnverifiedBuild
+#define NoteEn "%n%nThis installer was built automatically and has not been tested by hand on a real Windows device."
+#define NoteDe "%n%nDieser Installer wurde automatisch gebaut und nicht von Hand auf einem echten Windows-Gerät geprüft."
+#else
+#define NoteEn ""
+#define NoteDe ""
+#endif
+english.WelcomeLabel2=This will install Quassel on your computer.%n%nQuassel is free software and not yet code-signed, so Windows SmartScreen may have warned before this installer started ("Windows protected your PC" - "More info" then "Run anyway"). That warning is expected.%n%nIt is recommended that you close all other applications before continuing.{#NoteEn}
+german.WelcomeLabel2=Quassel wird auf Ihrem Computer installiert.%n%nQuassel ist quelloffen und noch nicht signiert - Windows SmartScreen warnt daher eventuell, bevor dieser Installer startet ("Der Computer wurde durch Windows geschützt" - auf "Weitere Informationen" und dann "Trotzdem ausführen" klicken). Diese Warnung ist normal.%n%nEs wird empfohlen, vor dem Fortfahren alle anderen Anwendungen zu schließen.{#NoteDe}
 
 [CustomMessages]
 english.AutostartTask=Start Quassel when I log in

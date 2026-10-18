@@ -1,0 +1,110 @@
+name: Windows installer
+
+# Baut Quassel-Setup.exe auf einem Windows-Runner (PyInstaller, dann Inno
+# Setup) und legt es samt .sha256 als Workflow-Artefakt ab. Der Workflow
+# haengt nichts an ein Release und hat keine Schreibrechte; das Anhaengen
+# geschieht von Hand. Der Installer traegt auf der Willkommensseite den
+# Hinweis, dass er automatisch gebaut und auf keinem echten Windows-Geraet
+# von Hand geprueft wurde (iscc /DUnverifiedBuild=1).
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Quassel-Setup.exe
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          # 3.14 crashes the windowed exe (windows/build.md); keep the minor fixed.
+          python-version: "3.13"
+      - name: Read the package version
+        id: version
+        shell: bash
+        run: |
+          version="$(python -c "import quassel; print(quassel.__version__)")"
+          project="$(python -c "import re, pathlib; print(re.search(r'^version = \"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(encoding='utf-8'), re.M).group(1))")"
+          if [ "$version" != "$project" ]; then
+            echo "quassel/__init__.py says $version, pyproject.toml says $project" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Install the pinned build dependencies
+        run: python -m pip install --requirement windows/requirements-build.txt
+      - name: Import check without a window
+        # Catches a missing dependency before the long PyInstaller run.
+        env:
+          PYTHONPATH: .
+          QT_QPA_PLATFORM: offscreen
+        run: python -c "import quassel.win.app, sounddevice, pycaw, winrt.windows.media.control"
+      - name: Build the app folder with PyInstaller
+        run: python -m PyInstaller --noconfirm --clean --distpath windows\dist --workpath windows\build windows\quassel.spec
+      - name: Check the PyInstaller result
+        # The exe is windowed and has no --version, so nothing is started here:
+        # a window would open and the keyboard listener would start.
+        shell: pwsh
+        run: |
+          $app = "windows\dist\Quassel"
+          $required = @(
+            "Quassel.exe",
+            "_internal\PySide6\Qt6Core.dll",
+            "_internal\assets\quassel.ico",
+            "_internal\LICENSE"
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path (Join-Path $app $file))) {
+              Get-ChildItem $app | Select-Object -First 30 | Format-Table Name, Length
+              throw "Missing from the PyInstaller output: $file"
+            }
+          }
+          $exe = Get-Item (Join-Path $app "Quassel.exe")
+          if ($exe.Length -lt 100KB) { throw "Quassel.exe is only $($exe.Length) bytes" }
+          Write-Host "Quassel.exe: $($exe.Length) bytes"
+      - name: Build the installer with Inno Setup
+        id: iscc
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $candidates = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "${env:ProgramFiles}\Inno Setup 6\ISCC.exe")
+            $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) { throw "Inno Setup (ISCC.exe) is not installed on this runner" }
+          Write-Host "Using $iscc"
+          & $iscc "/DMyAppVersion=$env:APP_VERSION" "/DUnverifiedBuild=1" windows\quassel.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed with exit code $LASTEXITCODE" }
+      - name: Check the installer and write its checksum
+        shell: pwsh
+        run: |
+          $setup = "windows\Output\Quassel-Setup.exe"
+          if (-not (Test-Path $setup)) {
+            Get-ChildItem windows\Output -ErrorAction SilentlyContinue
+            throw "iscc did not produce $setup"
+          }
+          $size = (Get-Item $setup).Length
+          if ($size -lt 10MB) { throw "$setup is only $size bytes" }
+          New-Item -ItemType Directory -Force -Path installer | Out-Null
+          Copy-Item $setup installer\Quassel-Setup.exe
+          $hash = (Get-FileHash installer\Quassel-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText("$PWD\installer\Quassel-Setup.exe.sha256", "$hash  Quassel-Setup.exe`n")
+          Write-Host "Quassel-Setup.exe: $size bytes, sha256 $hash"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: quassel-windows-installer
+          path: |
+            installer/Quassel-Setup.exe
+            installer/Quassel-Setup.exe.sha256
+          if-no-files-found: error

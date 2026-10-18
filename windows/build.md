@@ -9,8 +9,9 @@
 ## Prerequisites (on a Windows machine)
 
 - Python 3.13 (64-bit) — **not 3.14**, the windowed exe crashes with it
-- `pip install pyside6 sounddevice pyinstaller pycaw winrt-Windows.Media.Control winrt-Windows.Foundation`
-  (pycaw pulls comtypes for the mute-all path; the winrt packages drive the
+- `py -3.13 -m pip install --requirement windows\requirements-build.txt`
+  (pinned: the runtime packages from `requirements.txt` plus PyInstaller;
+  pycaw pulls comtypes for the mute-all path; the winrt packages drive the
   pause-media path via SMTC — both get bundled into the offline package)
 - [Inno Setup 6](https://jrsoftware.org/isinfo.php) (for the `.exe` installer)
 
@@ -19,15 +20,30 @@
 From the repository root in PowerShell:
 
 ```powershell
-py -3.13 -m pip install pyside6 sounddevice pyinstaller
+py -3.13 -m pip install --requirement windows\requirements-build.txt
 py -3.13 -m PyInstaller --noconfirm --clean --distpath windows\dist --workpath windows\build windows\quassel.spec
-iscc windows\quassel.iss
+iscc /DMyAppVersion=2.8.0 windows\quassel.iss
 ```
 
 Always build with `--clean` — PyInstaller otherwise caches stale analyses.
 
 - `PyInstaller` produces `windows\dist\Quassel\Quassel.exe` (the app folder).
-- `iscc` wraps it into `windows\Output\Quassel-Setup-2.1.0.exe`.
+- `iscc` wraps it into `windows\Output\Quassel-Setup.exe`. Without
+  `/DMyAppVersion=…` the version in `quassel.iss` applies; keep it equal to
+  `quassel.__version__`.
+
+## Building in CI (not tested on a real device)
+
+`.github/workflows/windows-installer.yml` builds `Quassel-Setup.exe` on
+`windows-latest` (Python 3.13, pinned `windows/requirements-build.txt`,
+PyInstaller with `--clean`, the preinstalled Inno Setup). It runs on a manual
+start or on a `v*` tag and uploads `Quassel-Setup.exe` and
+`Quassel-Setup.exe.sha256` as the workflow artifact `quassel-windows-installer`.
+It does not touch a release. This build is made automatically and has not been
+tested by hand on a real Windows device; the installer says so on its welcome
+page (`iscc /DUnverifiedBuild=1`, German and English). The workflow smoke test
+only checks the files, because the windowed exe has no `--version` and any
+start would open a window and listen to the keyboard.
 
 ## Two ways to ship it
 

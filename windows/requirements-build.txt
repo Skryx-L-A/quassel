@@ -1,0 +1,5 @@
+# Pinned build dependencies for the Windows installer (Python 3.13, 64-bit).
+# Runtime packages come from requirements.txt; win32 markers pull comtypes,
+# pycaw and the winrt projections that quassel.spec bundles.
+-r ../requirements.txt
+PyInstaller==6.21.0
