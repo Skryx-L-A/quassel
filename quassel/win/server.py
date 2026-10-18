@@ -22,7 +22,7 @@ import json
 import io
 import threading
 
-from .. import config, hwdetect, ports
+from .. import config, fsutil, hwdetect, ports
 from ..net import download
 from ..whisperclient import server_up
 
@@ -51,7 +51,7 @@ def _log_stream(extra=0):
         for n in (2, 1):
             source = LOG_FILE if n == 1 else LOG_FILE + ".1"
             if os.path.exists(source):
-                os.replace(source, LOG_FILE + f".{n}")
+                fsutil.replace(source, LOG_FILE + f".{n}")
     return open(LOG_FILE, "ab")
 
 
@@ -73,7 +73,7 @@ def _write_pid(pid, exe, port):
     with open(temp, "w", encoding="utf-8") as out:
         json.dump({"pid": pid, "exe": os.path.normcase(os.path.abspath(exe)),
                    "port": int(port)}, out)
-    os.replace(temp, PID_FILE)
+    fsutil.replace(temp, PID_FILE)
 
 
 def _owned_orphan(record):
@@ -182,7 +182,7 @@ def _copy_file(src, target, progress, label):
                 w.write(chunk)
                 done += len(chunk)
                 progress(min(done / total, 1.0), label)
-        os.replace(tmp, target)
+        fsutil.replace(tmp, target)
     except OSError:
         try:
             os.remove(tmp)

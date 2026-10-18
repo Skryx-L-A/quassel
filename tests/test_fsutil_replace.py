@@ -7,11 +7,10 @@ from quassel import config, fsutil, server_mac
 
 QUASSEL = pathlib.Path(__file__).resolve().parents[1] / "quassel"
 
-# Offen, nicht Teil dieses Auftrags: die Windows-Module rufen os.replace noch direkt.
-DIRECT_REPLACE_OUTSIDE_FSUTIL = {"win/app.py", "win/server.py"}
+DIRECT_REPLACE_OUTSIDE_FSUTIL = set()
 
 
-def test_only_fsutil_and_known_windows_modules_call_os_replace():
+def test_only_fsutil_calls_os_replace():
     direct = set()
     for path in QUASSEL.rglob("*.py"):
         if re.search(r"\bos\.replace\(", path.read_text(encoding="utf-8")):

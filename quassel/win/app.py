@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QApplication, QLabel, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from .. import ask, config, dictation, i18n, pill_qt, power, profile, selfheal, whisperclient
+from .. import ask, config, dictation, fsutil, i18n, pill_qt, power, profile, selfheal, whisperclient
 from ..audio import wav_from_raw
 from ..mediacontrol import AudioDucker
 from ..i18n import tr
@@ -48,7 +48,7 @@ def dlog(msg):
         path = os.path.join(config.DATADIR, "debug.log")
         try:
             if os.path.getsize(path) > DEBUG_LOG_MAX:
-                os.replace(path, path + ".1")
+                fsutil.replace(path, path + ".1")
         except OSError:
             pass
         with open(path, "a", encoding="utf-8") as f:
