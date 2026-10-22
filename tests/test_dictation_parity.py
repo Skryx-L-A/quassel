@@ -6,6 +6,7 @@ Plattform-Anbindung jeden Schritt gleich weiterreicht. Jede Plattform bekommt
 dieselben Attrappen für Aufnahme, Server und Einfügen; mitgeschrieben wird,
 was nach außen geht (Zustand, Ton, WAV, Einfügen, Tasten)."""
 import os
+import re
 import sys
 from types import SimpleNamespace
 
@@ -182,10 +183,13 @@ def test_daemon_and_windows_take_the_same_steps(monkeypatch, tmp_path, name):
     windows = run_windows(monkeypatch, tmp_path / "w", scenario)
 
     def norm(steps):
-        # Der Rettungspfad nennt den eigenen tmp-Ordner; nur der Ort weicht ab.
-        return [s[:2] + (s[2].replace(str(tmp_path / "d"), "<run>")
-                         .replace(str(tmp_path / "w"), "<run>"),)
-                if s[0] == "state" and len(s) == 3 else s for s in steps]
+        # Der Rettungspfad nennt den eigenen tmp-Ordner und die Sekunde der
+        # Rettung; beide Läufe können eine Sekundengrenze überspannen.
+        def text(t):
+            t = t.replace(str(tmp_path / "d"), "<run>").replace(str(tmp_path / "w"), "<run>")
+            return re.sub(r"rescued-\d{8}-\d{6}", "rescued-<zeit>", t)
+        return [s[:2] + (text(s[2]),) if s[0] == "state" and len(s) == 3 else s
+                for s in steps]
     assert norm(linux) == norm(windows)
     assert linux, "Szenario hat nichts ausgelöst"
 
