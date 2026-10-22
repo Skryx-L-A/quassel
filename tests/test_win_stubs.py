@@ -76,3 +76,26 @@ def test_the_stubs_do_not_outlive_the_test(monkeypatch):
     inner.undo()
     assert "quassel.win.app" not in sys.modules
     assert "quassel.win.paste" not in sys.modules
+
+
+def import_audio_win():
+    """quassel.win.audio_win laden, auch wenn PortAudio hier nicht startet.
+
+    sounddevice initialisiert PortAudio schon beim Import. Auf Linux ohne
+    Sound-Server (CI ab Ubuntu 26: „PulseAudio_Initialize: Can't connect to
+    server") scheitert das. Die Tests ersetzen audio_win.sd ohnehin durch
+    FakeSD; nur für den Import steht dann ein leerer Platzhalter bereit, der
+    danach wieder aus sys.modules verschwindet."""
+    if "quassel.win.audio_win" in sys.modules:
+        return sys.modules["quassel.win.audio_win"]
+    try:
+        import sounddevice  # noqa: F401 — conftest sperrt die Eingabe
+    except Exception:       # noqa: BLE001 — OSError oder PortAudioError
+        placeholder = types.ModuleType("sounddevice")
+        sys.modules["sounddevice"] = placeholder
+        try:
+            return importlib.import_module("quassel.win.audio_win")
+        finally:
+            if sys.modules.get("sounddevice") is placeholder:
+                del sys.modules["sounddevice"]
+    return importlib.import_module("quassel.win.audio_win")

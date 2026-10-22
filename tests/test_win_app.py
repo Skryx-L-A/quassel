@@ -14,9 +14,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from quassel import dictation
-from quassel.win import audio_win
 import test_win_stubs as win_stubs
 from test_win_audio import FakeSD
+
+audio_win = win_stubs.import_audio_win()
 
 VK_CTRL, VK_WIN, VK_A = 0xA2, 0x5B, 0x41
 

@@ -10,8 +10,11 @@ from types import SimpleNamespace
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(__file__))
 
-from quassel.win import audio_win
+import test_win_stubs as win_stubs  # noqa: E402
+
+audio_win = win_stubs.import_audio_win()
 
 
 class FakeStream:
