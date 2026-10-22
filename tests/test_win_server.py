@@ -47,7 +47,10 @@ def test_start_uses_greedy_decode_with_nvidia(tmp_path):
         assert not {"-pr", "--print-realtime", "-pp", "--print-progress"} & set(args)
         assert "-bs" in args
         assert args[args.index("-bs") + 1] == "1"
-        assert "5" not in args      # der alte Vorgabewert darf nirgends mehr auftauchen
+        # Der alte Vorgabewert 5 darf bei keinem Beam-Schalter mehr auftauchen
+        # (nicht pauschal "5" prüfen: -t ist die Kernzahl, auf CI-Runnern auch 5).
+        for flag in ("-bs", "--beam-size"):
+            assert all(args[i + 1] != "5" for i, a in enumerate(args) if a == flag)
     finally:
         server._proc = None
 
